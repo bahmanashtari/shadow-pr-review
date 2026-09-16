@@ -18,7 +18,7 @@ export interface SprConfig {
      */
     effort?: "low" | "medium" | "high" | "xhigh" | "max";
     /**
-     * Let an Ollama model think before answering. Default false: measured on the golden set it lowered recall and cost 5 to 10 times the wall clock (ADR-018). Kept configurable so the eval can re-test it.
+     * Let an Ollama model think before answering. Default true (ADR-021): equal recall, better grounding, about 15 times the wall clock. Set SPR_LLM_THINK=false when iterating on prompts.
      */
     think?: boolean;
     maxRetries: number;

@@ -38,9 +38,9 @@ describe("loadConfig", () => {
     expect(loadConfig({ env: { SPR_CACHE_DIR: "/tmp/spr-cache" } }).cache.dir).toBe(
       "/tmp/spr-cache",
     );
-    // Thinking is off by default (ADR-018) but stays switchable for the eval.
-    expect(loadConfig({ env: {} }).llm.think).toBe(false);
-    expect(loadConfig({ env: { SPR_LLM_THINK: "true" } }).llm.think).toBe(true);
+    // Thinking is on by default (ADR-021) and switched off for fast prompt iteration.
+    expect(loadConfig({ env: {} }).llm.think).toBe(true);
+    expect(loadConfig({ env: { SPR_LLM_THINK: "false" } }).llm.think).toBe(false);
   });
 
   it("rejects a boolean override that is neither true nor false", () => {

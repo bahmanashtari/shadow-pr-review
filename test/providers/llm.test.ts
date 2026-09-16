@@ -51,19 +51,19 @@ describe("OllamaProvider", () => {
     const provider = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://localhost:11434" });
     const body = provider.buildBody(REQUEST);
 
-    // ADR-018: thinking made review quality worse and cost 5-10x the time.
-    expect(body.think).toBe(false);
+    expect(body.think).toBe(true);
     expect(body.stream).toBe(false);
     expect(body.format).toEqual({ type: "object" });
     expect(body.options).toEqual({ temperature: 0, num_ctx: 32_768 });
     expect(body.tools).toBeUndefined();
   });
 
-  it("can be told to think, but does not by default", () => {
-    const off = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });
-    const on = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x", think: true });
-    expect(off.buildBody(REQUEST).think).toBe(false);
+  it("thinks by default and can be told not to", () => {
+    // ADR-021: thinking is equal on recall and better on grounding, at 15x the wall clock.
+    const on = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });
+    const off = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x", think: false });
     expect(on.buildBody(REQUEST).think).toBe(true);
+    expect(off.buildBody(REQUEST).think).toBe(false);
   });
 
   it("clamps the allocated context to what the model supports", () => {

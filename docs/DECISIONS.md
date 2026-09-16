@@ -189,9 +189,10 @@ Add new decisions at the bottom. Never delete; supersede instead.
   the better category (`data-migration` where mistral said `maintainability`), and is three
   to seven times faster. Its only failure mode, copying the rendered line-number prefix into
   the evidence string, is a prompt and rendering problem rather than a model weakness.
-- Notes that shaped this: **thinking made the model worse**, not better - with thinking on it
-  produced fewer findings and missed two of the four labelled issues, while costing 5 to 10
-  times the wall clock, so `providers/llm/ollama.ts` must send `think: false`. Both models
+- Notes that shaped this: with thinking on, the model produced fewer findings and missed two
+  of the four labelled issues while costing 5 to 10 times the wall clock. **That conclusion
+  was later overturned by ADR-021**, which re-ran the comparison with the final prompt and
+  found thinking equal on recall and better on grounding. Both models
   mis-categorise (`event-consistency` where the label says `idempotency`), so the Reviewer
   prompt must anchor categories as explicitly as ADR-015 says it must anchor severity.
 - Consequences: `mistral-small3.2` stays a supported fallback. The choice remains provisional
@@ -248,3 +249,33 @@ Add new decisions at the bottom. Never delete; supersede instead.
 - Consequences: Verification gets stricter rather than looser for prefixed snippets: the model
   must get both the code and the line number right. An unprefixed snippet is unaffected. A
   snippet that is only a prefix, or whose number does not back it up, is still rejected.
+
+## ADR-021: Ollama thinking is on by default (accepted, September 2026; supersedes the thinking note in ADR-018)
+- Context: ADR-018 concluded that thinking made the reviewer worse and hardcoded `think: false`.
+  That comparison was run with an earlier prompt, before the diff was rendered with line numbers
+  and before evidence was required, and the two arms were not scored on the same prompt in the
+  same round. Challenged on it, the comparison was re-run properly: same model, same final
+  prompt, same three golden samples, only `think` varying.
+
+  | Run | must_find | correct category | evidence survives | seconds |
+  |---|---|---|---|---|
+  | `think: false` | 3 of 4 | 3 of 4 | 3 of 3 | 14.7 |
+  | `think: true` | 3 of 4 | 3 of 4 | **4 of 4** | 228.8 |
+
+- Decision: default `llm.think` to true. Thinking is equal on recall and category accuracy,
+  and strictly better on coverage: it was the only run to find `pii-in-error` on
+  `sample-03-email-value-object` (a raw email address in a domain error that may reach logs),
+  a judgement call of exactly the kind a model should be spent on, and it chose the primary
+  `idempotency` category where the other run fell back to `event-consistency`.
+- Cost: 15 times the wall clock, 229 seconds across three samples. That is affordable here
+  because the review stage is not the long pole: this pipeline also runs TTS, a Playwright
+  recording and an ffmpeg encode, and `budgets.wallClockSeconds` is 1800. Turn it off with
+  `SPR_LLM_THINK=false` when iterating on prompts, where the 15x matters and the quality
+  difference does not.
+- Consequences: One regression came with it - thinking rated the non-idempotent consumer
+  `medium` where the label requires at least `high`, so severity anchoring in the Reviewer
+  prompt matters more, not less. Both settings remain configurable and step 7 re-scores them
+  across the full golden set with repetition; this decision rests on one run per sample.
+- Lesson recorded deliberately: the original claim came from comparing arms measured under
+  different prompts. A prompt change moves these numbers more than the model choice does, so
+  any future model or setting comparison must vary one thing at a time.

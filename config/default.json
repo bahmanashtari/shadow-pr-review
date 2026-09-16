@@ -4,7 +4,7 @@
     "model": "qwen3:30b",
     "baseUrl": "http://localhost:11434",
     "effort": "xhigh",
-    "think": false,
+    "think": true,
     "maxRetries": 2,
     "temperature": 0
   },
