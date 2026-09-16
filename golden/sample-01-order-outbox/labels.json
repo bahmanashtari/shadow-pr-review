@@ -1,0 +1,42 @@
+{
+  "sample": "sample-01-order-outbox",
+  "must_find": [
+    {
+      "key": "publish-before-commit",
+      "file": "services/order-service/src/application/commands/place-order.handler.ts",
+      "line_start": 19, "line_end": 27,
+      "category": "event-consistency",
+      "accept_categories": ["correctness", "error-handling"],
+      "min_severity": "high",
+      "description": "Event emitted inside the transaction before commit; fire-and-forget emit loses broker errors. Needs a transactional outbox."
+    },
+    {
+      "key": "application-depends-on-orm",
+      "file": "services/order-service/src/application/commands/place-order.handler.ts",
+      "line_start": 2, "line_end": 20,
+      "category": "ddd-boundaries",
+      "accept_categories": ["maintainability"],
+      "min_severity": "low",
+      "description": "Application layer uses TypeORM DataSource and the infrastructure entity directly instead of a repository port."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "untyped-event-contract",
+      "file": "services/order-service/src/application/commands/place-order.handler.ts",
+      "line_start": 22, "line_end": 26,
+      "category": "api-contract",
+      "description": "Inline, unversioned event payload without event id / timestamp."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "import-order",
+      "description": "Import ordering or grouping (lint concern)."
+    },
+    {
+      "key": "return-type-string",
+      "description": "Returning the order id as a string is fine."
+    }
+  ]
+}

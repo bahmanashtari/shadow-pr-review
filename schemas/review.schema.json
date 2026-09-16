@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shadow-pr-review.local/schemas/review.schema.json",
+  "title": "ReviewResult",
+  "description": "Contract for review.json. Produced by the Reviewer agent and finalized by the Verifier agent. Line numbers refer to the file version named by `side` (new = head, old = base). Code-level validators must additionally enforce: line_end >= line_start, finding ids are unique, and every (file, side, line range) exists in the ingested diff.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "summary", "findings", "dropped"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "source": { "$ref": "#/$defs/Source" },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "Two or three sentences describing what the change does and its overall risk."
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 10,
+      "description": "Kept findings, ordered by severity (critical first), then by file and line.",
+      "items": { "$ref": "#/$defs/Finding" }
+    },
+    "dropped": {
+      "type": "array",
+      "description": "Findings removed by the Verifier. Kept for tracing and evals; never narrated.",
+      "items": { "$ref": "#/$defs/DroppedFinding" }
+    },
+    "stats": { "$ref": "#/$defs/Stats" }
+  },
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["pull_request", "push", "local_diff"] },
+        "repo": { "type": ["string", "null"], "description": "owner/name" },
+        "pr_number": { "type": ["integer", "null"], "minimum": 1 },
+        "ref": { "type": ["string", "null"], "description": "Branch name for push events." },
+        "base_sha": { "type": ["string", "null"] },
+        "head_sha": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] }
+      }
+    },
+    "Severity": { "enum": ["critical", "high", "medium", "low"] },
+    "Category": {
+      "enum": [
+        "correctness",
+        "security",
+        "privacy",
+        "event-consistency",
+        "idempotency",
+        "ddd-boundaries",
+        "data-migration",
+        "api-contract",
+        "concurrency",
+        "performance",
+        "error-handling",
+        "testing",
+        "maintainability"
+      ]
+    },
+    "Finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "file", "side", "line_start", "line_end", "severity",
+        "category", "summary", "rationale", "suggestion", "confidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F[0-9]{2}$" },
+        "file": { "type": "string", "minLength": 1, "description": "Repo-relative path exactly as it appears in the diff." },
+        "side": { "enum": ["new", "old"] },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "severity": { "$ref": "#/$defs/Severity" },
+        "category": { "$ref": "#/$defs/Category" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 1200, "description": "Why this is a problem, grounded in the quoted lines." },
+        "suggestion": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": {
+          "type": "array",
+          "maxItems": 5,
+          "description": "Short verbatim snippets from the diff that support the claim. The Verifier checks these exist.",
+          "items": { "type": "string", "maxLength": 200 }
+        },
+        "verification": { "$ref": "#/$defs/Verification" }
+      }
+    },
+    "Verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["verified", "downgraded"] },
+        "original_severity": { "$ref": "#/$defs/Severity" },
+        "note": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "DroppedFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "file", "summary", "reason"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F[0-9]{2}$" },
+        "file": { "type": "string" },
+        "line_start": { "type": ["integer", "null"], "minimum": 1 },
+        "line_end": { "type": ["integer", "null"], "minimum": 1 },
+        "summary": { "type": "string", "maxLength": 120 },
+        "reason": { "enum": ["lines_not_in_diff", "claim_not_supported", "duplicate", "out_of_scope", "over_cap", "style_only"] },
+        "note": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "Stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files_reviewed": { "type": "integer", "minimum": 0 },
+        "files_skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "reason"],
+            "properties": {
+              "file": { "type": "string" },
+              "reason": { "enum": ["lockfile", "generated", "binary", "vendored", "too_large", "ignored_by_config"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

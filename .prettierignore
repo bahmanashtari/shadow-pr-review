@@ -1,0 +1,11 @@
+dist/
+runs/
+coverage/
+pnpm-lock.yaml
+src/contracts/generated/
+golden/**/*.patch
+# Authored documents and contracts: kept byte-identical to the Claude Project copies.
+*.md
+docs/
+golden/
+schemas/

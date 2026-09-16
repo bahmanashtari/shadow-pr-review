@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "push",
+    "repo": "acme/shop-platform",
+    "pr_number": null,
+    "ref": "feature/email-vo",
+    "base_sha": null,
+    "head_sha": null,
+    "title": "Add Email value object"
+  },
+  "summary": "Adds an immutable Email value object with normalization, validation and value equality, plus unit tests. The change is clean and low risk; the only note is that the raw address is echoed in the error message.",
+  "findings": [
+    {
+      "id": "F01",
+      "file": "services/customer-service/src/domain/value-objects/email.ts",
+      "side": "new",
+      "line_start": 11,
+      "line_end": 11,
+      "severity": "low",
+      "category": "privacy",
+      "summary": "Raw email address is included in the error message",
+      "rationale": "The DomainError message interpolates the user's input. Domain errors are commonly logged or returned to clients, so this can leak personal data into logs.",
+      "suggestion": "Use a generic message such as 'Invalid email address' and, if needed, attach a masked value or a field name instead of the raw input.",
+      "confidence": 0.7,
+      "evidence": [
+        "throw new DomainError(`Invalid email address: ${raw}`);"
+      ],
+      "verification": { "status": "verified" }
+    }
+  ],
+  "dropped": [
+    {
+      "id": "F02",
+      "file": "services/customer-service/src/domain/value-objects/email.ts",
+      "line_start": 3,
+      "line_end": 3,
+      "summary": "Email pattern rejects addresses with uppercase letters",
+      "reason": "claim_not_supported",
+      "note": "The character classes accept any non-space, non-@ character, and create() lowercases the input before testing."
+    }
+  ],
+  "stats": { "files_reviewed": 2, "files_skipped": [] }
+}

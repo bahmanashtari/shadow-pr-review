@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shadow-pr-review.local/schemas/audio-manifest.schema.json",
+  "title": "AudioManifest",
+  "description": "Contract for audio/manifest.json. Produced by the TTS stage. Durations are measured from the written files (ffprobe or the WAV header), never estimated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "provider", "voice", "sample_rate", "clips"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "provider": { "type": "string", "examples": ["kokoro-http", "piper", "openai"] },
+    "voice": { "type": "string", "examples": ["af_heart", "am_michael"] },
+    "speed": { "type": "number", "minimum": 0.5, "maximum": 2.0, "default": 1.0 },
+    "sample_rate": { "type": "integer", "examples": [24000] },
+    "clips": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step_id", "path", "duration_ms", "cache_key"],
+        "properties": {
+          "step_id": { "type": "string", "pattern": "^S[0-9]{2}$" },
+          "path": { "type": "string", "description": "Relative to the run folder, e.g. audio/S01.wav" },
+          "duration_ms": { "type": "integer", "minimum": 1 },
+          "cache_key": { "type": "string", "description": "sha256 of provider + voice + speed + normalized text." },
+          "cached": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

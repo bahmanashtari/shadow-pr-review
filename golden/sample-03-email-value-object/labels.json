@@ -1,0 +1,30 @@
+{
+  "sample": "sample-03-email-value-object",
+  "must_find": [],
+  "acceptable": [
+    {
+      "key": "pii-in-error",
+      "file": "services/customer-service/src/domain/value-objects/email.ts",
+      "line_start": 11, "line_end": 11,
+      "category": "privacy",
+      "description": "Raw email address is included in the error message and may end up in logs."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "regex-case-sensitivity",
+      "file": "services/customer-service/src/domain/value-objects/email.ts",
+      "description": "Claim that the pattern rejects uppercase letters. It does not, and the input is lowercased first anyway."
+    },
+    {
+      "key": "regex-not-rfc5322",
+      "description": "Demanding full RFC 5322 validation. A pragmatic pattern is a reasonable choice for a value object."
+    },
+    {
+      "key": "missing-tests",
+      "description": "Tests are included in the change."
+    }
+  ],
+  "max_findings": 1,
+  "notes": "This sample checks restraint. A good run keeps at most one low-severity finding and says clearly that the change looks good."
+}

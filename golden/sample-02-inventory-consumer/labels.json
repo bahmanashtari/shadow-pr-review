@@ -1,0 +1,56 @@
+{
+  "sample": "sample-02-inventory-consumer",
+  "must_find": [
+    {
+      "key": "non-idempotent-consumer",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "line_start": 14, "line_end": 18,
+      "category": "idempotency",
+      "accept_categories": ["event-consistency", "correctness"],
+      "min_severity": "high",
+      "description": "Redelivered order.placed events decrement stock again; no dedupe by orderId/eventId."
+    },
+    {
+      "key": "not-null-without-default",
+      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
+      "line_start": 5, "line_end": 7,
+      "category": "data-migration",
+      "accept_categories": ["correctness"],
+      "min_severity": "high",
+      "description": "ADD COLUMN ... NOT NULL without DEFAULT fails on PostgreSQL when stock_item already has rows."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "partial-decrement",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "line_start": 16, "line_end": 18,
+      "category": "concurrency",
+      "description": "Per-item decrements are not atomic; a failure midway leaves partial updates."
+    },
+    {
+      "key": "empty-down",
+      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
+      "line_start": 10, "line_end": 10,
+      "category": "data-migration",
+      "description": "down() is empty, so the migration cannot be reverted."
+    },
+    {
+      "key": "payload-not-validated",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "line_start": 5, "line_end": 8,
+      "category": "api-contract",
+      "description": "Payload is a local interface with no runtime validation."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "controller-decorator",
+      "description": "Using @Controller() for a NestJS microservice event handler is the standard pattern, not a bug."
+    },
+    {
+      "key": "sequential-await-performance",
+      "description": "Sequential awaits in the loop are not a meaningful performance issue here."
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "pull_request",
+    "repo": "acme/shop-platform",
+    "pr_number": 157,
+    "ref": "feature/stock-on-order",
+    "base_sha": null,
+    "head_sha": null,
+    "title": "Decrement stock when an order is placed"
+  },
+  "summary": "Adds an inventory consumer for order.placed that decrements stock per item, plus a migration adding a reserved_quantity column. The consumer is unsafe under redelivery, and the migration will fail on any database that already has stock rows.",
+  "findings": [
+    {
+      "id": "F01",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "side": "new",
+      "line_start": 14,
+      "line_end": 18,
+      "severity": "high",
+      "category": "idempotency",
+      "summary": "Consumer is not idempotent, so redelivered events decrement stock twice",
+      "rationale": "Brokers deliver at least once, so the same order.placed event can arrive more than once (retries, rebalances, restarts). The handler decrements stock every time it runs and never checks whether this orderId was already processed.",
+      "suggestion": "Record processed events (for example an inbox table keyed by eventId or orderId with a unique constraint) in the same transaction as the stock update, and skip events that are already recorded.",
+      "confidence": 0.92,
+      "evidence": [
+        "@EventPattern('order.placed')",
+        "await this.stock.decrement(item.sku, item.quantity);"
+      ],
+      "verification": { "status": "verified" }
+    },
+    {
+      "id": "F02",
+      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
+      "side": "new",
+      "line_start": 5,
+      "line_end": 7,
+      "severity": "high",
+      "category": "data-migration",
+      "summary": "NOT NULL column added without a default will fail on existing rows",
+      "rationale": "In PostgreSQL, adding a NOT NULL column with no default fails if stock_item already contains rows, because existing rows would hold NULL. This migration will pass on an empty dev database and fail in staging or production.",
+      "suggestion": "Add the column with DEFAULT 0 (fast in modern PostgreSQL for constant defaults), or add it nullable, backfill, then set NOT NULL in a follow-up migration.",
+      "confidence": 0.95,
+      "evidence": [
+        "ADD COLUMN \"reserved_quantity\" integer NOT NULL"
+      ],
+      "verification": { "status": "verified" }
+    },
+    {
+      "id": "F03",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "side": "new",
+      "line_start": 16,
+      "line_end": 18,
+      "severity": "medium",
+      "category": "concurrency",
+      "summary": "Per-item decrements are not atomic across the order",
+      "rationale": "Each item is decremented in its own call. If a later item fails (for example insufficient stock), earlier items stay decremented, and a redelivery applies them again. Stock ends up inconsistent with the order.",
+      "suggestion": "Move the loop into a single application-service method that updates all items in one transaction, ideally with row locks or a conditional update (quantity >= requested), and emits a failure event if any item cannot be reserved.",
+      "confidence": 0.8,
+      "evidence": [
+        "for (const item of event.items) {"
+      ],
+      "verification": { "status": "verified" }
+    },
+    {
+      "id": "F04",
+      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
+      "side": "new",
+      "line_start": 10,
+      "line_end": 10,
+      "severity": "low",
+      "category": "data-migration",
+      "summary": "Empty down() makes the migration irreversible",
+      "rationale": "down() does nothing, so reverting this migration leaves the column in place and the migration history out of sync with the schema.",
+      "suggestion": "Drop the column in down(): ALTER TABLE \"stock_item\" DROP COLUMN \"reserved_quantity\".",
+      "confidence": 0.9,
+      "evidence": [
+        "public async down(queryRunner: QueryRunner): Promise<void> {}"
+      ],
+      "verification": { "status": "downgraded", "original_severity": "medium", "note": "Real, but only affects rollback, not forward deploys." }
+    }
+  ],
+  "dropped": [
+    {
+      "id": "F05",
+      "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
+      "line_start": 10,
+      "line_end": 10,
+      "summary": "Event consumer should not use @Controller()",
+      "reason": "claim_not_supported",
+      "note": "NestJS microservice message and event handlers are declared on controllers; this is the documented pattern."
+    }
+  ],
+  "stats": { "files_reviewed": 2, "files_skipped": [] }
+}

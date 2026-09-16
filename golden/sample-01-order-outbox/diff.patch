@@ -1,0 +1,37 @@
+diff --git a/services/order-service/src/application/commands/place-order.handler.ts b/services/order-service/src/application/commands/place-order.handler.ts
+new file mode 100644
+index 0000000..3f2a9c1
+--- /dev/null
++++ b/services/order-service/src/application/commands/place-order.handler.ts
+@@ -0,0 +1,31 @@
++import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
++import { DataSource } from 'typeorm';
++import { ClientProxy } from '@nestjs/microservices';
++import { Inject } from '@nestjs/common';
++import { PlaceOrderCommand } from './place-order.command';
++import { Order } from '../../domain/order.aggregate';
++import { OrderEntity } from '../../infrastructure/persistence/order.entity';
++
++@CommandHandler(PlaceOrderCommand)
++export class PlaceOrderHandler implements ICommandHandler<PlaceOrderCommand> {
++  constructor(
++    private readonly dataSource: DataSource,
++    @Inject('EVENT_BUS') private readonly broker: ClientProxy,
++  ) {}
++
++  async execute(command: PlaceOrderCommand): Promise<string> {
++    const order = Order.place(command.customerId, command.items);
++
++    await this.dataSource.transaction(async (manager) => {
++      await manager.save(OrderEntity, OrderEntity.fromDomain(order));
++
++      this.broker.emit('order.placed', {
++        orderId: order.id,
++        customerId: order.customerId,
++        total: order.total,
++      });
++    });
++
++    return order.id;
++  }
++}

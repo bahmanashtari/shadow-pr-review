@@ -1,0 +1,42 @@
+{
+  "name": "shadow-pr-review",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI code review that produces a narrated walkthrough video of a diff.",
+  "type": "module",
+  "bin": {
+    "spr": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "spr": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "gen:types": "tsx scripts/gen-types.ts",
+    "check:types": "tsx scripts/gen-types.ts --check",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm check:types && pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.3",
+    "eslint": "^10.10.0",
+    "json-schema-to-typescript": "^16.0.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.1"
+  }
+}

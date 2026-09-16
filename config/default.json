@@ -1,0 +1,55 @@
+{
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "maxRetries": 2,
+    "temperature": 0
+  },
+  "budgets": {
+    "inputTokens": 200000,
+    "outputTokens": 20000,
+    "toolCalls": 30,
+    "agentSteps": 12,
+    "wallClockSeconds": 300
+  },
+  "ingest": {
+    "ignoreGlobs": [
+      "**/package-lock.json",
+      "**/pnpm-lock.yaml",
+      "**/yarn.lock",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/node_modules/**",
+      "**/*.snap",
+      "**/*.min.js",
+      "**/generated/**"
+    ],
+    "maxFileBytes": 200000,
+    "maxDiffBytes": 400000
+  },
+  "review": {
+    "maxRawFindings": 15,
+    "maxFindings": 10
+  },
+  "narration": {
+    "maxWordsPerStep": 60,
+    "language": "en-US"
+  },
+  "tts": {
+    "provider": "kokoro-http",
+    "baseUrl": "http://localhost:8880",
+    "voice": "af_heart",
+    "speed": 1.0
+  },
+  "video": {
+    "width": 1280,
+    "height": 720,
+    "theme": "dark",
+    "gapMs": 400,
+    "subtitles": "sidecar"
+  },
+  "runs": {
+    "dir": "runs"
+  }
+}

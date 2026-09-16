@@ -1,0 +1,54 @@
+# CI for the shadow-pr-review tool itself (lint, types, tests).
+# The video-review workflow for service repos comes in Milestone 4
+# (see docs/cheatsheets/github-integration.md).
+# Pin actions to a version or commit SHA; verify current versions on github.com.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable pnpm (version from package.json "packageManager")
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generated types are up to date
+        run: pnpm check:types
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

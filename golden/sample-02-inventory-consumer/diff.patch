@@ -1,0 +1,43 @@
+diff --git a/services/inventory-service/src/interface/messaging/order-placed.consumer.ts b/services/inventory-service/src/interface/messaging/order-placed.consumer.ts
+new file mode 100644
+index 0000000..8b1d4e7
+--- /dev/null
++++ b/services/inventory-service/src/interface/messaging/order-placed.consumer.ts
+@@ -0,0 +1,20 @@
++import { Controller } from '@nestjs/common';
++import { EventPattern, Payload } from '@nestjs/microservices';
++import { StockService } from '../../application/stock.service';
++
++interface OrderPlacedPayload {
++  orderId: string;
++  items: { sku: string; quantity: number }[];
++}
++
++@Controller()
++export class OrderPlacedConsumer {
++  constructor(private readonly stock: StockService) {}
++
++  @EventPattern('order.placed')
++  async handle(@Payload() event: OrderPlacedPayload): Promise<void> {
++    for (const item of event.items) {
++      await this.stock.decrement(item.sku, item.quantity);
++    }
++  }
++}
+diff --git a/services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts b/services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts
+new file mode 100644
+index 0000000..c42e9a0
+--- /dev/null
++++ b/services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts
+@@ -0,0 +1,11 @@
++import { MigrationInterface, QueryRunner } from 'typeorm';
++
++export class AddReservedQuantity1726400000000 implements MigrationInterface {
++  public async up(queryRunner: QueryRunner): Promise<void> {
++    await queryRunner.query(
++      `ALTER TABLE "stock_item" ADD COLUMN "reserved_quantity" integer NOT NULL`,
++    );
++  }
++
++  public async down(queryRunner: QueryRunner): Promise<void> {}
++}
