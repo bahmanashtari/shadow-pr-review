@@ -1,7 +1,7 @@
 {
   "llm": {
     "provider": "ollama",
-    "model": "mistral-small3.2:latest",
+    "model": "qwen3:30b",
     "baseUrl": "http://localhost:11434",
     "maxRetries": 2,
     "temperature": 0

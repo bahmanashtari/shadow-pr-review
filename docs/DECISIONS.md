@@ -170,3 +170,31 @@ Add new decisions at the bottom. Never delete; supersede instead.
   golden set. The cache is content-addressed, so a changed prompt or schema misses rather
   than returning stale output, and deleting the directory is always safe. `SPR_CACHE_ENABLED=false`
   forces a cold run when measuring real latency or cost.
+
+## ADR-018: qwen3:30b replaces mistral-small3.2 as the default Reviewer model (accepted, September 2026)
+- Context: ADR-015 named `mistral-small3.2` provisionally and said step 7's `spr eval` would
+  score the installed candidates and let the winner replace it. An early version of that
+  measurement was run on `sample-01-order-outbox` and `sample-02-inventory-consumer` with
+  `docs/REVIEW_RUBRIC.md` as the system prompt and `schemas/review.schema.json` constraining
+  decoding, scoring each finding with the real `HunkIndex.hasRange` and `containsSnippet`.
+- Findings of the trial (2 samples, 4 `must_find` labels):
+
+  | Model | must_find | evidence survives the Verifier | line ranges | seconds |
+  |---|---|---|---|---|
+  | `qwen3:30b` (thinking off) | 4 of 4 | 3 of 5 | 5 of 5 | 10-21 |
+  | `mistral-small3.2` | 3 of 4 | 7 of 7 | 7 of 7 | 72-73 |
+  | `qwen3:30b` (thinking on) | 2 of 4 | 3 of 3 | 3 of 3 | 59-108 |
+
+- Decision: Default to `qwen3:30b` with thinking disabled. It has the best recall, assigns
+  the better category (`data-migration` where mistral said `maintainability`), and is three
+  to seven times faster. Its only failure mode, copying the rendered line-number prefix into
+  the evidence string, is a prompt and rendering problem rather than a model weakness.
+- Notes that shaped this: **thinking made the model worse**, not better - with thinking on it
+  produced fewer findings and missed two of the four labelled issues, while costing 5 to 10
+  times the wall clock, so `providers/llm/ollama.ts` must send `think: false`. Both models
+  mis-categorise (`event-consistency` where the label says `idempotency`), so the Reviewer
+  prompt must anchor categories as explicitly as ADR-015 says it must anchor severity.
+- Consequences: `mistral-small3.2` stays a supported fallback. The choice remains provisional
+  until step 7 scores all three golden samples with precision and recall, including
+  `must_not_flag`. `budgets.inputTokens` (96000) still fits: qwen3:30b's context is 262144,
+  twice mistral's.

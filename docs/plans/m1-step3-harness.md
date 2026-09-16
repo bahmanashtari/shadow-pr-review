@@ -93,11 +93,14 @@ and fails with a `StageError` when `anthropic` is selected without `ANTHROPIC_AP
 - `format` takes the output JSON Schema, which constrains decoding (ADR-015): conformance
   comes from the provider, not from retries.
 - `options: { temperature, num_ctx }`; `tools` for tool calling.
+- `think: false`. Measured on the golden set (ADR-018), thinking made `qwen3:30b` produce
+  fewer findings, miss two of four labelled issues, and cost 5 to 10 times the wall clock.
 - Usage from `prompt_eval_count` and `eval_count`; both cache fields 0.
 - `estimateCostUsd` returns 0.
-- `contextTokens` from a small table keyed by model name (`mistral-small3.2` 131072, the
-  two `qwen3` sizes), defaulting to a conservative 32768 for an unknown model, with the
-  chosen value written to the trace so a wrong guess is visible.
+- `contextTokens` from a small table keyed by model name, read from the values `ollama show`
+  reports: `qwen3:30b` and `qwen3:4b` 262144, `mistral-small3.2` 131072. An unknown model
+  defaults to a conservative 32768, and the chosen value is written to the trace so a wrong
+  guess is visible.
 - The provider takes `fetchImpl: typeof fetch` (default `globalThis.fetch`), so tests drive
   it with a stub and never open a socket.
 
@@ -211,15 +214,42 @@ A manual smoke test (not in `pnpm test`, since it needs a model) runs the loop a
 local Ollama with a toy schema and tool. `ollama serve` is up on this machine with
 `mistral-small3.2`, `qwen3:30b` and `qwen3:4b` pulled.
 
+## 10a. What the model trial changed (added after the plan was drafted)
+
+Running the real rubric against the golden samples (ADR-018) turned up two things that the
+harness has to get right, because they decide whether a finding survives step 5 at all.
+
+- **The Reviewer must be shown a diff with explicit new-side line numbers.** Given a raw
+  patch, every model guessed line numbers badly: `qwen3:30b` labelled all three of its
+  findings `15-15` when the real lines were 7, 13 and 22. Given the same diff rendered from
+  `ingest.json` with the line number on each line, every range it produced passed
+  `HunkIndex.hasRange`. The numbers are already in `ingest.json`, so this costs nothing.
+- **Evidence has to be demanded, in the schema and in the prompt.** With `evidence` optional,
+  `qwen3:30b` returned `[]` every time and `mistral-small3.2` invented paraphrases such as
+  `this.broker.emit('order.placed', { ... })` and whole sentences of prose. Every one of those
+  findings would be dropped by `containsSnippet`, including the primary bug in sample 01.
+  With evidence required and the prompt demanding an exact copied line, both models produced
+  snippets that matched the diff character for character.
+- One failure mode survives and needs a decision: asked to copy a line exactly, `qwen3:30b`
+  sometimes copies the rendered prefix too (`"  14 +  @EventPattern('order.placed')"`), which
+  fails matching even though the line is real. Either the renderer uses a prefix that is
+  harder to copy by accident, or `containsSnippet` strips a leading line-number and marker
+  prefix before matching. Stripping cannot let a fabricated snippet through, so it is the
+  safer of the two, but it changes shipped step 2 code and is listed below.
+
 ## 11. Open questions
 
-1. **`review.schema.json` caps `findings` at 10, but `config.review.maxRawFindings` is 15.**
+0. **Should `evidence` become required, with `minItems: 1`?** CLAUDE.md principle 5 says
+   every finding carries verbatim evidence, but the schema makes `evidence` optional with no
+   minimum, and the trial shows models take that option. This is the single highest-value
+   change to the review contract, and it is what made the second trial work. Needs approval.
+1. ~~**`review.schema.json` caps `findings` at 10, but `config.review.maxRawFindings` is 15.**~~
    Step 4 writes `review.raw.json` against the review schema, so 15 raw findings cannot
    validate. This does not block step 3, but it blocks step 4, and it is a contract change
    either way: raise `maxItems` to 15 and let the verifier cap at 10, add a separate raw
    schema, or lower `maxRawFindings` to 10. My preference is raising `maxItems` to 15 and
    keeping the cap of 10 in the verifier, since `dropped` already records what was cut.
-2. The `cache` config section in section 9.
+2. ~~The `cache` config section in section 9.~~ Approved; implemented in ADR-017.
 3. Should `trace.jsonl` and `cost.json` get JSON Schemas in `schemas/`? They are
    diagnostics, not cross-stage contracts, so I propose typed interfaces and tests only.
 4. Is prompt caching on by default for Anthropic acceptable? It is a cost win and changes
