@@ -15,11 +15,15 @@ const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
 /** Builds the provider for a run. */
 export function createProvider(config: SprConfig, secrets: Secrets = {}): LlmProvider {
-  const { provider, model, baseUrl, effort } = config.llm;
+  const { provider, model, baseUrl, effort, think } = config.llm;
 
   switch (provider) {
     case "ollama":
-      return new OllamaProvider({ model, baseUrl: baseUrl ?? DEFAULT_OLLAMA_URL });
+      return new OllamaProvider({
+        model,
+        baseUrl: baseUrl ?? DEFAULT_OLLAMA_URL,
+        ...(think === undefined ? {} : { think }),
+      });
 
     case "anthropic":
       return new AnthropicProvider({

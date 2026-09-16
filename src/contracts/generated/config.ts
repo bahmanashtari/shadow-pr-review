@@ -17,6 +17,10 @@ export interface SprConfig {
      * Reasoning effort. Only the hosted Anthropic provider uses this; Ollama ignores it.
      */
     effort?: "low" | "medium" | "high" | "xhigh" | "max";
+    /**
+     * Let an Ollama model think before answering. Default false: measured on the golden set it lowered recall and cost 5 to 10 times the wall clock (ADR-018). Kept configurable so the eval can re-test it.
+     */
+    think?: boolean;
     maxRetries: number;
     temperature: number;
   };

@@ -59,6 +59,13 @@ describe("OllamaProvider", () => {
     expect(body.tools).toBeUndefined();
   });
 
+  it("can be told to think, but does not by default", () => {
+    const off = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });
+    const on = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x", think: true });
+    expect(off.buildBody(REQUEST).think).toBe(false);
+    expect(on.buildBody(REQUEST).think).toBe(true);
+  });
+
   it("clamps the allocated context to what the model supports", () => {
     const provider = new OllamaProvider({
       model: "unknown-model",

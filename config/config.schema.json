@@ -20,6 +20,10 @@
           "enum": ["low", "medium", "high", "xhigh", "max"],
           "description": "Reasoning effort. Only the hosted Anthropic provider uses this; Ollama ignores it."
         },
+        "think": {
+          "type": "boolean",
+          "description": "Let an Ollama model think before answering. Default false: measured on the golden set it lowered recall and cost 5 to 10 times the wall clock (ADR-018). Kept configurable so the eval can re-test it."
+        },
         "maxRetries": { "type": "integer", "minimum": 0, "maximum": 5 },
         "temperature": { "type": "number", "minimum": 0, "maximum": 1 }
       }

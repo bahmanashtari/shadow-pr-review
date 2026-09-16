@@ -48,6 +48,8 @@ export interface OllamaProviderOptions {
   fetchImpl?: typeof fetch;
   /** Context to allocate for the request. Clamped to the model's limit. */
   numCtx?: number;
+  /** Let the model think first. Default false; see ADR-018 before turning it on. */
+  think?: boolean;
   timeoutMs?: number;
 }
 
@@ -120,6 +122,7 @@ export class OllamaProvider implements LlmProvider {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly numCtx: number;
+  private readonly think: boolean;
   private readonly timeoutMs: number;
 
   constructor(options: OllamaProviderOptions) {
@@ -128,6 +131,7 @@ export class OllamaProvider implements LlmProvider {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.numCtx = Math.min(options.numCtx ?? DEFAULT_NUM_CTX, this.contextTokens);
+    this.think = options.think ?? false;
     this.timeoutMs = options.timeoutMs ?? 600_000;
   }
 
@@ -136,8 +140,9 @@ export class OllamaProvider implements LlmProvider {
     const body: Record<string, unknown> = {
       model: this.model,
       stream: false,
-      // ADR-018: thinking measurably hurt review quality and cost 5-10x the time.
-      think: false,
+      // ADR-018: measured on the golden set, thinking lowered recall and cost 5-10x the
+      // wall clock. Configurable so `spr eval` can re-test it rather than trusting one run.
+      think: this.think,
       messages: toOllamaMessages(request.system, request.messages),
       options: { temperature: request.temperature, num_ctx: this.numCtx },
     };
