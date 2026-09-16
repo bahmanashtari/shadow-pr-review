@@ -1,0 +1,6 @@
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+old mode 100644
+new mode 100755
+diff --git a/scripts/my script.sh b/scripts/my script.sh
+old mode 100644
+new mode 100755

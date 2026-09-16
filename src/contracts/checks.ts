@@ -1,9 +1,9 @@
 /**
  * Cross-field and cross-file rules that JSON Schema cannot express.
  * Every function returns a list of problems; an empty list means the value is consistent.
- * Rules that need the diff (lines exist, evidence appears) arrive with the hunk index
- * in Milestone 1 step 2 and live in the ingest/verify code.
+ * Rules that need the diff (lines exist, evidence appears) live in `ingest/hunk-index.ts`.
  */
+import type { IngestResult, KeptFile } from "./generated/ingest.js";
 import type { ReviewResult, Severity } from "./generated/review.js";
 import type { NarrationScript } from "./generated/script.js";
 import type { AudioManifest } from "./generated/audio-manifest.js";
@@ -218,6 +218,115 @@ export function checkTimeline(timeline: Timeline, manifest?: AudioManifest): str
         problems.push(`/step_windows/${i}: window length must equal clip duration ${d} ms`);
       }
     });
+  }
+
+  return problems;
+}
+
+/** Checks one kept file's hunks: line counts, numbering, and end-of-file markers. */
+function checkKeptFile(file: KeptFile, at: string): string[] {
+  const problems: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+  const sides = { old: [] as boolean[], new: [] as boolean[] };
+
+  file.hunks.forEach((hunk, h) => {
+    const where = `${at}/hunks/${h}`;
+    let oldCount = 0;
+    let newCount = 0;
+    let oldNext = hunk.old_start;
+    let newNext = hunk.new_start;
+
+    hunk.lines.forEach((line, l) => {
+      const lineAt = `${where}/lines/${l}`;
+      const onOld = line.kind !== "add";
+      const onNew = line.kind !== "del";
+
+      if (onOld && line.old === null) problems.push(`${lineAt}: ${line.kind} line needs old`);
+      if (!onOld && line.old !== null) problems.push(`${lineAt}: add line must have old null`);
+      if (onNew && line.new === null) problems.push(`${lineAt}: ${line.kind} line needs new`);
+      if (!onNew && line.new !== null) problems.push(`${lineAt}: del line must have new null`);
+
+      if (onOld) {
+        oldCount += 1;
+        if (hunk.old_lines > 0 && line.old !== null && line.old !== oldNext) {
+          problems.push(`${lineAt}: old line ${line.old} breaks the run from ${hunk.old_start}`);
+        }
+        oldNext += 1;
+        sides.old.push(line.no_newline_at_eof === true);
+      }
+      if (onNew) {
+        newCount += 1;
+        if (hunk.new_lines > 0 && line.new !== null && line.new !== newNext) {
+          problems.push(`${lineAt}: new line ${line.new} breaks the run from ${hunk.new_start}`);
+        }
+        newNext += 1;
+        sides.new.push(line.no_newline_at_eof === true);
+      }
+      if (line.kind === "add") additions += 1;
+      if (line.kind === "del") deletions += 1;
+    });
+
+    if (oldCount !== hunk.old_lines) {
+      problems.push(`${where}: header says ${hunk.old_lines} old lines, found ${oldCount}`);
+    }
+    if (newCount !== hunk.new_lines) {
+      problems.push(`${where}: header says ${hunk.new_lines} new lines, found ${newCount}`);
+    }
+  });
+
+  if (file.additions !== additions) {
+    problems.push(`${at}: additions ${file.additions} does not match ${additions} added lines`);
+  }
+  if (file.deletions !== deletions) {
+    problems.push(`${at}: deletions ${file.deletions} does not match ${deletions} deleted lines`);
+  }
+
+  for (const side of ["old", "new"] as const) {
+    const flags = sides[side];
+    const marked = flags.flatMap((flag, i) => (flag ? [i] : []));
+    if (marked.length > 1) {
+      problems.push(`${at}: no_newline_at_eof appears ${marked.length} times on the ${side} side`);
+    } else if (marked.length === 1 && marked[0] !== flags.length - 1) {
+      problems.push(`${at}: no_newline_at_eof is not on the last ${side} line`);
+    }
+  }
+
+  return problems;
+}
+
+/** Checks an ingest.json for rules beyond its schema. */
+export function checkIngest(ingest: IngestResult): string[] {
+  const problems: string[] = [];
+
+  const paths = [...ingest.files.map((f) => f.path), ...ingest.skipped.map((s) => s.file)];
+  for (const path of duplicates(paths)) problems.push(`file ${path} appears more than once`);
+
+  ingest.files.forEach((file, i) => {
+    problems.push(...checkKeptFile(file, `/files/${i} (${file.path})`));
+  });
+
+  const stats = ingest.stats;
+  const additions = ingest.files.reduce((sum, f) => sum + f.additions, 0);
+  const deletions = ingest.files.reduce((sum, f) => sum + f.deletions, 0);
+  if (stats.files_kept !== ingest.files.length) {
+    problems.push(`stats.files_kept ${stats.files_kept} does not match ${ingest.files.length}`);
+  }
+  if (stats.files_skipped !== ingest.skipped.length) {
+    problems.push(
+      `stats.files_skipped ${stats.files_skipped} does not match ${ingest.skipped.length}`,
+    );
+  }
+  if (stats.files_total !== ingest.files.length + ingest.skipped.length) {
+    problems.push(
+      `stats.files_total ${stats.files_total} does not match ${ingest.files.length + ingest.skipped.length}`,
+    );
+  }
+  if (stats.additions !== additions) {
+    problems.push(`stats.additions ${stats.additions} does not match ${additions}`);
+  }
+  if (stats.deletions !== deletions) {
+    problems.push(`stats.deletions ${stats.deletions} does not match ${deletions}`);
   }
 
   return problems;

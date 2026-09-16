@@ -72,7 +72,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (Milestone 1, step 1):
+Available now (Milestone 1, steps 1 and 2):
 
 ```
 pnpm install
@@ -84,33 +84,32 @@ pnpm format / pnpm format:check            # prettier (code only; docs, schemas,
 pnpm test                                  # vitest
 pnpm verify                                # check:types + typecheck + lint + test
 pnpm build                                 # tsc -> dist/
-pnpm spr validate <files...> [--schema review|script|audio-manifest|timeline]
+pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timeline]
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Pipeline commands: registered in `src/cli.ts`, but no stage is implemented yet, so each of
-these currently exits with code 2.
+Ingest runs for real. `--until ingest` exits 0 after the stage; without it the run stops at
+the first stage that is not built and exits 2, keeping the run folder.
 
 ```
-pnpm spr run --diff path/to/change.patch [--out runs/x]   # local diff file
-pnpm spr run --git HEAD~1..HEAD                     # local commits (A...B diffs from the merge base)
-pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <name> --run runs/<id>               # re-run a single stage
-pnpm spr eval golden/                               # precision/recall on golden set (step 7)
-```
-
-Not implemented yet. The first four arrive with Milestone 1, step 2
-(`docs/plans/m1-step2-ingest.md`); the last with Milestone 2:
-
-```
-pnpm spr run --diff change.patch --title "..."      # --title option
-pnpm spr run --git main...HEAD --until ingest       # stop after a stage, exit 0
+pnpm spr run --diff change.patch --until ingest [--title "..."] [--out runs/x] [--force]
+pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
-docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container
 ```
 
-Once the pipeline runs, each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
-characters of the diff's sha256 for `--diff`):
+Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
+
+```
+pnpm spr run --diff change.patch                    # stops after ingest until step 4 lands
+pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
+pnpm spr stage <review|verify|narrate|...> --run runs/<id>
+pnpm spr eval golden/                               # precision/recall on golden set (step 7)
+docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container (Milestone 2)
+```
+
+Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
+characters of the diff's sha256 for `--diff`). Ingest writes the first three; the rest follow
+as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json, audio/, timeline.json,
 video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
 
@@ -138,9 +137,8 @@ video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
   or provide them as CI secrets.
 - The default LLM provider is local Ollama and costs nothing (ADR-015). A hosted model is
   opt-in per run: `SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-haiku-4-5 pnpm spr run ...`.
-- Installed: `ajv`, `commander` (runtime); `typescript`, `tsx`, `vitest`, `eslint`,
-  `typescript-eslint`, `prettier`, `json-schema-to-typescript` (dev).
-- Added by Milestone 1, step 2: `execa`, `picomatch` (runtime).
+- Installed: `ajv`, `commander`, `execa`, `picomatch` (runtime); `typescript`, `tsx`, `vitest`,
+  `eslint`, `typescript-eslint`, `prettier`, `json-schema-to-typescript`, `@types/picomatch` (dev).
 - Planned libraries (verify current versions when adding): `@anthropic-ai/sdk`,
   `playwright` (library, not the test runner), `diff2html`, `@octokit/rest`, `pino`.
   No diff-parsing library (ADR-014).

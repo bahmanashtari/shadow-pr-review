@@ -1,0 +1,12 @@
+--- src/plain.ts	2026-09-01 10:00:00.000000000 +0000
++++ src/plain.ts	2026-09-02 10:00:00.000000000 +0000
+@@ -1,3 +1,3 @@
+ export const a = 1;
+-export const b = 2;
++export const b = 3;
+ export const d = 4;
+--- src/other.ts	2026-09-01 10:00:00.000000000 +0000
++++ src/other.ts	2026-09-02 10:00:00.000000000 +0000
+@@ -1 +1 @@
+-export const c = 1;
++export const c = 2;

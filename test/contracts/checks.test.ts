@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   checkAudioManifest,
+  checkIngest,
   checkReview,
   checkScript,
   checkTimeline,
   countWords,
 } from "../../src/contracts/checks.js";
+import type { IngestResult } from "../../src/contracts/generated/ingest.js";
 import type { AudioManifest } from "../../src/contracts/generated/audio-manifest.js";
 import type { Timeline } from "../../src/contracts/generated/timeline.js";
 import type { NarrationScript } from "../../src/contracts/generated/script.js";
@@ -185,5 +187,144 @@ describe("checkTimeline", () => {
     expect(problems).toContain("/step_windows/1: window length must equal clip duration 3000 ms");
     expect(problems).toContain("/actions/4: actions must be sorted by at_ms");
     expect(problems).toContain("/actions/4: highlight needs file, line_start and line_end");
+  });
+});
+
+/** A small, valid ingest.json: one modified file kept, one lockfile skipped. */
+function ingestFixture(): IngestResult {
+  const zeros = "0".repeat(64);
+  return {
+    schema_version: "1.0",
+    source: {
+      type: "local_diff",
+      repo: null,
+      pr_number: null,
+      ref: null,
+      base_sha: null,
+      head_sha: null,
+      title: null,
+    },
+    diff: {
+      raw_path: "diff.raw.patch",
+      raw_sha256: zeros,
+      raw_bytes: 10,
+      path: "diff.patch",
+      sha256: zeros,
+      bytes: 10,
+      truncated: false,
+    },
+    files: [
+      {
+        path: "src/app.ts",
+        old_path: null,
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        risk_score: 1,
+        hunks: [
+          {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            section: "",
+            lines: [
+              { kind: "context", old: 1, new: 1, text: "const a = 1;" },
+              { kind: "del", old: 2, new: null, text: "const b = 2;" },
+              { kind: "add", old: null, new: 2, text: "const b = 3;" },
+              { kind: "context", old: 3, new: 3, text: "const c = 4;" },
+            ],
+          },
+        ],
+      },
+    ],
+    skipped: [{ file: "pnpm-lock.yaml", status: "added", reason: "lockfile" }],
+    stats: { files_total: 2, files_kept: 1, files_skipped: 1, additions: 1, deletions: 1 },
+  };
+}
+
+function firstFile(ingest: IngestResult): IngestResult["files"][number] {
+  const file = ingest.files[0];
+  if (!file) throw new Error("fixture has no kept files");
+  return file;
+}
+
+function firstHunk(ingest: IngestResult): IngestResult["files"][number]["hunks"][number] {
+  const hunk = firstFile(ingest).hunks[0];
+  if (!hunk) throw new Error("fixture has no hunks");
+  return hunk;
+}
+
+describe("checkIngest", () => {
+  it("accepts a consistent result", () => {
+    expect(checkIngest(ingestFixture())).toEqual([]);
+  });
+
+  it("rejects a path that is both kept and skipped", () => {
+    const ingest = ingestFixture();
+    ingest.skipped = [{ file: "src/app.ts", status: "modified", reason: "too_large" }];
+    expect(checkIngest(ingest)).toContain("file src/app.ts appears more than once");
+  });
+
+  it("rejects stats that do not match the arrays", () => {
+    const ingest = ingestFixture();
+    ingest.stats = { ...ingest.stats, files_total: 5, additions: 7 };
+    const problems = checkIngest(ingest);
+    expect(problems).toContain("stats.files_total 5 does not match 2");
+    expect(problems).toContain("stats.additions 7 does not match 1");
+  });
+
+  it("rejects per-file counts that do not match the lines", () => {
+    const ingest = ingestFixture();
+    firstFile(ingest).additions = 4;
+    expect(checkIngest(ingest)).toContain(
+      "/files/0 (src/app.ts): additions 4 does not match 1 added lines",
+    );
+  });
+
+  it("rejects a hunk header that disagrees with its lines", () => {
+    const ingest = ingestFixture();
+    firstHunk(ingest).new_lines = 9;
+    expect(checkIngest(ingest)).toContain(
+      "/files/0 (src/app.ts)/hunks/0: header says 9 new lines, found 3",
+    );
+  });
+
+  it("rejects line numbers that do not run consecutively", () => {
+    const ingest = ingestFixture();
+    const line = firstHunk(ingest).lines[3];
+    if (!line) throw new Error("fixture changed");
+    line.new = 9;
+    expect(checkIngest(ingest).join("\n")).toContain("breaks the run from 1");
+  });
+
+  it("rejects a side number on the wrong kind of line", () => {
+    const ingest = ingestFixture();
+    const added = firstHunk(ingest).lines[2];
+    if (!added) throw new Error("fixture changed");
+    added.old = 2;
+    expect(checkIngest(ingest)).toContain(
+      "/files/0 (src/app.ts)/hunks/0/lines/2: add line must have old null",
+    );
+  });
+
+  it("rejects an end-of-file marker that is not on the last line of its side", () => {
+    const ingest = ingestFixture();
+    const context = firstHunk(ingest).lines[0];
+    if (!context) throw new Error("fixture changed");
+    context.no_newline_at_eof = true;
+    const problems = checkIngest(ingest);
+    expect(problems).toContain(
+      "/files/0 (src/app.ts): no_newline_at_eof is not on the last old line",
+    );
+    expect(problems).toContain(
+      "/files/0 (src/app.ts): no_newline_at_eof is not on the last new line",
+    );
+  });
+
+  it("rejects two end-of-file markers on one side", () => {
+    const ingest = ingestFixture();
+    for (const line of firstHunk(ingest).lines) line.no_newline_at_eof = true;
+    expect(checkIngest(ingest).join("\n")).toContain("appears 3 times on the old side");
   });
 });

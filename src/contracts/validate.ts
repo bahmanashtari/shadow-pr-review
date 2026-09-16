@@ -2,6 +2,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import { ContractError } from "../lib/errors.js";
 import { loadSchema, type ContractName } from "./schemas.js";
+import type { IngestResult } from "./generated/ingest.js";
 import type { ReviewResult } from "./generated/review.js";
 import type { NarrationScript } from "./generated/script.js";
 import type { AudioManifest } from "./generated/audio-manifest.js";
@@ -9,6 +10,7 @@ import type { Timeline } from "./generated/timeline.js";
 
 /** Maps each contract name to its generated TypeScript type. */
 export interface ContractTypes {
+  ingest: IngestResult;
   review: ReviewResult;
   script: NarrationScript;
   "audio-manifest": AudioManifest;

@@ -1,0 +1,11 @@
+diff --git a/src/template.ts b/src/copy-of-template.ts
+similarity index 95%
+copy from src/template.ts
+copy to src/copy-of-template.ts
+index 3333333..4444444 100644
+--- a/src/template.ts
++++ b/src/copy-of-template.ts
+@@ -1,2 +1,2 @@
+-export const NAME = 'template';
++export const NAME = 'copy';
+ export const VERSION = 1;

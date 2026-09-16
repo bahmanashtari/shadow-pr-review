@@ -10,6 +10,13 @@ describe("schemas", () => {
     // Compiling happens on first use; an empty object must fail, not throw.
     expect(validateContract(name, {}).ok).toBe(false);
   });
+
+  it("defines Source identically in the ingest and review schemas", () => {
+    // The Reviewer copies `source` straight from ingest.json into review.json.
+    const defsOf = (name: "ingest" | "review"): unknown =>
+      (loadSchema(name).$defs as Record<string, unknown>).Source;
+    expect(defsOf("ingest")).toEqual(defsOf("review"));
+  });
 });
 
 describe("validateContract", () => {
@@ -57,6 +64,8 @@ describe("validateContract", () => {
 
 describe("contractFromFileName", () => {
   it.each([
+    ["runs/x/ingest.json", "ingest"],
+    ["golden/s/ingest.expected.json", "ingest"],
     ["runs/x/review.json", "review"],
     ["runs/x/review.raw.json", "review"],
     ["golden/s/review.expected.json", "review"],

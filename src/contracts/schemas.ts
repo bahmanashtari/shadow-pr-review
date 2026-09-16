@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fromRoot } from "../lib/paths.js";
 
 /** Contract names, matching `schemas/<name>.schema.json`. */
-export const CONTRACT_NAMES = ["review", "script", "audio-manifest", "timeline"] as const;
+export const CONTRACT_NAMES = ["ingest", "review", "script", "audio-manifest", "timeline"] as const;
 export type ContractName = (typeof CONTRACT_NAMES)[number];
 
 /** Returns true when `value` is a known contract name. */
@@ -34,11 +34,13 @@ export function loadSchema(name: ContractName): Record<string, unknown> {
 }
 
 /**
- * Infers the contract from a file name such as `review.json`, `review.expected.json`,
- * `script.json` or `audio/manifest.json`. Returns undefined when it cannot tell.
+ * Infers the contract from a file name such as `ingest.json`, `review.json`,
+ * `review.expected.json`, `script.json` or `audio/manifest.json`.
+ * Returns undefined when it cannot tell.
  */
 export function contractFromFileName(filePath: string): ContractName | undefined {
   const base = filePath.replace(/\\/g, "/").split("/").pop() ?? "";
+  if (/^ingest(\.expected)?\.json$/.test(base)) return "ingest";
   if (/^review(\.raw|\.expected)?\.json$/.test(base)) return "review";
   if (/^script(\.expected)?\.json$/.test(base)) return "script";
   if (/^timeline(\.expected)?\.json$/.test(base)) return "timeline";

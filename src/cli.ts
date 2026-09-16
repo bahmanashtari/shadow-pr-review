@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, InvalidArgumentError } from "commander";
 import { loadConfig, readSecrets } from "./config.js";
-import { checkReview } from "./contracts/checks.js";
+import { checkIngest, checkReview } from "./contracts/checks.js";
 import {
   CONTRACT_NAMES,
   contractFromFileName,
@@ -11,7 +12,10 @@ import {
   type ContractName,
 } from "./contracts/schemas.js";
 import { validateContract } from "./contracts/validate.js";
+import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
+import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { ContractError, StageError } from "./lib/errors.js";
+import { createRunFolder } from "./lib/run-folder.js";
 
 const PIPELINE_STAGES = [
   "ingest",
@@ -25,6 +29,8 @@ const PIPELINE_STAGES = [
   "publish",
 ] as const;
 
+type StageName = (typeof PIPELINE_STAGES)[number];
+
 /** Thrown for commands that are planned but not built yet. */
 class NotImplementedError extends Error {
   override readonly name = "NotImplementedError";
@@ -37,12 +43,23 @@ function parseContract(value: string): ContractName {
   return value;
 }
 
+function parseStage(value: string): StageName {
+  if (!(PIPELINE_STAGES as readonly string[]).includes(value)) {
+    throw new InvalidArgumentError(`Expected one of: ${PIPELINE_STAGES.join(", ")}`);
+  }
+  return value as StageName;
+}
+
 function notYet(what: string, milestone: string): never {
   throw new NotImplementedError(`${what} is not implemented yet (${milestone}).`);
 }
 
 /** Schema errors, plus the file-local cross-field checks where they exist. */
 function contractProblems(contract: ContractName, data: unknown): string[] {
+  if (contract === "ingest") {
+    const ingest = validateContract("ingest", data);
+    return ingest.ok ? checkIngest(ingest.value) : ingest.errors;
+  }
   if (contract === "review") {
     const review = validateContract("review", data);
     return review.ok ? checkReview(review.value) : review.errors;
@@ -75,6 +92,68 @@ function validateFile(file: string, forced?: ContractName): boolean {
   return false;
 }
 
+/** Options of `spr run`, as Commander hands them over. */
+interface RunOptions {
+  diff?: string;
+  git?: string;
+  pr?: string;
+  repo?: string;
+  title?: string;
+  out?: string;
+  force?: boolean;
+  until?: StageName;
+}
+
+/** Prints where the run went and what ingest kept. */
+function report(runDir: string, summary: string): void {
+  console.log(`run folder: ${runDir}`);
+  console.log(summary);
+}
+
+/**
+ * `spr run`: reads the diff, writes the run folder, then walks the pipeline.
+ * Stops with exit code 2 at the first stage that is not built yet.
+ */
+async function runPipeline(opts: RunOptions): Promise<void> {
+  if (opts.pr !== undefined) notYet("spr run --pr", "Milestone 4");
+  if ((opts.diff === undefined) === (opts.git === undefined)) {
+    throw new InvalidArgumentError("Pass exactly one of --diff or --git");
+  }
+
+  const config = loadConfig();
+  const titleOption = opts.title === undefined ? {} : { title: opts.title };
+  const source =
+    opts.diff === undefined
+      ? await fromGitRange(opts.git ?? "", { cwd: process.cwd(), ...titleOption })
+      : fromDiffFile(opts.diff, titleOption);
+
+  const built = buildIngest({ rawDiff: source.rawDiff, source: source.source, config });
+  const runDir = createRunFolder({
+    runsDir: config.runs.dir,
+    id: source.id,
+    ...(opts.out === undefined ? {} : { out: opts.out }),
+    ...(opts.force === undefined ? {} : { force: opts.force }),
+  });
+  writeIngest(runDir, source.rawDiff, built);
+  report(runDir, summarize(built.ingest));
+
+  if (opts.until === "ingest") return;
+  throw new NotImplementedError(
+    `stopped after ingest: review is not implemented yet (Milestone 1, step 4). ` +
+      `Run folder: ${runDir}`,
+  );
+}
+
+/** `spr stage ingest`: re-filters `diff.raw.patch` with the current configuration. */
+function reingest(runDir: string): void {
+  const config = loadConfig();
+  const previous = readIngest(runDir);
+  const rawDiff = readRawDiff(runDir);
+  const built = buildIngest({ rawDiff, source: previous.source, config });
+  writeIngest(runDir, rawDiff, built);
+  report(path.resolve(runDir), summarize(built.ingest));
+}
+
 /** Builds the `spr` command tree. Exported for tests. */
 export function buildProgram(): Command {
   const program = new Command();
@@ -91,19 +170,21 @@ export function buildProgram(): Command {
     .option("--git <range>", "local git range, for example HEAD~1..HEAD")
     .option("--pr <number>", "GitHub pull request number")
     .option("--repo <owner/name>", "GitHub repository")
-    .option("--out <dir>", "run folder (default: runs/<timestamp>-<sha>)")
-    .action(() => notYet("spr run", "Milestone 1, steps 2 to 6"));
+    .option("--title <text>", "title for the intro (default: the commit subject)")
+    .option("--out <dir>", "run folder (default: runs/<timestamp>-<id>)")
+    .option("--force", "write into the run folder even when it already has files")
+    .option("--until <stage>", `stop after this stage: ${PIPELINE_STAGES.join(", ")}`, parseStage)
+    .action(runPipeline);
 
   program
     .command("stage")
     .description("Re-run a single stage on an existing run folder")
     .argument("<name>", `one of: ${PIPELINE_STAGES.join(", ")}`)
     .requiredOption("--run <dir>", "existing run folder")
-    .action((name: string) => {
-      if (!(PIPELINE_STAGES as readonly string[]).includes(name)) {
-        throw new InvalidArgumentError(`Unknown stage "${name}"`);
-      }
-      notYet(`spr stage ${name}`, "Milestone 1, steps 2 to 6");
+    .action((name: string, opts: { run: string }) => {
+      const stage = parseStage(name);
+      if (stage !== "ingest") notYet(`spr stage ${stage}`, "Milestone 1, steps 3 to 6");
+      reingest(opts.run);
     });
 
   program

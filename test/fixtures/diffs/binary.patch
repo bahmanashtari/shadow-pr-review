@@ -1,0 +1,17 @@
+diff --git a/assets/logo.png b/assets/logo.png
+new file mode 100644
+index 0000000..6666666
+Binary files /dev/null and b/assets/logo.png differ
+diff --git a/assets/icon.bin b/assets/icon.bin
+index 7777777..8888888 100644
+GIT binary patch
+delta 14
+VcmZ1~w@RdKkO2Ol
+
+diff --git a/src/app.ts b/src/app.ts
+index 9999999..aaaaaaa 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1 +1 @@
+-export const version = 1;
++export const version = 2;

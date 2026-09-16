@@ -1,0 +1,21 @@
+From 1234567890abcdef1234567890abcdef12345678 Mon Sep 17 00:00:00 2001
+From: Jane Doe <jane@example.com>
+Date: Tue, 1 Sep 2026 10:00:00 +0000
+Subject: [PATCH] Add two feature flags
+
+---
+ src/flags.ts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/flags.ts b/src/flags.ts
+index 0000000..1111111 100644
+--- a/src/flags.ts
++++ b/src/flags.ts
+@@ -1,2 +1,4 @@
+ export const flags = {
++  newThing: false,
++  otherThing: true,
+ };
+-- 
+2.50.1
+
