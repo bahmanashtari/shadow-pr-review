@@ -198,6 +198,23 @@ Add new decisions at the bottom. Never delete; supersede instead.
   until step 7 scores all three golden samples with precision and recall, including
   `must_not_flag`. `budgets.inputTokens` (96000) still fits: qwen3:30b's context is 262144,
   twice mistral's.
+- Update, same month: `qwen3-coder:30b` was pulled and measured against the default on all
+  three golden samples, with the grounded prompt and the line-numbered diff, scoring recall
+  automatically against `labels.json`. It lost and the default is unchanged:
+
+  | Model | must_find | correct category | evidence survives | seconds |
+  |---|---|---|---|---|
+  | `qwen3:30b` | 3 of 4 | 3 of 4 | 3 of 3 | 23.0 |
+  | `qwen3-coder:30b` | 2 of 4 | 2 of 4 | 2 of 3 | 28.3 |
+
+  A model tuned for writing code is not automatically better at reviewing it. Both models
+  correctly reported nothing on `sample-03-email-value-object`, which has no `must_find`
+  labels and exists to test restraint. Both missed `application-depends-on-orm`, a layer
+  violation that `dependency-cruiser` would catch deterministically - evidence for spending
+  the model on judgement and leaving mechanical rules to code. Recall on
+  `sample-01-order-outbox` also fell from three findings to one when a category-guidance
+  paragraph was added to the prompt, which is a reminder that the prompt is as much a
+  variable as the model, and why step 7 scores prompt and model together.
 
 ## ADR-019: Evidence is required on every finding (accepted, September 2026)
 - Context: CLAUDE.md principle 5 says every finding points at real lines with verbatim

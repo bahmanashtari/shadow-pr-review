@@ -1,7 +1,12 @@
 # Plan: Milestone 1, step 3 (Harness)
 
-Status: draft, awaiting approval. Read CLAUDE.md, docs/ROADMAP.md, docs/ARCHITECTURE.md
-(section "2. Reviewer agent") and docs/DECISIONS.md (ADR-002, ADR-011, ADR-015) first.
+Status: done. Implemented in "Milestone 1 step 3: harness". Read CLAUDE.md, docs/ROADMAP.md,
+docs/ARCHITECTURE.md (section "2. Reviewer agent") and docs/DECISIONS.md (ADR-002, ADR-011,
+ADR-015, ADR-016 to ADR-020) first.
+
+Changed while implementing: `llm.effort` was added to the config for the hosted provider, and
+open questions 0 and 1 were approved and are now ADR-019 and ADR-016. The prefix-copying
+failure in section 10a was fixed in `containsSnippet` rather than in the renderer (ADR-020).
 
 This step builds the machinery the three agents run on. It adds no prompts and no agent:
 the Reviewer arrives in step 4. Everything here is exercised by a fake provider and fake
@@ -239,7 +244,7 @@ harness has to get right, because they decide whether a finding survives step 5 
 
 ## 11. Open questions
 
-0. **Should `evidence` become required, with `minItems: 1`?** CLAUDE.md principle 5 says
+0. ~~**Should `evidence` become required, with `minItems: 1`?**~~ Approved; ADR-019. CLAUDE.md principle 5 says
    every finding carries verbatim evidence, but the schema makes `evidence` optional with no
    minimum, and the trial shows models take that option. This is the single highest-value
    change to the review contract, and it is what made the second trial work. Needs approval.
