@@ -75,15 +75,22 @@ describe("spr CLI", () => {
     }
   });
 
-  it("run without --until stops at the first stage that is not built", async () => {
+  it("run --until review writes a review and exits cleanly", async () => {
     const runDir = tempDir();
-    await run("run", "--diff", GOLDEN_DIFF, "--out", runDir);
-    expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toBe(
-      `spr: stopped after ingest: review is not implemented yet (Milestone 1, step 4). ` +
-        `Run folder: ${runDir}`,
-    );
-    expect(existsSync(path.join(runDir, "ingest.json"))).toBe(true);
+    const previous = process.env.SPR_LLM_PROVIDER;
+    process.env.SPR_LLM_PROVIDER = "fake";
+    try {
+      await run("run", "--diff", GOLDEN_DIFF, "--until", "review", "--out", runDir);
+    } finally {
+      if (previous === undefined) delete process.env.SPR_LLM_PROVIDER;
+      else process.env.SPR_LLM_PROVIDER = previous;
+    }
+
+    // The fake provider has no scripted turns, so the model contributes nothing; the
+    // deterministic checks still produce a valid review, which is the point of the split.
+    expect(existsSync(path.join(runDir, "review.raw.json"))).toBe(true);
+    expect(existsSync(path.join(runDir, "trace.jsonl"))).toBe(true);
+    expect(out.join("\n")).toContain("from checks");
   });
 
   it("run needs exactly one source", async () => {
@@ -143,9 +150,9 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "review", "--run", tempDir());
+    await run("stage", "narrate", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage review is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage narrate is not implemented yet");
   });
 
   it("stage rejects an unknown name", async () => {

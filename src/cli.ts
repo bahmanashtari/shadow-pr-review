@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, InvalidArgumentError } from "commander";
 import { loadConfig, readSecrets } from "./config.js";
+import type { SprConfig } from "./contracts/generated/config.js";
+import type { IngestResult } from "./contracts/generated/ingest.js";
 import { checkIngest, checkReview } from "./contracts/checks.js";
 import {
   CONTRACT_NAMES,
@@ -14,6 +16,11 @@ import {
 import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
+import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
+import { Budget } from "./harness/budget.js";
+import { createCache } from "./harness/cache.js";
+import { Tracer } from "./harness/tracing.js";
+import { createProvider } from "./providers/llm/create.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
@@ -138,10 +145,34 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   report(runDir, summarize(built.ingest));
 
   if (opts.until === "ingest") return;
+  await review(runDir, built.ingest, config);
+
+  if (opts.until === "review") return;
   throw new NotImplementedError(
-    `stopped after ingest: review is not implemented yet (Milestone 1, step 4). ` +
+    `stopped after review: verify is not implemented yet (Milestone 1, step 5). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/**
+ * Runs the Review stage into an existing run folder and prints what it found.
+ * Shared by `spr run` and `spr stage review`.
+ */
+async function review(runDir: string, ingest: IngestResult, config: SprConfig): Promise<void> {
+  const tracer = new Tracer(runDir);
+  const outcome = await runReview({
+    ingest,
+    provider: createProvider(config, readSecrets()),
+    config,
+    budget: new Budget(config.budgets),
+    tracer,
+    cache: createCache(config.cache),
+    // Tools that need a checkout are only offered when this run has one.
+    ...(ingest.source.type === "local_diff" ? {} : { repoRoot: process.cwd() }),
+  });
+  writeReview(runDir, outcome.review);
+  tracer.writeCost(runDir);
+  console.log(summarizeReview(outcome));
 }
 
 /** `spr stage ingest`: re-filters `diff.raw.patch` with the current configuration. */
@@ -181,10 +212,16 @@ export function buildProgram(): Command {
     .description("Re-run a single stage on an existing run folder")
     .argument("<name>", `one of: ${PIPELINE_STAGES.join(", ")}`)
     .requiredOption("--run <dir>", "existing run folder")
-    .action((name: string, opts: { run: string }) => {
+    .action(async (name: string, opts: { run: string }) => {
       const stage = parseStage(name);
-      if (stage !== "ingest") notYet(`spr stage ${stage}`, "Milestone 1, steps 3 to 6");
-      reingest(opts.run);
+      if (stage === "ingest") {
+        reingest(opts.run);
+        return;
+      }
+      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 1, steps 5 and 6");
+      const config = loadConfig();
+      report(path.resolve(opts.run), "re-running review");
+      await review(path.resolve(opts.run), readIngest(opts.run), config);
     });
 
   program

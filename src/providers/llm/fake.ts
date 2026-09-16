@@ -19,6 +19,8 @@ export interface FakeProviderOptions {
   contextTokens?: number;
   /** USD per call, so cost accounting can be tested. Null means "price unknown". */
   costPerCallUsd?: number | null;
+  /** Keep answering with the last turn instead of running out. */
+  repeatLastTurn?: boolean;
 }
 
 /** Builds a plain text response, the common case in tests. */
@@ -53,6 +55,7 @@ export class FakeLlmProvider implements LlmProvider {
 
   private readonly turns: FakeTurn[];
   private readonly costPerCallUsd: number | null;
+  private readonly repeatLastTurn: boolean;
   private call = 0;
 
   constructor(turns: readonly FakeTurn[], options: FakeProviderOptions = {}) {
@@ -60,6 +63,7 @@ export class FakeLlmProvider implements LlmProvider {
     this.model = options.model ?? "fake-model";
     this.contextTokens = options.contextTokens ?? 100_000;
     this.costPerCallUsd = options.costPerCallUsd === undefined ? 0 : options.costPerCallUsd;
+    this.repeatLastTurn = options.repeatLastTurn ?? false;
   }
 
   /** How many times the model was actually called (a cache hit never reaches here). */
@@ -68,7 +72,7 @@ export class FakeLlmProvider implements LlmProvider {
   }
 
   complete(request: LlmRequest): Promise<LlmResponse> {
-    const turn = this.turns[this.call];
+    const turn = this.turns[this.call] ?? (this.repeatLastTurn ? this.turns.at(-1) : undefined);
     if (turn === undefined) {
       return Promise.reject(
         new Error(`FakeLlmProvider ran out of scripted turns at call ${this.call + 1}`),

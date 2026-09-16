@@ -279,3 +279,29 @@ Add new decisions at the bottom. Never delete; supersede instead.
 - Lesson recorded deliberately: the original claim came from comparing arms measured under
   different prompts. A prompt change moves these numbers more than the model choice does, so
   any future model or setting comparison must vary one thing at a time.
+
+## ADR-022: Deterministic analyzers run before the Reviewer (accepted, September 2026)
+- Context: ADR-002 says agents handle judgement and plain code handles the rest, but the
+  Reviewer was being asked to do both. The measurements showed what that cost: every model
+  run, in every configuration, missed `application-depends-on-orm` on
+  `golden/sample-01-order-outbox`. That finding is a single `import` line. Meanwhile the model
+  was the only thing that ever noticed a raw email address reaching a domain error (ADR-021),
+  which no pattern could have found.
+- Decision: `src/analyzers/` runs first and produces findings from `ingest.json` alone - import
+  statements and SQL strings that are present in the diff text. Its findings go into
+  `review.raw.json` directly, and are also listed in the Reviewer's prompt as already reported,
+  so the model spends its budget on judgement instead of rediscovering facts. Six rules ship:
+  two layer-boundary rules and four migration and SQL rules.
+- Deliberately out of scope: `tsc`, `eslint` with the reviewed repository's configuration, and
+  `dependency-cruiser`'s cross-file graph. Those need that repository's `node_modules`, its
+  `tsconfig` and its config, and they mean running someone else's toolchain; a `--diff` run has
+  no checkout at all. They belong in Milestone 4, where a pull request run has one. Everything
+  shipped here reads only the diff text, so it works for every source.
+- Precision over recall in the rules: `not-null-without-default` stays quiet when the same
+  migration creates the table, and `sql-string-interpolation` requires a SQL keyword in the
+  literal, because a rule that cries wolf is worse than no rule. Analyzer findings carry
+  `confidence: 0.95`, not 1.0, and the Verifier still checks them like anything else.
+- Consequences: on `sample-01` the change takes coverage of the labelled issues from one of two
+  to two of two. A run whose model is unreachable or which exhausts its budget still produces a
+  valid review from the analyzers alone, rather than nothing. Every analyzer finding quotes the
+  line it fired on, so its evidence is exact by construction and `containsSnippet` cannot fail.
