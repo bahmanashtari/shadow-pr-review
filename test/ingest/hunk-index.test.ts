@@ -67,6 +67,23 @@ describe("HunkIndex", () => {
     expect(index.containsSnippet(HANDLER, "orderId: order.id,\nreturn order.id;")).toBe(false);
   });
 
+  it("accepts evidence that still carries the rendered line-number prefix", () => {
+    // Models are shown "  22 +      this.broker.emit(...)" and sometimes copy the whole line.
+    expect(index.containsSnippet(HANDLER, "22 +      this.broker.emit('order.placed', {")).toBe(
+      true,
+    );
+    expect(index.containsSnippet(HANDLER, "  22 + this.broker.emit('order.placed', {")).toBe(true);
+  });
+
+  it("rejects a prefixed snippet whose line number does not back it up", () => {
+    // Peeling the prefix must not weaken the check: line 3 is not the emit call.
+    expect(index.containsSnippet(HANDLER, "3 +      this.broker.emit('order.placed', {")).toBe(
+      false,
+    );
+    expect(index.containsSnippet(HANDLER, "22 +      await outbox.save(event);")).toBe(false);
+    expect(index.containsSnippet(HANDLER, "22 +")).toBe(false);
+  });
+
   it("indexes both sides of a modified file", () => {
     const modified = indexOf(readDiffFixture("multi-hunk.patch"));
     expect(modified.hasRange("src/service.ts", "old", 1, 4)).toBe(true);

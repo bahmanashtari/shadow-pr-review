@@ -76,11 +76,12 @@ export interface Finding {
   suggestion: string;
   confidence: number;
   /**
-   * Short verbatim snippets from the diff that support the claim. The Verifier checks these exist.
+   * Short verbatim snippets from the diff that support the claim, each a single line copied exactly. The Verifier checks every one with HunkIndex.containsSnippet and drops the finding when one does not appear. Required: a claim nobody can check is not a finding.
    *
+   * @minItems 1
    * @maxItems 5
    */
-  evidence?: string[];
+  evidence: string[];
   verification?: Verification;
 }
 export interface Verification {

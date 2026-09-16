@@ -15,6 +15,12 @@ interface FileIndex {
   hunkTexts: string[][];
 }
 
+/**
+ * A diff line as the Reviewer is shown it: the new-side line number, the +/- marker, then
+ * the code. Models are asked to copy only the code, but sometimes copy the whole line.
+ */
+const RENDERED_LINE = /^(\d+)\s*([+-])\s?(.*)$/;
+
 /** Trims and collapses runs of spaces and tabs, so indentation never breaks a match. */
 export function normalizeSnippet(text: string): string {
   return text.replace(/[ \t]+/g, " ").trim();
@@ -91,14 +97,39 @@ export class HunkIndex {
     if (!entry) return false;
     const parts = snippet.split("\n").map(normalizeSnippet);
     if (parts.length === 0 || parts.every((p) => p === "")) return false;
+    if (matchesConsecutive(entry, parts)) return true;
 
-    return entry.hunkTexts.some((texts) => {
-      const last = texts.length - parts.length;
-      for (let start = 0; start <= last; start += 1) {
-        if (parts.every((part, offset) => (texts[start + offset] ?? "").includes(part)))
-          return true;
-      }
-      return false;
-    });
+    const peeled = parts.map((part) => peelRenderedPrefix(entry, part));
+    if (peeled.includes(null)) return false;
+    return matchesConsecutive(entry, peeled as string[]);
   }
+}
+
+/** True when `parts` match consecutive diff lines inside one hunk. */
+function matchesConsecutive(entry: FileIndex, parts: readonly string[]): boolean {
+  return entry.hunkTexts.some((texts) => {
+    const last = texts.length - parts.length;
+    for (let start = 0; start <= last; start += 1) {
+      if (parts.every((part, offset) => (texts[start + offset] ?? "").includes(part))) return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Removes a copied `12 + code` prefix, but only when line 12 of this file really contains
+ * that code. Returns the part unchanged when it carries no such prefix, or null when the
+ * claimed line number does not back it up.
+ */
+function peelRenderedPrefix(entry: FileIndex, part: string): string | null {
+  const match = RENDERED_LINE.exec(part);
+  if (!match) return part;
+  const text = normalizeSnippet(match[3] ?? "");
+  if (text === "") return null;
+  const line = Number(match[1]);
+  const onSide = (side: ReadonlyMap<number, string>): boolean => {
+    const actual = side.get(line);
+    return actual !== undefined && normalizeSnippet(actual).includes(text);
+  };
+  return onSide(entry.new) || onSide(entry.old) ? text : null;
 }

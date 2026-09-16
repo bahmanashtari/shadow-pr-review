@@ -198,3 +198,36 @@ Add new decisions at the bottom. Never delete; supersede instead.
   until step 7 scores all three golden samples with precision and recall, including
   `must_not_flag`. `budgets.inputTokens` (96000) still fits: qwen3:30b's context is 262144,
   twice mistral's.
+
+## ADR-019: Evidence is required on every finding (accepted, September 2026)
+- Context: CLAUDE.md principle 5 says every finding points at real lines with verbatim
+  evidence and that unverifiable findings are dropped, never narrated. `evidence` was
+  nonetheless optional in `schemas/review.schema.json` with no minimum, and the model trial
+  behind ADR-018 showed models take that option: `qwen3:30b` returned `evidence: []` on every
+  finding, and `mistral-small3.2` supplied paraphrases (`this.broker.emit('order.placed', { ... })`)
+  or whole sentences of prose. Checked against the real index, none of those survive
+  `HunkIndex.containsSnippet`, so the primary bug in `sample-01` would have been dropped
+  before it reached the video.
+- Decision: `evidence` is required with `minItems: 1`. Re-running the trial with evidence
+  required, plus a diff rendered with explicit line numbers, produced snippets that matched
+  the diff character for character on both models.
+- Consequences: The generated type is now `evidence: string[]` rather than optional, so the
+  compiler enforces it. All three golden fixtures already satisfied the rule, so no fixture
+  changed. A model that cannot quote the code cannot report the finding at all, which is the
+  intended behaviour: the raw list shrinks rather than the video filling with claims nobody
+  can check.
+
+## ADR-020: containsSnippet peels a copied line-number prefix, and verifies it (accepted, September 2026)
+- Context: The Reviewer is shown each diff line as `  22 +      this.broker.emit(...)` so it
+  can cite accurate line numbers (ADR-018). Asked to copy only the code, models sometimes copy
+  the whole rendered line. In the trial this discarded five otherwise correct findings whose
+  quoted lines were real.
+- Decision: `HunkIndex.containsSnippet` first matches the snippet as given. Only if that fails
+  does it peel a leading `<number> <marker>` prefix, and it then accepts the remainder only
+  when the diff line with that exact number really contains it.
+- Alternative considered: changing the renderer to a prefix that is harder to copy. Kept as a
+  complementary step 4 change, but not sufficient on its own, because a model will sometimes
+  copy whatever separator is used.
+- Consequences: Verification gets stricter rather than looser for prefixed snippets: the model
+  must get both the code and the line number right. An unprefixed snippet is unaffected. A
+  snippet that is only a prefix, or whose number does not back it up, is still rejected.

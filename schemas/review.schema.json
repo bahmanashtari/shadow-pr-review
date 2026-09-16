@@ -66,7 +66,7 @@
       "additionalProperties": false,
       "required": [
         "id", "file", "side", "line_start", "line_end", "severity",
-        "category", "summary", "rationale", "suggestion", "confidence"
+        "category", "summary", "rationale", "suggestion", "confidence", "evidence"
       ],
       "properties": {
         "id": { "type": "string", "pattern": "^F[0-9]{2}$" },
@@ -82,8 +82,9 @@
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "evidence": {
           "type": "array",
+          "minItems": 1,
           "maxItems": 5,
-          "description": "Short verbatim snippets from the diff that support the claim. The Verifier checks these exist.",
+          "description": "Short verbatim snippets from the diff that support the claim, each a single line copied exactly. The Verifier checks every one with HunkIndex.containsSnippet and drops the finding when one does not appear. Required: a claim nobody can check is not a finding.",
           "items": { "type": "string", "maxLength": 200 }
         },
         "verification": { "$ref": "#/$defs/Verification" }

@@ -121,7 +121,7 @@ describe.each(GOLDEN_SAMPLES)("%s", (sample) => {
 
   it("contains every piece of quoted evidence", () => {
     const quotes = review.findings.flatMap((f) =>
-      (f.evidence ?? []).map((snippet) => ({ id: f.id, file: f.file, snippet })),
+      f.evidence.map((snippet) => ({ id: f.id, file: f.file, snippet })),
     );
     expect(quotes.length).toBeGreaterThan(0);
     const missing = quotes.filter((q) => !index.containsSnippet(q.file, q.snippet));
