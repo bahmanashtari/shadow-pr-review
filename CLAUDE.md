@@ -76,6 +76,7 @@ shadow-pr-review/
 Available now (Milestone 1, steps 1 and 2):
 
 ```
+nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
 pnpm install
 pnpm gen:types                             # schemas/*.json + config schema -> src/contracts/generated
 pnpm check:types                           # fails if generated types are stale (CI)
