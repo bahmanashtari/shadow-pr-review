@@ -305,3 +305,44 @@ Add new decisions at the bottom. Never delete; supersede instead.
   to two of two. A run whose model is unreachable or which exhausts its budget still produces a
   valid review from the analyzers alone, rather than nothing. Every analyzer finding quotes the
   line it fired on, so its evidence is exact by construction and `containsSnippet` cannot fail.
+
+## ADR-023: The deterministic Verifier is plain code in `src/verify/` (accepted, September 2026)
+- Context: ARCHITECTURE.md gives the Verifier two layers - deterministic checks against the
+  diff, then an agent that judges what survives. Milestone 1 step 5 builds only the first, and
+  the repository layout in CLAUDE.md had reserved `src/agents/verifier.ts` for the whole stage.
+  Putting a stage with no model call in `agents/` would have left a file there that talks to no
+  agent for two milestones.
+- Decision: the stage lives in `src/verify/` - `grounding.ts` for the pure checks and
+  `verify.ts` for the stage - and `src/agents/` keeps its meaning: code that talks to a model.
+  Milestone 3 adds `src/agents/verifier.ts` for the agent layer, and `src/verify/verify.ts`
+  calls it on the survivors, the same shape as `src/agents/reviewer.ts` calling
+  `src/analyzers/` (ADR-022). The consequence worth having: `spr stage verify` needs no model,
+  no network and no cache, so re-verifying a finished run is instant and free.
+- Drop reasons, mapped once so they stay stable for `spr eval`: `out_of_scope` when the file is
+  not in the reviewed diff, `lines_not_in_diff` when the range does not exist on the given side,
+  `claim_not_supported` when an `evidence` string does not appear in that file's diff lines,
+  `duplicate` when a survivor already makes the same claim (same file, same category,
+  overlapping range), `over_cap` for what does not fit `review.maxFindings`. `style_only` is
+  left to the agent layer, because whether a finding is merely stylistic is a judgement call.
+  `out_of_scope` is not hypothetical: with `read_file` and `grep_repo` the Reviewer can report a
+  real problem in a file this change never touched, which is correct and impossible to highlight
+  in the video.
+- Checks run in that order and feed each other rather than filtering independently: a file that
+  is not in the diff has no lines to check, an ungrounded finding must not shadow its grounded
+  duplicate, and nothing is cut for space until everything unprovable is gone.
+- Evidence is checked against the file, not against the finding's line range. `sample-01`
+  reports a layering problem on lines 19-20 and supports it with the `typeorm` import on line 2,
+  which is exactly the right quote; a range check would have dropped it.
+- Ids are carried over from `review.raw.json` unchanged, including for dropped findings, so a
+  finding can be followed from the raw file to the final one in `trace.jsonl` and in evals. Gaps
+  in the kept list are informative, and renumbering would have forced the dropped list to be
+  renumbered too to keep ids unique.
+- A surviving finding is marked `verification.status = "verified"` only when it carries no
+  verdict yet, so re-running the stage never erases a Milestone 3 downgrade. At this layer the
+  claim means what it says: the lines exist and the evidence is verbatim.
+- Ordering: `review.schema.json` documents severity, then file, then line, but `checkReview`
+  enforced only the severity part, and `golden/sample-02-inventory-consumer` had drifted out of
+  the documented order. `compareFindings` now lives in `src/contracts/checks.ts`, the Reviewer
+  and the Verifier both sort with it, `checkReview` enforces it, and the sample-02 fixtures
+  (review and script) were corrected together. `checkReview` also takes an optional
+  `maxFindings`, which is the cap test ADR-016 asked for when this step landed.

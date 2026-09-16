@@ -55,7 +55,8 @@ shadow-pr-review/
       checks.ts                  # cross-field and cross-file checks
     ingest/                      # parse-diff.ts, filter.ts, risk.ts, sources.ts, hunk-index.ts, ingest.ts
     analyzers/                   # rules.ts, analyze.ts - deterministic findings (ADR-022)
-    agents/                      # reviewer.ts, diff-view.ts, prompts/, tools/; verifier.ts and narrator.ts later
+    agents/                      # reviewer.ts, diff-view.ts, prompts/, tools/; verifier.ts (M3) and narrator.ts later
+    verify/                      # grounding.ts, verify.ts - review.raw.json -> review.json, no model (ADR-023)
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
     providers/tts/               # types.ts, kokoro-http.ts, piper.ts
@@ -90,14 +91,15 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest and review run for real. `--until <stage>` exits 0 after that stage; without it the run
-stops at the first stage that is not built and exits 2, keeping the run folder.
+Ingest, review and verify run for real. `--until <stage>` exits 0 after that stage; without it
+the run stops at the first stage that is not built and exits 2, keeping the run folder.
 
 ```
-pnpm spr run --diff change.patch --until review [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until verify [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
+pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
 ```
 
 Review needs a local model: `ollama serve` with the model from `config/default.json` pulled.
@@ -107,9 +109,9 @@ analyzers (ADR-022) contribute.
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after review until step 5 lands
+pnpm spr run --diff change.patch                    # stops after verify until step 6 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <verify|narrate|tts|...> --run runs/<id>
+pnpm spr stage <narrate|tts|direct|...> --run runs/<id>
 pnpm spr eval golden/                               # precision/recall on golden set (step 7)
 docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container (Milestone 2)
 ```

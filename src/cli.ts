@@ -17,6 +17,7 @@ import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
+import { readRawReview, runVerify, summarizeVerify, writeVerifiedReview } from "./verify/verify.js";
 import { Budget } from "./harness/budget.js";
 import { createCache } from "./harness/cache.js";
 import { Tracer } from "./harness/tracing.js";
@@ -148,8 +149,11 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   await review(runDir, built.ingest, config);
 
   if (opts.until === "review") return;
+  verify(runDir, built.ingest, config);
+
+  if (opts.until === "verify") return;
   throw new NotImplementedError(
-    `stopped after review: verify is not implemented yet (Milestone 1, step 5). ` +
+    `stopped after verify: narrate is not implemented yet (Milestone 1, step 6). ` +
       `Run folder: ${runDir}`,
   );
 }
@@ -173,6 +177,17 @@ async function review(runDir: string, ingest: IngestResult, config: SprConfig): 
   writeReview(runDir, outcome.review);
   tracer.writeCost(runDir);
   console.log(summarizeReview(outcome));
+}
+
+/**
+ * Runs the Verify stage over an existing run folder and prints what survived.
+ * It reads `review.raw.json` back from disk rather than taking the Review stage's result in
+ * memory, so `spr run` and `spr stage verify` follow exactly the same path.
+ */
+function verify(runDir: string, ingest: IngestResult, config: SprConfig): void {
+  const outcome = runVerify({ ingest, review: readRawReview(runDir), config });
+  writeVerifiedReview(runDir, outcome.review);
+  console.log(summarizeVerify(outcome));
 }
 
 /** `spr stage ingest`: re-filters `diff.raw.patch` with the current configuration. */
@@ -218,7 +233,16 @@ export function buildProgram(): Command {
         reingest(opts.run);
         return;
       }
-      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 1, steps 5 and 6");
+      if (stage === "verify") {
+        const config = loadConfig();
+        const runDir = path.resolve(opts.run);
+        report(runDir, "re-running verify");
+        verify(runDir, readIngest(runDir), config);
+        return;
+      }
+      if (stage !== "review") {
+        notYet(`spr stage ${stage}`, stage === "narrate" ? "Milestone 1, step 6" : "Milestone 2");
+      }
       const config = loadConfig();
       report(path.resolve(opts.run), "re-running review");
       await review(path.resolve(opts.run), readIngest(opts.run), config);

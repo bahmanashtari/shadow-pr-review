@@ -7,6 +7,18 @@ import { fromRoot } from "../src/lib/paths.js";
 
 const run = (...args: string[]): Promise<void> => main(["node", "spr", ...args]);
 
+/** Runs something with the fake LLM provider, so the Review stage needs no model. */
+async function withFakeProvider(body: () => Promise<void>): Promise<void> {
+  const previous = process.env.SPR_LLM_PROVIDER;
+  process.env.SPR_LLM_PROVIDER = "fake";
+  try {
+    await body();
+  } finally {
+    if (previous === undefined) delete process.env.SPR_LLM_PROVIDER;
+    else process.env.SPR_LLM_PROVIDER = previous;
+  }
+}
+
 const GOLDEN_DIFF = fromRoot("golden", "sample-02-inventory-consumer", "diff.patch");
 
 const temps: string[] = [];
@@ -77,20 +89,51 @@ describe("spr CLI", () => {
 
   it("run --until review writes a review and exits cleanly", async () => {
     const runDir = tempDir();
-    const previous = process.env.SPR_LLM_PROVIDER;
-    process.env.SPR_LLM_PROVIDER = "fake";
-    try {
-      await run("run", "--diff", GOLDEN_DIFF, "--until", "review", "--out", runDir);
-    } finally {
-      if (previous === undefined) delete process.env.SPR_LLM_PROVIDER;
-      else process.env.SPR_LLM_PROVIDER = previous;
-    }
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "review", "--out", runDir),
+    );
 
     // The fake provider has no scripted turns, so the model contributes nothing; the
     // deterministic checks still produce a valid review, which is the point of the split.
     expect(existsSync(path.join(runDir, "review.raw.json"))).toBe(true);
     expect(existsSync(path.join(runDir, "trace.jsonl"))).toBe(true);
     expect(out.join("\n")).toContain("from checks");
+  });
+
+  it("run --until verify writes review.json and exits cleanly", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "verify", "--out", runDir),
+    );
+
+    expect(process.exitCode).toBeUndefined();
+    expect(existsSync(path.join(runDir, "review.json"))).toBe(true);
+    // The analyzers find the NOT NULL column and the empty down(), and both survive.
+    expect(out.join("\n")).toContain("2 findings kept, none dropped");
+  });
+
+  it("run without --until now stops after verify, pointing at step 6", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
+
+    expect(process.exitCode).toBe(2);
+    expect(err.join("\n")).toContain("narrate is not implemented yet (Milestone 1, step 6)");
+    expect(existsSync(path.join(runDir, "review.json"))).toBe(true);
+  });
+
+  it("stage verify re-runs the checks on an existing run folder, with no model", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "review", "--out", runDir),
+    );
+    out.length = 0;
+
+    // No SPR_LLM_PROVIDER here: the stage reads two files and writes one.
+    await run("stage", "verify", "--run", runDir);
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("re-running verify");
+    expect(out.join("\n")).toContain("findings kept");
   });
 
   it("run needs exactly one source", async () => {

@@ -84,14 +84,20 @@ are still checked by the Verifier.
 `tsconfig` and its config, and a `--diff` run has no checkout at all.
 
 ### 3. Verifier
-Two layers:
-1. Deterministic checks (no LLM): file exists in diff, line range exists on the given side,
-   every `evidence` string appears in the file's diff lines, no duplicates (same file and
-   overlapping range and category). Failures become `dropped` with a reason.
-2. Verifier agent: for each surviving finding, sees only the relevant hunk(s) and the
-   claim, and answers keep / downgrade / drop with a note. Default: a small model; optionally
-   a larger one for high and critical findings only (cost flag).
-Then sort by severity and cap at 10 (`over_cap` for the rest).
+Two layers, and the first one is built (`src/verify/`, ADR-023).
+1. Deterministic checks (no LLM, no network): the file is in the diff (`out_of_scope`), the
+   line range exists on the given side (`lines_not_in_diff`), every `evidence` string appears
+   in that file's diff lines (`claim_not_supported`), and no other survivor makes the same
+   claim - same file, same category, overlapping range (`duplicate`). The checks run in that
+   order, because each one needs the previous to hold. Failures become `dropped` with a reason
+   and a note saying what failed. Then sort by severity, file and line, and cap at
+   `review.maxFindings` (10), with `over_cap` for the rest. Ids are carried over from
+   `review.raw.json` unchanged, so a finding can be followed from one file to the other.
+   Survivors are marked `verification.status = "verified"`, unless they already carry a verdict.
+2. Verifier agent (Milestone 3): for each surviving finding, sees only the relevant hunk(s) and
+   the claim, and answers keep / downgrade / drop with a note. Default: a small model;
+   optionally a larger one for high and critical findings only (cost flag). `style_only` is its
+   reason to give, not the deterministic layer's.
 
 ### 4. Narrator agent
 - Input: `review.json` only (never the raw diff, which keeps it grounded and cheap).

@@ -8,8 +8,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { analyze, describeForPrompt, type AnalyzerFinding } from "../analyzers/analyze.js";
-import { checkReview } from "../contracts/checks.js";
-import { SEVERITY_RANK } from "../contracts/checks.js";
+import { checkReview, compareFindings } from "../contracts/checks.js";
 import type { IngestResult } from "../contracts/generated/ingest.js";
 import type { Finding, ReviewResult } from "../contracts/generated/review.js";
 import type { SprConfig } from "../contracts/generated/config.js";
@@ -88,14 +87,6 @@ function overlaps(a: Omit<Finding, "id">, b: Omit<Finding, "id">): boolean {
   );
 }
 
-/** Orders by severity, then file and line, as `review.schema.json` requires. */
-function bySeverityThenPosition(a: Omit<Finding, "id">, b: Omit<Finding, "id">): number {
-  const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-  if (bySeverity !== 0) return bySeverity;
-  if (a.file !== b.file) return a.file < b.file ? -1 : 1;
-  return a.line_start - b.line_start;
-}
-
 /** Strips the analyzer's bookkeeping so the result matches the contract exactly. */
 function toFinding(f: AnalyzerFinding): Omit<Finding, "id"> {
   return {
@@ -160,7 +151,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
     ...fromAnalyzers,
     ...fromModel.filter((m) => !fromAnalyzers.some((a) => overlaps(a, m))),
   ]
-    .sort(bySeverityThenPosition)
+    .sort(compareFindings)
     .slice(0, config.review.maxRawFindings);
 
   const review: ReviewResult = {

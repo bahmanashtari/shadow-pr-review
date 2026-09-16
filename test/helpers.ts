@@ -3,6 +3,8 @@ import path from "node:path";
 import { loadConfig, type SprConfig } from "../src/config.js";
 import { fromRoot } from "../src/lib/paths.js";
 import { assertContract } from "../src/contracts/validate.js";
+import type { IngestResult, Source } from "../src/contracts/generated/ingest.js";
+import { buildIngest } from "../src/ingest/ingest.js";
 import type { ReviewResult } from "../src/contracts/generated/review.js";
 import type { NarrationScript } from "../src/contracts/generated/script.js";
 
@@ -56,4 +58,20 @@ export function configWithIngest(overrides: Partial<SprConfig["ingest"]>): SprCo
 /** Reads a golden sample's diff. */
 export function readGoldenDiff(sample: string): string {
   return readFileSync(fromRoot("golden", sample, "diff.patch"), "utf8");
+}
+
+/** A `local_diff` source, for tests that build an ingest by hand. */
+export const TEST_SOURCE: Source = {
+  type: "local_diff",
+  repo: null,
+  pr_number: null,
+  ref: null,
+  base_sha: null,
+  head_sha: null,
+  title: null,
+};
+
+/** Ingests raw diff text with the shipped defaults. */
+export function ingestOfDiff(rawDiff: string): IngestResult {
+  return buildIngest({ rawDiff, source: { ...TEST_SOURCE }, config: defaultConfig() }).ingest;
 }

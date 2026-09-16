@@ -13,6 +13,23 @@
   "findings": [
     {
       "id": "F01",
+      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
+      "side": "new",
+      "line_start": 5,
+      "line_end": 7,
+      "severity": "high",
+      "category": "data-migration",
+      "summary": "NOT NULL column added without a default will fail on existing rows",
+      "rationale": "In PostgreSQL, adding a NOT NULL column with no default fails if stock_item already contains rows, because existing rows would hold NULL. This migration will pass on an empty dev database and fail in staging or production.",
+      "suggestion": "Add the column with DEFAULT 0 (fast in modern PostgreSQL for constant defaults), or add it nullable, backfill, then set NOT NULL in a follow-up migration.",
+      "confidence": 0.95,
+      "evidence": [
+        "ADD COLUMN \"reserved_quantity\" integer NOT NULL"
+      ],
+      "verification": { "status": "verified" }
+    },
+    {
+      "id": "F02",
       "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
       "side": "new",
       "line_start": 14,
@@ -26,23 +43,6 @@
       "evidence": [
         "@EventPattern('order.placed')",
         "await this.stock.decrement(item.sku, item.quantity);"
-      ],
-      "verification": { "status": "verified" }
-    },
-    {
-      "id": "F02",
-      "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
-      "side": "new",
-      "line_start": 5,
-      "line_end": 7,
-      "severity": "high",
-      "category": "data-migration",
-      "summary": "NOT NULL column added without a default will fail on existing rows",
-      "rationale": "In PostgreSQL, adding a NOT NULL column with no default fails if stock_item already contains rows, because existing rows would hold NULL. This migration will pass on an empty dev database and fail in staging or production.",
-      "suggestion": "Add the column with DEFAULT 0 (fast in modern PostgreSQL for constant defaults), or add it nullable, backfill, then set NOT NULL in a follow-up migration.",
-      "confidence": 0.95,
-      "evidence": [
-        "ADD COLUMN \"reserved_quantity\" integer NOT NULL"
       ],
       "verification": { "status": "verified" }
     },

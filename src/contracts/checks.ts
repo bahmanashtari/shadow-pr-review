@@ -4,7 +4,7 @@
  * Rules that need the diff (lines exist, evidence appears) live in `ingest/hunk-index.ts`.
  */
 import type { IngestResult, KeptFile } from "./generated/ingest.js";
-import type { ReviewResult, Severity } from "./generated/review.js";
+import type { Finding, ReviewResult, Severity } from "./generated/review.js";
 import type { NarrationScript } from "./generated/script.js";
 import type { AudioManifest } from "./generated/audio-manifest.js";
 import type { Timeline } from "./generated/timeline.js";
@@ -15,6 +15,21 @@ export const SEVERITY_RANK: Readonly<Record<Severity, number>> = {
   medium: 2,
   low: 3,
 };
+
+/** The parts of a finding that decide where it sits in the list. */
+type Placed = Pick<Finding, "severity" | "file" | "line_start">;
+
+/**
+ * The order `review.schema.json` requires: severity first (critical first), then file, then
+ * line. The Reviewer sorts with it, the Verifier re-sorts with it, and {@link checkReview}
+ * enforces it, so all three agree by construction.
+ */
+export function compareFindings(a: Placed, b: Placed): number {
+  const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+  if (bySeverity !== 0) return bySeverity;
+  if (a.file !== b.file) return a.file < b.file ? -1 : 1;
+  return a.line_start - b.line_start;
+}
 
 /** Characters that must never appear in spoken text. */
 const MARKDOWN_PATTERN = /[`*#_[\]<>|]|^\s*[-+]\s/m;
@@ -38,9 +53,24 @@ function duplicates(values: readonly string[]): string[] {
   return [...dup];
 }
 
+/** Options for {@link checkReview}. */
+export interface ReviewCheckOptions {
+  /**
+   * Maximum kept findings. Set it to `review.maxFindings` when checking a verified
+   * `review.json`; leave it unset for `review.raw.json`, which may carry up to
+   * `review.maxRawFindings` (ADR-016).
+   */
+  maxFindings?: number;
+}
+
 /** Checks a review.json for rules beyond its schema. */
-export function checkReview(review: ReviewResult): string[] {
+export function checkReview(review: ReviewResult, options: ReviewCheckOptions = {}): string[] {
   const problems: string[] = [];
+
+  const { maxFindings } = options;
+  if (maxFindings !== undefined && review.findings.length > maxFindings) {
+    problems.push(`${review.findings.length} findings, maximum is ${maxFindings}`);
+  }
 
   const ids = [...review.findings.map((f) => f.id), ...review.dropped.map((d) => d.id)];
   for (const id of duplicates(ids)) problems.push(`finding id ${id} is used more than once`);
@@ -61,8 +91,10 @@ export function checkReview(review: ReviewResult): string[] {
       }
     }
     const prev = review.findings[i - 1];
-    if (prev && SEVERITY_RANK[prev.severity] > SEVERITY_RANK[f.severity]) {
-      problems.push(`${at}: findings must be ordered by severity (critical first)`);
+    if (prev && compareFindings(prev, f) > 0) {
+      problems.push(
+        `${at}: findings must be ordered by severity (critical first), then file and line`,
+      );
     }
   });
 

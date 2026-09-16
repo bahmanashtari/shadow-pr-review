@@ -43,6 +43,24 @@ describe("checkReview", () => {
     expect(problems.some((p) => p.includes("ordered by severity"))).toBe(true);
   });
 
+  it("flags two findings of equal severity in the wrong file order", () => {
+    const { review } = loadGolden("sample-02-inventory-consumer");
+    const [f1, f2] = review.findings;
+    if (!f1 || !f2) throw new Error("fixture changed");
+    review.findings = [f2, f1, ...review.findings.slice(2)]; // both high; interface/ before infrastructure/
+
+    expect(checkReview(review)).toEqual([
+      "/findings/1 (F01): findings must be ordered by severity (critical first), then file and line",
+    ]);
+  });
+
+  it("enforces the cap only when one is given (ADR-016)", () => {
+    const { review } = loadGolden("sample-02-inventory-consumer");
+    expect(checkReview(review)).toEqual([]);
+    expect(checkReview(review, { maxFindings: 10 })).toEqual([]);
+    expect(checkReview(review, { maxFindings: 3 })).toEqual(["4 findings, maximum is 3"]);
+  });
+
   it("requires a higher original severity when a finding is downgraded", () => {
     const { review } = loadGolden("sample-02-inventory-consumer");
     const f4 = review.findings[3];
