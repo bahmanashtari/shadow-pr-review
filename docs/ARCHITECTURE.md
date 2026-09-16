@@ -5,7 +5,7 @@
 ```
  GitHub event / local git
           |
-     [1 Ingest] ------------------------------> diff.patch, hunk index
+     [1 Ingest] ------------------------------> diff.raw.patch, diff.patch, ingest.json
           |
      [2 Reviewer agent]  (read-only tools) ---> review.raw.json
           |
@@ -29,14 +29,26 @@ Stages communicate only through files in the run folder. Any stage can be re-run
 ## 2. Stages
 
 ### 1. Ingest
-- Sources: `--diff file`, `--git A..B` (local), `--pr N` (GitHub), push event (`before..after`).
-- Filters (configurable globs): lockfiles (`package-lock.json`, `pnpm-lock.yaml`,
-  `yarn.lock`), `dist/`, `build/`, `coverage/`, generated clients, `*.snap`, binaries,
-  files over a size cap. Skipped files are recorded in `review.json.stats`.
-- Builds a hunk index: for every file, the set of valid new-side and old-side line numbers
-  and their text. The Verifier and Director use this index.
-- Context budget: if the diff is too large, prioritize by risk heuristics (migrations,
-  `domain/`, event consumers/producers, auth, config) and note the truncation.
+- Sources: `--diff file`, `--git A..B` or `A...B` (local), `--pr N` (GitHub, Milestone 4),
+  push event (`before..after`, uses the `--git` path).
+- Outputs: `diff.raw.patch` (input as received), `diff.patch` (kept files only) and
+  `ingest.json` (contract: `schemas/ingest.schema.json`). No timestamps, so the output is
+  byte-identical for the same input and config.
+- Parsing: an in-house parser for git-format unified diffs: added, modified, deleted,
+  renamed and copied files, binary markers, mode-only changes, quoted paths, multiple hunks
+  and "No newline at end of file".
+- Filters (config `ingest.ignoreGlobs`, matched against the new path, or the old path for
+  deletions). Skip reasons: `lockfile` (known lockfile names), `generated`, `vendored`,
+  `binary`, `too_large` (single file over `maxFileBytes`, or dropped by the total budget),
+  `ignored_by_config` (any other matching glob). Skipped files are listed in `ingest.json`
+  and later copied to `review.json.stats`.
+- Risk score per kept file (deterministic path heuristics): migrations, `domain/`,
+  event consumers/producers/handlers/outbox/sagas, auth/guards and infrastructure config
+  score higher; tests and docs score lower. Used to order files for the Reviewer and, when
+  the kept diff exceeds `maxDiffBytes`, to keep the riskiest files (`truncated: true`).
+- `HunkIndex` (read API over `ingest.json`): does a file exist, does a line range exist on a
+  side, the text of a line, and whether a snippet appears in a file's diff lines. The
+  Verifier, Director and Recorder use only this API.
 
 ### 2. Reviewer agent
 - Model: small hosted model by default (for example Claude Haiku), configurable.

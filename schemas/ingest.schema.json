@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shadow-pr-review.local/schemas/ingest.schema.json",
+  "title": "IngestResult",
+  "description": "Contract for ingest.json. Produced by the Ingest stage (plain code, no LLM). Describes the source, which files were kept or skipped, and a line index of every kept hunk. Deterministic: the same input diff and config produce the same bytes (no timestamps). In the run folder, diff.raw.patch is the unfiltered input and diff.patch contains only the kept files. Code-level checks must additionally enforce: file paths are unique, hunk line counts match their lines, and line numbers increase within a hunk. $defs.Source must stay identical to $defs.Source in review.schema.json (a unit test enforces this); the Reviewer copies source into review.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "diff",
+    "files",
+    "skipped",
+    "stats"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "diff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_path",
+        "raw_sha256",
+        "raw_bytes",
+        "path",
+        "sha256",
+        "bytes",
+        "truncated"
+      ],
+      "properties": {
+        "raw_path": {
+          "const": "diff.raw.patch"
+        },
+        "raw_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "raw_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path": {
+          "const": "diff.patch"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when kept-looking files were skipped because the total exceeded ingest.maxDiffBytes. The narration intro must say so."
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Kept files, in the order they appear in the diff.",
+      "items": {
+        "$ref": "#/$defs/KeptFile"
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "description": "Files left out of diff.patch, in diff order.",
+      "items": {
+        "$ref": "#/$defs/SkippedFile"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files_total",
+        "files_kept",
+        "files_skipped",
+        "additions",
+        "deletions"
+      ],
+      "properties": {
+        "files_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_kept": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Added lines in kept files."
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Deleted lines in kept files."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "pull_request",
+            "push",
+            "local_diff"
+          ]
+        },
+        "repo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "owner/name"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Branch name for push events."
+        },
+        "base_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "FileStatus": {
+      "enum": [
+        "added",
+        "modified",
+        "deleted",
+        "renamed",
+        "copied"
+      ]
+    },
+    "SkippedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/FileStatus"
+        },
+        "reason": {
+          "enum": [
+            "lockfile",
+            "generated",
+            "binary",
+            "vendored",
+            "too_large",
+            "ignored_by_config"
+          ]
+        }
+      }
+    },
+    "KeptFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "old_path",
+        "status",
+        "additions",
+        "deletions",
+        "risk_score",
+        "hunks"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path on the new side; for deleted files, the old path. This is the `file` used by findings and focus."
+        },
+        "old_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Previous path for renamed or copied files; otherwise null."
+        },
+        "status": {
+          "$ref": "#/$defs/FileStatus"
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "risk_score": {
+          "type": "integer",
+          "description": "Heuristic priority used when the diff is over budget and to order files for the Reviewer. Higher is riskier."
+        },
+        "hunks": {
+          "type": "array",
+          "description": "May be empty (pure rename or mode change).",
+          "items": {
+            "$ref": "#/$defs/Hunk"
+          }
+        }
+      }
+    },
+    "Hunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "old_start",
+        "old_lines",
+        "new_start",
+        "new_lines",
+        "section",
+        "lines"
+      ],
+      "properties": {
+        "old_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "old_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "section": {
+          "type": "string",
+          "description": "Text after the closing @@ (often the enclosing function), trimmed; empty string when absent."
+        },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Line"
+          }
+        }
+      }
+    },
+    "Line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "old",
+        "new",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "add",
+            "del",
+            "context"
+          ]
+        },
+        "old": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Line number on the old side; null for added lines."
+        },
+        "new": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Line number on the new side; null for deleted lines."
+        },
+        "text": {
+          "type": "string",
+          "description": "Line content without the leading +, - or space marker and without the line ending (a trailing CR is removed)."
+        },
+        "no_newline_at_eof": {
+          "type": "boolean",
+          "description": "Present and true when the diff marks this line with 'No newline at end of file'."
+        }
+      }
+    }
+  }
+}

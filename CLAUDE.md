@@ -2,7 +2,8 @@
 
 Guide for Claude (chat and Claude Code) working in this repository. Read this first.
 The full design lives in `docs/ARCHITECTURE.md`; decisions and their reasons live in
-`docs/DECISIONS.md`. When the two disagree with this file, DECISIONS.md wins and this
+`docs/DECISIONS.md`; progress and what comes next live in `docs/ROADMAP.md`, with detailed
+step plans in `docs/plans/`. When the two disagree with this file, DECISIONS.md wins and this
 file should be updated.
 
 ## What this project is
@@ -12,7 +13,7 @@ produces a narrated walkthrough video: the diff is shown and highlighted on scre
 a natural English voiceover (Kokoro TTS) explains each finding.
 
 Pipeline: `ingest -> review -> verify -> narrate -> tts -> direct -> record -> compose -> publish`
-Contracts on disk: `diff.patch -> review.json -> script.json -> audio/manifest.json -> timeline.json -> video.webm -> final.mp4`
+Contracts on disk: `ingest.json + diff.patch -> review.json -> script.json -> audio/manifest.json -> timeline.json -> video.webm -> final.mp4`
 
 ## The codebases being reviewed (target stack)
 
@@ -52,7 +53,7 @@ shadow-pr-review/
       generated/                 # types generated from schemas/ (do not edit)
       validate.ts                # Ajv (draft 2020-12) validators per schema
       checks.ts                  # cross-field and cross-file checks
-    ingest/                      # git/GitHub diff fetch, filtering, hunk index
+    ingest/                      # parse-diff.ts, filter.ts, risk.ts, sources.ts, hunk-index.ts, ingest.ts
     agents/                      # reviewer.ts, verifier.ts, narrator.ts, prompts/
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
@@ -61,7 +62,7 @@ shadow-pr-review/
     recorder/                    # Playwright + diff2html page (page/ holds HTML, CSS, JS)
     composer/                    # ffmpeg wrappers, SRT generation
     publish/                     # GitHub comments, artifact/storage upload
-    lib/                         # exec wrapper, hashing, fs helpers, logger
+    lib/                         # exec.ts (execa wrapper), hash.ts, run-folder.ts, errors.ts, paths.ts
   golden/                        # evaluation samples (see golden/README.md)
   test/                          # vitest; mirrors src/
   docker/                        # Dockerfile for the tool, compose for local Kokoro
@@ -87,19 +88,30 @@ pnpm spr validate <files...> [--schema review|script|audio-manifest|timeline]
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Planned (commands exist and exit with code 2 until built):
+Pipeline commands: registered in `src/cli.ts`, but no stage is implemented yet, so each of
+these currently exits with code 2.
 
 ```
-docker compose -f docker/compose.yml up -d kokoro
-pnpm spr run --diff path/to/change.patch            # full pipeline, local diff
-pnpm spr run --git HEAD~1..HEAD                     # local commits
-pnpm spr run --pr 142 --repo owner/name             # GitHub PR
-pnpm spr stage review --run runs/<id>               # re-run a single stage
-pnpm spr eval golden/                               # precision/recall on golden set
+pnpm spr run --diff path/to/change.patch [--out runs/x]   # local diff file
+pnpm spr run --git HEAD~1..HEAD                     # local commits (A...B diffs from the merge base)
+pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
+pnpm spr stage <name> --run runs/<id>               # re-run a single stage
+pnpm spr eval golden/                               # precision/recall on golden set (step 7)
 ```
 
-Every run writes to `runs/<UTC timestamp>-<short sha>/`:
-`diff.patch, review.raw.json, review.json, script.json, audio/, timeline.json,
+Not implemented yet. The first four arrive with Milestone 1, step 2
+(`docs/plans/m1-step2-ingest.md`); the last with Milestone 2:
+
+```
+pnpm spr run --diff change.patch --title "..."      # --title option
+pnpm spr run --git main...HEAD --until ingest       # stop after a stage, exit 0
+pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
+docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container
+```
+
+Once the pipeline runs, each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
+characters of the diff's sha256 for `--diff`):
+`diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json, audio/, timeline.json,
 video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
 
 ## Coding conventions
@@ -124,9 +136,10 @@ video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
   `config/config.schema.json` at startup; secrets only from environment (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`).
 - Installed: `ajv`, `commander` (runtime); `typescript`, `tsx`, `vitest`, `eslint`,
   `typescript-eslint`, `prettier`, `json-schema-to-typescript` (dev).
-- Planned libraries (verify current versions when adding): `@anthropic-ai/sdk`, `commander`, `ajv`,
-  `json-schema-to-typescript`, `execa`, `playwright` (library, not the test runner),
-  `diff2html`, `parse-diff`, `@octokit/rest`, `pino`, `vitest`.
+- Added by Milestone 1, step 2: `execa`, `picomatch` (runtime).
+- Planned libraries (verify current versions when adding): `@anthropic-ai/sdk`,
+  `playwright` (library, not the test runner), `diff2html`, `@octokit/rest`, `pino`.
+  No diff-parsing library (ADR-014).
 
 ## Harness rules (agents)
 
@@ -145,7 +158,10 @@ video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
 
 ## Working agreement
 
-- Propose the approach and trade-offs before writing significant code.
+- Start every session by reading `docs/ROADMAP.md`. Work on the step marked "next" unless
+  told otherwise, and follow "How to work on a step" there.
+- Propose the approach and trade-offs before writing significant code (a plan in
+  `docs/plans/` for each step).
 - Keep changes inside one stage boundary where possible.
 - When touching a contract, update `schemas/`, regenerate types, update the golden
   fixtures and `docs/DECISIONS.md` together.

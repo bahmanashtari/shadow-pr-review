@@ -98,3 +98,15 @@ Add new decisions at the bottom. Never delete; supersede instead.
   Node.js 22.22.2 or newer on the 22 line.
 - Consequences: CI and local setup behave the same. Bump the pin deliberately. Newer Node.js
   majors no longer bundle corepack, so the explicit install also keeps future upgrades working.
+
+## ADR-014: ingest.json is a cross-stage contract (accepted, September 2026)
+- Context: The Verifier, Director and Recorder all need to know which files and lines exist
+  in the reviewed diff. Re-parsing the patch in each stage would duplicate logic.
+- Decision: The Ingest stage writes `diff.raw.patch` (input as received), `diff.patch`
+  (kept files only) and `ingest.json` (source, kept and skipped files, and a line index of
+  every hunk), validated by `schemas/ingest.schema.json`. A small in-house parser handles
+  git-format unified diffs (renames, copies, deletions, binary markers, mode changes, quoted
+  paths, "No newline at end of file"); no diff-parsing dependency. `ingest.json` has no
+  timestamps, so re-running ingest on the same input gives identical bytes.
+- Consequences: Later stages read `ingest.json` through one `HunkIndex` API. Pull request
+  input (`--pr`) arrives in Milestone 4 and must produce the same files.
