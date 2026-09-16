@@ -52,4 +52,11 @@ export interface SprConfig {
   runs: {
     dir: string;
   };
+  /**
+   * On-disk cache of LLM and TTS responses, keyed by a hash of the request. Shared across runs, so re-running a stage costs nothing.
+   */
+  cache: {
+    enabled: boolean;
+    dir: string;
+  };
 }

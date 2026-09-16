@@ -52,5 +52,9 @@
   },
   "runs": {
     "dir": "runs"
+  },
+  "cache": {
+    "enabled": true,
+    "dir": ".cache/spr"
   }
 }

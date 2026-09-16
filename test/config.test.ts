@@ -12,6 +12,7 @@ describe("loadConfig", () => {
     expect(config.review.maxFindings).toBe(10);
     expect(config.narration.maxWordsPerStep).toBe(60);
     expect(config.tts.baseUrl).toBe("http://localhost:8880");
+    expect(config.cache).toEqual({ enabled: true, dir: ".cache/spr" });
   });
 
   it("applies SPR_* overrides with types", () => {
@@ -25,6 +26,24 @@ describe("loadConfig", () => {
     expect(config.llm.model).toBe("some-model");
     expect(config.tts.speed).toBe(1.1);
     expect(config.tts.baseUrl).toBe("http://kokoro:8880");
+  });
+
+  it("reads boolean overrides in the spellings people actually use", () => {
+    for (const on of ["true", "1", "YES", "on"]) {
+      expect(loadConfig({ env: { SPR_CACHE_ENABLED: on } }).cache.enabled).toBe(true);
+    }
+    for (const off of ["false", "0", "No", "off"]) {
+      expect(loadConfig({ env: { SPR_CACHE_ENABLED: off } }).cache.enabled).toBe(false);
+    }
+    expect(loadConfig({ env: { SPR_CACHE_DIR: "/tmp/spr-cache" } }).cache.dir).toBe(
+      "/tmp/spr-cache",
+    );
+  });
+
+  it("rejects a boolean override that is neither true nor false", () => {
+    expect(() => loadConfig({ env: { SPR_CACHE_ENABLED: "maybe" } })).toThrow(
+      /SPR_CACHE_ENABLED must be true or false/,
+    );
   });
 
   it("ignores empty environment values", () => {

@@ -31,9 +31,9 @@ export interface ReviewResult {
    */
   summary: string;
   /**
-   * Kept findings, ordered by severity (critical first), then by file and line.
+   * Kept findings, ordered by severity (critical first), then by file and line. review.raw.json may carry up to ingest-config review.maxRawFindings (15); after verification the Verifier caps the list at review.maxFindings (10) and records the rest in dropped with reason over_cap.
    *
-   * @maxItems 10
+   * @maxItems 15
    */
   findings: Finding[];
   /**

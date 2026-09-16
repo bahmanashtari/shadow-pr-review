@@ -14,7 +14,11 @@ type JsonObject = Record<string, unknown>;
  * Environment variables that override config values.
  * Keep this table in sync with `.env.example` and CLAUDE.md.
  */
-export const ENV_OVERRIDES: readonly { env: string; path: string; type: "string" | "number" }[] = [
+export const ENV_OVERRIDES: readonly {
+  env: string;
+  path: string;
+  type: "string" | "number" | "boolean";
+}[] = [
   { env: "SPR_LLM_PROVIDER", path: "llm.provider", type: "string" },
   { env: "SPR_LLM_MODEL", path: "llm.model", type: "string" },
   { env: "SPR_LLM_VERIFIER_MODEL", path: "llm.verifierModel", type: "string" },
@@ -25,7 +29,13 @@ export const ENV_OVERRIDES: readonly { env: string; path: string; type: "string"
   { env: "SPR_TTS_SPEED", path: "tts.speed", type: "number" },
   { env: "SPR_SUBTITLES", path: "video.subtitles", type: "string" },
   { env: "SPR_RUNS_DIR", path: "runs.dir", type: "string" },
+  { env: "SPR_CACHE_DIR", path: "cache.dir", type: "string" },
+  { env: "SPR_CACHE_ENABLED", path: "cache.enabled", type: "boolean" },
 ];
+
+/** Environment spellings accepted for a boolean override. */
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 /** Secrets are read from the environment only and never stored in config or traces. */
 export interface Secrets {
@@ -90,12 +100,18 @@ function applyEnv(config: JsonObject, env: Env): JsonObject {
   for (const o of ENV_OVERRIDES) {
     const raw = env[o.env];
     if (raw === undefined || raw.trim() === "") continue;
-    let value: string | number = raw.trim();
+    const text = raw.trim();
+    let value: string | number | boolean = text;
     if (o.type === "number") {
-      value = Number(value);
+      value = Number(text);
       if (!Number.isFinite(value)) {
         throw new StageError("config", `${o.env} must be a number, got "${raw}"`);
       }
+    } else if (o.type === "boolean") {
+      const lower = text.toLowerCase();
+      if (TRUE_VALUES.has(lower)) value = true;
+      else if (FALSE_VALUES.has(lower)) value = false;
+      else throw new StageError("config", `${o.env} must be true or false, got "${raw}"`);
     }
     setPath(result, o.path, value);
   }

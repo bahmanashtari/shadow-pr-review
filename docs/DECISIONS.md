@@ -138,3 +138,35 @@ Add new decisions at the bottom. Never delete; supersede instead.
   default when the tool is distributed to service repos, where a hosted model is the
   realistic choice because a GitHub-hosted runner cannot serve a 24B model.
 
+
+## ADR-016: review.schema.json carries raw findings, capped at 15 (accepted, September 2026)
+- Context: `config/default.json` lets the Reviewer produce `review.maxRawFindings` (15)
+  findings, but `schemas/review.schema.json` capped `findings` at 10, which is the
+  post-verification limit from ARCHITECTURE.md section 3. `review.raw.json` and
+  `review.json` share one schema (ADR-003), so the Reviewer could not emit a valid raw file
+  with more than 10 findings. The conflict was found while planning Milestone 1 step 3 and
+  would have broken step 4.
+- Decision: Raise `findings.maxItems` to 15, the raw ceiling. The cap of 10 stays a
+  Verifier rule enforced in code (`review.maxFindings`, still `maximum: 10` in the config
+  schema), and everything it cuts is recorded in `dropped` with reason `over_cap`.
+- Alternative considered: a separate `review-raw.schema.json`. Rejected because the two
+  files differ only in whether `verification` is filled in, and a second schema would have
+  to be kept in step with the first for no gain.
+- Consequences: One schema still covers both files. A `review.json` that reaches the
+  Narrator is guaranteed to hold at most 10 findings by `checkReview` and the Verifier, not
+  by the schema, so that rule needs its own test when step 5 lands.
+
+## ADR-017: One on-disk cache for model output, shared across runs (accepted, September 2026)
+- Context: Runs repeat. Re-running a stage on the same diff, scoring the golden set in
+  `spr eval`, and iterating on a prompt all replay identical requests. A cache inside the
+  run folder would never be reused, which is the opposite of what is needed.
+- Decision: A single cache directory outside the run folders, configured by
+  `cache.dir` (default `.cache/spr`, git-ignored) and `cache.enabled`, overridable with
+  `SPR_CACHE_DIR` and `SPR_CACHE_ENABLED`. LLM entries are keyed by
+  sha256(provider, model, system, messages, tools, output schema, temperature, max output
+  tokens); TTS entries by sha256(provider, voice, speed, normalized text). A hit is traced
+  as `cached: true` and counts nothing against the run's budgets.
+- Consequences: Repeated work is free in both time and money, which matters most for the
+  golden set. The cache is content-addressed, so a changed prompt or schema misses rather
+  than returning stale output, and deleting the directory is always safe. `SPR_CACHE_ENABLED=false`
+  forces a cold run when measuring real latency or cost.

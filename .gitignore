@@ -2,6 +2,7 @@ node_modules/
 dist/
 runs/
 coverage/
+.cache/
 .env
 .env.*
 !.env.example

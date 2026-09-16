@@ -20,9 +20,10 @@ Status values: done, in progress, next, planned.
 Cost note: the default provider is local Ollama (ADR-015), so steps 4 to 7 cost nothing to
 run and need no API key. Requires `ollama serve` on `http://localhost:11434` and the model
 named in `config/default.json` pulled. To compare against a hosted model for one run:
-`SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-haiku-4-5 pnpm spr run ...`, which needs
+`SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-opus-5 pnpm spr run ...`, which needs
 `ANTHROPIC_API_KEY` in the environment and bills separately from a Claude Pro subscription.
-Keep golden runs cached.
+That path is opt-in only: the pipeline must keep working, and reviewing well, with no key at
+all. Model output is cached on disk across runs (ADR-017), so repeating the golden set is free.
 
 ## Milestone 2: audio and video
 

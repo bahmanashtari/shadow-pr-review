@@ -39,16 +39,24 @@ describe("validateContract", () => {
     expect(errors).toContain("/findings/0/line_start: must be >= 1");
   });
 
-  it("rejects more than 10 findings", () => {
+  it("allows the 15 raw findings the Reviewer may produce, but no more", () => {
+    // review.raw.json carries up to review.maxRawFindings (15); the Verifier caps the
+    // kept list at review.maxFindings (10) and moves the rest to dropped as over_cap.
     const { review } = loadGolden("sample-01-order-outbox");
     const first = review.findings[0];
     if (!first) throw new Error("fixture has no findings");
-    review.findings = Array.from({ length: 11 }, (_, i) => ({
-      ...first,
-      id: `F${String(i + 1).padStart(2, "0")}`,
-    }));
+    const findings = (count: number): typeof review.findings =>
+      Array.from({ length: count }, (_, i) => ({
+        ...first,
+        id: `F${String(i + 1).padStart(2, "0")}`,
+      }));
+
+    review.findings = findings(15);
+    expect(validateContract("review", review).ok).toBe(true);
+
+    review.findings = findings(16);
     const result = validateContract("review", review);
-    expect(result.ok ? [] : result.errors).toContain("/findings: must NOT have more than 10 items");
+    expect(result.ok ? [] : result.errors).toContain("/findings: must NOT have more than 15 items");
   });
 
   it("rejects a script with a single step", () => {

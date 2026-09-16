@@ -5,7 +5,7 @@
   "description": "Tool configuration: config/default.json merged with SPR_* environment variables. Secrets never live here.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["llm", "budgets", "ingest", "review", "narration", "tts", "video", "runs"],
+  "required": ["llm", "budgets", "ingest", "review", "narration", "tts", "video", "runs", "cache"],
   "properties": {
     "llm": {
       "type": "object",
@@ -88,6 +88,16 @@
       "additionalProperties": false,
       "required": ["dir"],
       "properties": {
+        "dir": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "dir"],
+      "description": "On-disk cache of LLM and TTS responses, keyed by a hash of the request. Shared across runs, so re-running a stage costs nothing.",
+      "properties": {
+        "enabled": { "type": "boolean" },
         "dir": { "type": "string", "minLength": 1 }
       }
     }

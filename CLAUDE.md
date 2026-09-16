@@ -135,13 +135,19 @@ video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
   `config/config.schema.json` at startup; secrets only from environment (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`).
   `.env` is **not** auto-loaded (no `dotenv` dependency) - export the variables in the shell
   or provide them as CI secrets.
-- The default LLM provider is local Ollama and costs nothing (ADR-015). A hosted model is
-  opt-in per run: `SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-haiku-4-5 pnpm spr run ...`.
-- Installed: `ajv`, `commander`, `execa`, `picomatch` (runtime); `typescript`, `tsx`, `vitest`,
-  `eslint`, `typescript-eslint`, `prettier`, `json-schema-to-typescript`, `@types/picomatch` (dev).
-- Planned libraries (verify current versions when adding): `@anthropic-ai/sdk`,
-  `playwright` (library, not the test runner), `diff2html`, `@octokit/rest`, `pino`.
-  No diff-parsing library (ADR-014).
+- The pipeline runs on a local Ollama model and needs no API key (ADR-015). Never make a
+  paid provider the default, and never make one required for an ordinary run. A hosted model
+  stays opt-in for whoever supplies their own key:
+  `SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-opus-5 pnpm spr run ...`.
+  When a local model is too weak for a job, compare the installed Ollama models on the golden
+  set and recommend a better local one to pull, rather than reaching for the paid API.
+- Model output and TTS audio are cached on disk across runs (`cache.dir`, default
+  `.cache/spr`, git-ignored; `SPR_CACHE_DIR`, `SPR_CACHE_ENABLED`). See ADR-017.
+- Installed: `ajv`, `commander`, `execa`, `picomatch`, `@anthropic-ai/sdk` (runtime);
+  `typescript`, `tsx`, `vitest`, `eslint`, `typescript-eslint`, `prettier`,
+  `json-schema-to-typescript`, `@types/picomatch` (dev).
+- Planned libraries (verify current versions when adding): `playwright` (library, not the
+  test runner), `diff2html`, `@octokit/rest`, `pino`. No diff-parsing library (ADR-014).
 
 ## Harness rules (agents)
 
