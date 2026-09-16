@@ -16,6 +16,10 @@
         "model": { "type": "string", "minLength": 1 },
         "verifierModel": { "type": "string", "minLength": 1 },
         "baseUrl": { "type": "string" },
+        "effort": {
+          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "description": "Reasoning effort. Only the hosted Anthropic provider uses this; Ollama ignores it."
+        },
         "maxRetries": { "type": "integer", "minimum": 0, "maximum": 5 },
         "temperature": { "type": "number", "minimum": 0, "maximum": 1 }
       }

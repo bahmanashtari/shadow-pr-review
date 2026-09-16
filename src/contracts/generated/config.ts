@@ -13,6 +13,10 @@ export interface SprConfig {
     model: string;
     verifierModel?: string;
     baseUrl?: string;
+    /**
+     * Reasoning effort. Only the hosted Anthropic provider uses this; Ollama ignores it.
+     */
+    effort?: "low" | "medium" | "high" | "xhigh" | "max";
     maxRetries: number;
     temperature: number;
   };

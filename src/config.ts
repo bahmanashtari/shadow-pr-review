@@ -23,6 +23,7 @@ export const ENV_OVERRIDES: readonly {
   { env: "SPR_LLM_MODEL", path: "llm.model", type: "string" },
   { env: "SPR_LLM_VERIFIER_MODEL", path: "llm.verifierModel", type: "string" },
   { env: "SPR_LLM_BASE_URL", path: "llm.baseUrl", type: "string" },
+  { env: "SPR_LLM_EFFORT", path: "llm.effort", type: "string" },
   { env: "SPR_TTS_PROVIDER", path: "tts.provider", type: "string" },
   { env: "SPR_KOKORO_URL", path: "tts.baseUrl", type: "string" },
   { env: "SPR_TTS_VOICE", path: "tts.voice", type: "string" },
