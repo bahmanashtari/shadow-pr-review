@@ -46,6 +46,7 @@ Needs Docker, ffmpeg and Playwright Chromium locally and in CI.
 | 2 | Prompt-injection hardening and tests (hostile comments in diffs) | planned |
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services | planned |
+| 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
 
 ## Milestone 4: GitHub integration
 

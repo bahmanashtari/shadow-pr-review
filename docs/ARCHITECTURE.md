@@ -7,7 +7,7 @@
           |
      [1 Ingest] ------------------------------> diff.raw.patch, diff.patch, ingest.json
           |
-     [2 Reviewer agent]  (read-only tools) ---> review.raw.json
+     [2 Analyzers (code) + Reviewer agent] ---> review.raw.json
           |
      [3 Verifier agent + deterministic checks] -> review.json
           |
@@ -50,14 +50,38 @@ Stages communicate only through files in the run folder. Any stage can be re-run
   side, the text of a line, and whether a snippet appears in a file's diff lines. The
   Verifier, Director and Recorder use only this API.
 
-### 2. Reviewer agent
-- Model: small hosted model by default (for example Claude Haiku), configurable.
-- System prompt: built from `docs/REVIEW_RUBRIC.md` plus the output schema.
-- Loop: a small custom tool-use loop on `@anthropic-ai/sdk` (tool schemas are plain JSON
-  Schema). The Claude Agent SDK is an alternative if the loop grows.
-- Tools (read-only): `list_changed_files`, `get_diff_hunk(file)`,
-  `read_file(path, start, end)` at head revision, `grep_repo(pattern)` with result caps.
-- Output: `review.raw.json` (findings without `verification`), max 15 raw findings.
+### 2. Review (analyzers, then the Reviewer agent)
+This stage has two halves and ADR-022 explains why. Deterministic rules go first; the model
+handles only what needs judgement.
+
+**Analyzers (`src/analyzers/`, no model).** Pure functions over `ingest.json`: six rules over
+import statements and SQL strings, covering DDD layer boundaries and migration safety. They
+need no dependency and no checkout, so they run for every source. Each rule quotes the line it
+fired on, so its evidence is verbatim by construction. Findings carry `confidence: 0.95` and
+are still checked by the Verifier.
+
+**Reviewer agent.**
+- Model: local Ollama by default and no API key (ADR-015, ADR-018); a hosted model is opt-in
+  per run. Thinking on by default (ADR-021).
+- Loop: the provider-neutral harness in `src/harness/` (`runAgent`), not a vendor SDK, because
+  the default provider is local. Budgets, tracing and the response cache live there.
+- Input: the diff rendered with explicit new-side line numbers (`src/agents/diff-view.ts`).
+  This is required, not cosmetic: given a raw patch every model tested guessed line numbers
+  badly (ADR-018).
+- System prompt: built in code from `docs/REVIEW_RUBRIC.md` plus answer rules that each exist
+  because a measured run got that thing wrong - how to read a numbered line, that evidence must
+  be a line copied exactly (ADR-019), and an explicit severity anchor. The analyzer findings are
+  listed as already reported so the model does not repeat them.
+- Tools (read-only): `list_changed_files` and `get_diff_hunk(file)` always;
+  `read_file(path, start, end)` and `grep_repo(pattern)` only when the run has a checkout,
+  refusing paths that escape it.
+- Output: `review.raw.json` (findings without `verification`), capped at
+  `review.maxRawFindings`. A budget stop is not an error: the analyzer findings alone still
+  make a valid review.
+
+**Deferred to Milestone 4:** `tsc`, `eslint` with the reviewed repository's configuration, and
+`dependency-cruiser`'s cross-file graph. Those need that repository's `node_modules`, its
+`tsconfig` and its config, and a `--diff` run has no checkout at all.
 
 ### 3. Verifier
 Two layers:
