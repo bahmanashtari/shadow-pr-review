@@ -110,3 +110,31 @@ Add new decisions at the bottom. Never delete; supersede instead.
   timestamps, so re-running ingest on the same input gives identical bytes.
 - Consequences: Later stages read `ingest.json` through one `HunkIndex` API. Pull request
   input (`--pr`) arrives in Milestone 4 and must produce the same files.
+
+## ADR-015: Local model by default; hosted models are opt-in (accepted, September 2026)
+- Context: The Anthropic API bills separately from a Claude Pro subscription, so every run
+  of the Reviewer, Verifier and Narrator costs money. Only 3 of the 9 pipeline stages call a
+  model at all (ADR-002); TTS, rendering and encoding are already free local compute. A
+  measured trial on `golden/sample-01-order-outbox` with Ollama and `mistral-small3.2`
+  (24B, Q4_K_M) returned three findings that all satisfied `schemas/review.schema.json`,
+  including the primary `publish-before-commit` issue with the correct `event-consistency`
+  category and an overlapping line range.
+- Decision: `config/default.json` defaults to `provider: "ollama"` against
+  `http://localhost:11434`. A hosted model is opt-in for a single run
+  (`SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-haiku-4-5 ...`), for CI, and for the
+  GitHub Action in Milestone 4. Ollama's `format` parameter takes a JSON Schema and
+  constrains decoding, so `providers/llm/ollama.ts` gets contract conformance from the
+  provider rather than from retries.
+- Consequences: The repository costs nothing to run by default and an accidental
+  `pnpm spr run` cannot bill anyone. Two budgets were re-tuned for local inference:
+  `wallClockSeconds` 300 -> 1800 (a single measured call took ~50s at 15.8 tok/s, and
+  `agentSteps` is 12), and `inputTokens` 200000 -> 96000 to fit the 131072-token context of
+  `mistral-small3.2`. The provider interface must therefore carry a per-provider context
+  limit rather than assume one global budget. The named model is provisional: step 7's
+  `spr eval` scores the installed candidates (`mistral-small3.2`, `qwen3:30b`, `qwen3:4b`)
+  against `golden/*/labels.json` and against a hosted model, and the winner replaces it.
+  Severity calibration is the known weak spot - the trial rated a `min_severity: high`
+  finding as `medium` - so the Reviewer prompt must anchor severity explicitly. Revisit the
+  default when the tool is distributed to service repos, where a hosted model is the
+  realistic choice because a GitHub-hosted runner cannot serve a 24B model.
+

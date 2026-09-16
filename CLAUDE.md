@@ -134,6 +134,10 @@ video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
 - Config via `config/default.json`, an optional extra file (`--file` or `SPR_CONFIG`), and
   `SPR_*` environment variables (table in `src/config.ts`), validated against
   `config/config.schema.json` at startup; secrets only from environment (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`).
+  `.env` is **not** auto-loaded (no `dotenv` dependency) - export the variables in the shell
+  or provide them as CI secrets.
+- The default LLM provider is local Ollama and costs nothing (ADR-015). A hosted model is
+  opt-in per run: `SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-haiku-4-5 pnpm spr run ...`.
 - Installed: `ajv`, `commander` (runtime); `typescript`, `tsx`, `vitest`, `eslint`,
   `typescript-eslint`, `prettier`, `json-schema-to-typescript` (dev).
 - Added by Milestone 1, step 2: `execa`, `picomatch` (runtime).

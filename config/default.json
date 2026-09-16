@@ -1,16 +1,17 @@
 {
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "ollama",
+    "model": "mistral-small3.2:latest",
+    "baseUrl": "http://localhost:11434",
     "maxRetries": 2,
     "temperature": 0
   },
   "budgets": {
-    "inputTokens": 200000,
+    "inputTokens": 96000,
     "outputTokens": 20000,
     "toolCalls": 30,
     "agentSteps": 12,
-    "wallClockSeconds": 300
+    "wallClockSeconds": 1800
   },
   "ingest": {
     "ignoreGlobs": [

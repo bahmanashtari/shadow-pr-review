@@ -8,7 +8,7 @@ import { StageError } from "../src/lib/errors.js";
 describe("loadConfig", () => {
   it("loads valid defaults with an empty environment", () => {
     const config = loadConfig({ env: {} });
-    expect(config.llm.provider).toBe("anthropic");
+    expect(config.llm.provider).toBe("ollama");
     expect(config.review.maxFindings).toBe(10);
     expect(config.narration.maxWordsPerStep).toBe(60);
     expect(config.tts.baseUrl).toBe("http://localhost:8880");
