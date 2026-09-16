@@ -112,13 +112,47 @@ describe("spr CLI", () => {
     expect(out.join("\n")).toContain("2 findings kept, none dropped");
   });
 
-  it("run without --until now stops after verify, pointing at step 6", async () => {
+  it("run --until narrate writes script.json and exits cleanly", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "narrate", "--out", runDir),
+    );
+
+    expect(process.exitCode).toBeUndefined();
+    expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
+    // Two findings survive verify, so the script is intro + two + wrap-up.
+    expect(out.join("\n")).toContain("script: 4 steps");
+    // One cost.json covers every stage of the run, not just the last one that called a model.
+    expect(existsSync(path.join(runDir, "cost.json"))).toBe(true);
+  });
+
+  it("run without --until now stops after narrate, pointing at Milestone 2", async () => {
     const runDir = tempDir();
     await withFakeProvider(() => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
 
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("narrate is not implemented yet (Milestone 1, step 6)");
-    expect(existsSync(path.join(runDir, "review.json"))).toBe(true);
+    expect(err.join("\n")).toContain("tts is not implemented yet (Milestone 2, step 1)");
+    expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
+  });
+
+  it("stage narrate re-runs the Narrator over an existing run folder", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "verify", "--out", runDir),
+    );
+    out.length = 0;
+
+    await withFakeProvider(() => run("stage", "narrate", "--run", runDir));
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("re-running narrate");
+    expect(out.join("\n")).toContain("script: 4 steps");
+    const script = JSON.parse(readFileSync(path.join(runDir, "script.json"), "utf8")) as {
+      steps: { id: string; kind: string; finding_id: string | null }[];
+    };
+    expect(script.steps.map((s) => s.id)).toEqual(["S00", "S01", "S02", "S03"]);
+    expect(script.steps.map((s) => s.kind)).toEqual(["intro", "finding", "finding", "wrap_up"]);
+    expect(script.steps.map((s) => s.finding_id)).toEqual([null, "F01", "F02", null]);
   });
 
   it("stage verify re-runs the checks on an existing run folder, with no model", async () => {
@@ -193,9 +227,9 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "narrate", "--run", tempDir());
+    await run("stage", "tts", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage narrate is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage tts is not implemented yet");
   });
 
   it("stage rejects an unknown name", async () => {

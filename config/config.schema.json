@@ -64,7 +64,11 @@
       "additionalProperties": false,
       "required": ["maxWordsPerStep", "language"],
       "properties": {
-        "maxWordsPerStep": { "type": "integer", "minimum": 10 },
+        "maxWordsPerStep": {
+          "type": "integer",
+          "minimum": 40,
+          "description": "Spoken words per narration step. The floor is 40 because checkScript also holds an intro or a wrap-up to 15 to 40 words (NARRATION_STYLE.md); a lower cap here would make those two rules contradict, and the Narrator could never satisfy both."
+        },
         "language": { "type": "string" }
       }
     },

@@ -119,6 +119,23 @@ describe("checkScript", () => {
     );
   });
 
+  it("holds an intro and a wrap-up to the length the narration rules set", () => {
+    const { review, script } = loadGolden("sample-03-email-value-object");
+    step(script, 0).text = "Hello there.";
+    step(script, 2).text = Array.from({ length: 41 }, () => "word").join(" ");
+    const problems = checkScript(script, review);
+    expect(problems).toContain("/steps/0 (S00): 2 words, but an intro or wrap-up must be 15 to 40");
+    expect(problems).toContain(
+      "/steps/2 (S02): 41 words, but an intro or wrap-up must be 15 to 40",
+    );
+  });
+
+  it("does not hold a finding step to that length", () => {
+    const { review, script } = loadGolden("sample-03-email-value-object");
+    step(script, 1).text = "The error message leaks the address.";
+    expect(checkScript(script, review)).toEqual([]);
+  });
+
   it("requires steps to follow review order", () => {
     const { review, script } = loadGolden("sample-02-inventory-consumer");
     const a = step(script, 1);

@@ -346,3 +346,77 @@ Add new decisions at the bottom. Never delete; supersede instead.
   and the Verifier both sort with it, `checkReview` enforces it, and the sample-02 fixtures
   (review and script) were corrected together. `checkReview` also takes an optional
   `maxFindings`, which is the cap test ADR-016 asked for when this step landed.
+
+## ADR-024: The Narrator writes words; the code writes the script (accepted, September 2026)
+
+**Context.** Step 6 turns `review.json` into `script.json`. `contracts/checks.ts` already
+constrained that file heavily before a line of the stage existed: the first step is an intro
+and the last a wrap-up, ids run `S00`, `S01`, ... without gaps, there is exactly one step per
+kept finding in the review's order, and `focus` equals that finding's file, side and lines. A
+first sketch had the model produce whole `Step` objects, which meant it could get every one of
+those wrong and the retry loop would spend attempts teaching it a structure that was never in
+doubt.
+
+**Decision.** The model is asked for the texts only - an intro, one piece per finding, and a
+wrap-up - and `assembleScript` builds the file: ids by position, `kind`, `finding_id`, `focus`
+copied from the finding, `subtitle` null, and `estimated_seconds` as word count over 2.5. The
+title is the code's too: `Review: <source.title>`, or `Code review` when the source has none,
+truncated to the schema's 100 characters. All three golden fixtures already held exactly that
+string, so this writes down a rule rather than changing one.
+
+This is CLAUDE.md principle 2 taken literally, and the same split `src/agents/reviewer.ts`
+already uses: the model finds problems, the code assigns ids. It also fits the caps exactly -
+`review.maxFindings` (10) plus an intro and a wrap-up is the script schema's 12-step ceiling -
+so the Narrator never has to choose what to leave out.
+
+**The echoed `finding_id`.** Each text comes back paired with the id it narrates, which is
+redundant with its position on purpose. It is a checksum: a model that drifts by one and
+narrates the migration in the consumer's slot still produces valid JSON, and the pairing is
+what catches it. `assembleScript` stays total - it pairs each text with the finding its id
+names and leaves out a text whose id is unknown - so every mistake is reported by the existing
+`checkScript` rules ("narrated twice", "has no narration step", "must follow the order") in
+language the model can act on, instead of throwing.
+
+**The retry is the harness's.** `runAgent`'s `check` hook, built in step 3 and unused until
+now, takes `checkScript` against the assembled draft and feeds its problems back. The model
+gets `/steps/2 (S02): 71 words, maximum is 60`, not "try again". Because the check assembles
+the same script the stage would write, the thing checked is the thing written.
+
+**What the Narrator sees.** Evidence lines and the file path are included in the prompt, which
+is worth stating because it looks like a violation of "input: `review.json` only" and is not:
+both live in `review.json`, and the rule is about the diff. "Describe code, don't read it"
+requires knowing what the code says - `reserved_quantity` only becomes "the reserved quantity
+column" if the Narrator can see it - and "the consumer" versus "the migration" requires the
+path. The prompt says the path must never be spoken, and `FILE_REFERENCE_PATTERN` enforces it.
+
+**Intro and wrap-up length.** `docs/NARRATION_STYLE.md` has always said 15 to 40 words and
+nothing enforced it, so `checkScript` now does. All three golden fixtures already complied
+(37/25, 31/23, 24/21 words). This is the same lesson as the ordering rule in ADR-023: a written
+rule that only lives in a prompt drifts, and the fixtures drift with it.
+
+**Failure is a handover, not a fallback.** When the model cannot produce usable narration -
+a budget stop, or repairs exhausted - the stage fails rather than emitting a deterministic
+script. There is nothing worth hearing in the alternative: a finding's `summary` is written for
+a reader and is full of identifiers and file names, so a fallback would breach the very checks
+this step adds, and every later stage builds on `script.json`. Unlike the Reviewer, where
+analyzer findings alone are a useful review, there is no half-result here.
+
+But failing is not the end of the run. The stage writes `script.rejected.json` with the draft
+that failed, and the error names both ways forward: edit that draft into `script.json` and
+confirm it with `spr validate`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
+re-run `spr stage narrate --run runs/<id>`. This is what principle 4 buys - a stage boundary is
+a file, so a person can take over at exactly the point of failure without a resume mechanism
+existing for it. An interactive prompt was considered and rejected: Milestone 4 runs this in
+GitHub Actions with no TTY, so it would have to be an opt-in flag, and every real fix here is
+an edit to a file followed by a re-run. The natural human gate is not failure anyway but
+success - `spr run --until narrate` stops with a readable script before any TTS or recording
+time is spent on it.
+
+**Consequence.** `SPR_LLM_PROVIDER=fake` had to learn a second answer, chosen by the output
+schema's title, or an offline run would die at narrate; its placeholder text is sized to pass
+the narration rules. `spr run` now builds one `Tracer` for the whole run, because two stages
+writing `cost.json` meant the second overwrote the first. And `narration.maxWordsPerStep` had
+its floor raised from 10 to 40 in `config/config.schema.json`: the new 15-to-40 frame rule and
+a per-step cap below 15 contradict each other, so the Narrator could be configured into a job
+it could never finish. A smoke run at a cap of 10 found exactly that - the model shortened
+every finding step and could not shorten the intro, because the floor forbade it.

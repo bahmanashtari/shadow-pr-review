@@ -113,6 +113,9 @@ export interface ScriptCheckOptions {
   maxWordsPerStep?: number;
 }
 
+/** What NARRATION_STYLE.md allows an intro or a wrap-up to run to. */
+const FRAME_WORDS = { min: 15, max: 40 } as const;
+
 /** Checks a script.json on its own and against the review it narrates. */
 export function checkScript(
   script: NarrationScript,
@@ -168,6 +171,12 @@ export function checkScript(
 
     const words = countWords(s.text);
     if (words > maxWords) problems.push(`${at}: ${words} words, maximum is ${maxWords}`);
+    if (s.kind !== "finding" && (words < FRAME_WORDS.min || words > FRAME_WORDS.max)) {
+      problems.push(
+        `${at}: ${words} words, but an intro or wrap-up must be ` +
+          `${FRAME_WORDS.min} to ${FRAME_WORDS.max}`,
+      );
+    }
     if (MARKDOWN_PATTERN.test(s.text))
       problems.push(`${at}: text contains markdown or code characters`);
     if (FILE_REFERENCE_PATTERN.test(s.text))

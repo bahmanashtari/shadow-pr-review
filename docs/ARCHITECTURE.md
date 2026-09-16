@@ -100,10 +100,22 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
    reason to give, not the deterministic layer's.
 
 ### 4. Narrator agent
-- Input: `review.json` only (never the raw diff, which keeps it grounded and cheap).
-- Rules: `docs/NARRATION_STYLE.md`. One step per finding, plus intro and wrap-up.
-- Deterministic post-checks: word count per step <= 60, no markdown characters, no file
-  extensions, focus copied from the finding (the code sets focus; the model does not).
+- Input: `review.json` only (never the raw diff, which keeps it grounded and cheap). Each
+  finding is rendered as its summary, rationale, suggestion, file and evidence lines: enough
+  to describe the code in plain words without reading it out.
+- Rules: `docs/NARRATION_STYLE.md`, read fresh into the system prompt the way the rubric is.
+- The model writes only the words (ADR-024). The code writes everything else: step ids,
+  `kind`, `finding_id`, `focus` copied from the finding, `subtitle`, `estimated_seconds`, and
+  the title (`Review: <source title>`). The script's shape is fixed by `checkScript`, so there
+  is nothing there for a model to decide. `review.maxFindings` (10) plus an intro and a
+  wrap-up is exactly the schema's 12-step ceiling, so no finding is ever left out for space.
+- Deterministic post-checks, fed back to the model as repairs (max 2, then the stage fails):
+  word count per step <= `narration.maxWordsPerStep`, an intro or wrap-up of 15 to 40 words,
+  no markdown characters, no file names, paths or URLs, one step per kept finding in the
+  review's order, and `focus` matching that finding.
+- On failure the stage writes `script.rejected.json` and names both ways on: edit that draft
+  into `script.json`, or change a budget, the style file or the model and re-run
+  `spr stage narrate`. A stage boundary is a file, so a person can take over at that point.
 
 ### 5. TTS
 - Provider interface: `synthesize(text, voice, speed) -> wav bytes`.

@@ -94,7 +94,15 @@ export function runVerify(options: RunVerifyOptions): VerifyOutcome {
 
 /** Reads and validates an existing `review.raw.json`. */
 export function readRawReview(runDir: string): ReviewResult {
-  const file = path.join(runDir, REVIEW_RAW_FILE);
+  return readReviewFile(path.join(runDir, REVIEW_RAW_FILE));
+}
+
+/** Reads and validates the verified `review.json`, the Narrator's only input. */
+export function readReview(runDir: string): ReviewResult {
+  return readReviewFile(path.join(runDir, REVIEW_FILE));
+}
+
+function readReviewFile(file: string): ReviewResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(file, "utf8"));

@@ -17,7 +17,14 @@ import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
-import { readRawReview, runVerify, summarizeVerify, writeVerifiedReview } from "./verify/verify.js";
+import { runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
+import {
+  readRawReview,
+  readReview,
+  runVerify,
+  summarizeVerify,
+  writeVerifiedReview,
+} from "./verify/verify.js";
 import { Budget } from "./harness/budget.js";
 import { createCache } from "./harness/cache.js";
 import { Tracer } from "./harness/tracing.js";
@@ -146,14 +153,23 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   report(runDir, summarize(built.ingest));
 
   if (opts.until === "ingest") return;
-  await review(runDir, built.ingest, config);
+  // One tracer for the whole run, so `cost.json` covers every stage that called a model.
+  const tracer = new Tracer(runDir);
+  try {
+    await review(runDir, built.ingest, config, tracer);
 
-  if (opts.until === "review") return;
-  verify(runDir, built.ingest, config);
+    if (opts.until === "review") return;
+    verify(runDir, built.ingest, config);
 
-  if (opts.until === "verify") return;
+    if (opts.until === "verify") return;
+    await narrate(runDir, config, tracer);
+  } finally {
+    tracer.writeCost(runDir);
+  }
+
+  if (opts.until === "narrate") return;
   throw new NotImplementedError(
-    `stopped after verify: narrate is not implemented yet (Milestone 1, step 6). ` +
+    `stopped after narrate: tts is not implemented yet (Milestone 2, step 1). ` +
       `Run folder: ${runDir}`,
   );
 }
@@ -162,8 +178,12 @@ async function runPipeline(opts: RunOptions): Promise<void> {
  * Runs the Review stage into an existing run folder and prints what it found.
  * Shared by `spr run` and `spr stage review`.
  */
-async function review(runDir: string, ingest: IngestResult, config: SprConfig): Promise<void> {
-  const tracer = new Tracer(runDir);
+async function review(
+  runDir: string,
+  ingest: IngestResult,
+  config: SprConfig,
+  tracer: Tracer,
+): Promise<void> {
   const outcome = await runReview({
     ingest,
     provider: createProvider(config, readSecrets()),
@@ -175,8 +195,26 @@ async function review(runDir: string, ingest: IngestResult, config: SprConfig): 
     ...(ingest.source.type === "local_diff" ? {} : { repoRoot: process.cwd() }),
   });
   writeReview(runDir, outcome.review);
-  tracer.writeCost(runDir);
   console.log(summarizeReview(outcome));
+}
+
+/**
+ * Runs the Narrate stage over an existing run folder and prints what it wrote.
+ * Like verify, it reads `review.json` back from disk, so `spr run` and `spr stage narrate`
+ * follow exactly the same path.
+ */
+async function narrate(runDir: string, config: SprConfig, tracer: Tracer): Promise<void> {
+  const outcome = await runNarrate({
+    review: readReview(runDir),
+    provider: createProvider(config, readSecrets()),
+    config,
+    budget: new Budget(config.budgets),
+    tracer,
+    cache: createCache(config.cache),
+    runDir,
+  });
+  writeScript(runDir, outcome.script);
+  console.log(summarizeNarrate(outcome));
 }
 
 /**
@@ -240,12 +278,28 @@ export function buildProgram(): Command {
         verify(runDir, readIngest(runDir), config);
         return;
       }
-      if (stage !== "review") {
-        notYet(`spr stage ${stage}`, stage === "narrate" ? "Milestone 1, step 6" : "Milestone 2");
+      if (stage === "narrate") {
+        const config = loadConfig();
+        const runDir = path.resolve(opts.run);
+        const tracer = new Tracer(runDir);
+        report(runDir, "re-running narrate");
+        try {
+          await narrate(runDir, config, tracer);
+        } finally {
+          tracer.writeCost(runDir);
+        }
+        return;
       }
+      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 2");
       const config = loadConfig();
-      report(path.resolve(opts.run), "re-running review");
-      await review(path.resolve(opts.run), readIngest(opts.run), config);
+      const runDir = path.resolve(opts.run);
+      const tracer = new Tracer(runDir);
+      report(runDir, "re-running review");
+      try {
+        await review(runDir, readIngest(opts.run), config, tracer);
+      } finally {
+        tracer.writeCost(runDir);
+      }
     });
 
   program

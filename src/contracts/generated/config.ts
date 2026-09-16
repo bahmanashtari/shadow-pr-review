@@ -41,6 +41,9 @@ export interface SprConfig {
     maxFindings: number;
   };
   narration: {
+    /**
+     * Spoken words per narration step. The floor is 40 because checkScript also holds an intro or a wrap-up to 15 to 40 words (NARRATION_STYLE.md); a lower cap here would make those two rules contradict, and the Narrator could never satisfy both.
+     */
     maxWordsPerStep: number;
     language: string;
   };

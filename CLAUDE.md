@@ -55,7 +55,7 @@ shadow-pr-review/
       checks.ts                  # cross-field and cross-file checks
     ingest/                      # parse-diff.ts, filter.ts, risk.ts, sources.ts, hunk-index.ts, ingest.ts
     analyzers/                   # rules.ts, analyze.ts - deterministic findings (ADR-022)
-    agents/                      # reviewer.ts, diff-view.ts, prompts/, tools/; verifier.ts (M3) and narrator.ts later
+    agents/                      # reviewer.ts, narrator.ts, diff-view.ts, prompts/, tools/; verifier.ts is M3
     verify/                      # grounding.ts, verify.ts - review.raw.json -> review.json, no model (ADR-023)
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
@@ -91,27 +91,33 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest, review and verify run for real. `--until <stage>` exits 0 after that stage; without it
-the run stops at the first stage that is not built and exits 2, keeping the run folder.
+Ingest, review, verify and narrate run for real. `--until <stage>` exits 0 after that stage;
+without it the run stops at the first stage that is not built and exits 2, keeping the run folder.
 
 ```
-pnpm spr run --diff change.patch --until verify [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until narrate [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
+pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
 ```
 
-Review needs a local model: `ollama serve` with the model from `config/default.json` pulled.
-`SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all, so only the deterministic
-analyzers (ADR-022) contribute.
+Review and narrate need a local model: `ollama serve` with the model from
+`config/default.json` pulled. `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all:
+only the deterministic analyzers (ADR-022) contribute findings, and the script is a placeholder.
+
+When the Narrator cannot produce narration that passes the checks, the stage fails and leaves
+`script.rejected.json` in the run folder. Edit it into `script.json` and confirm it with
+`spr validate script.json`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
+re-run `spr stage narrate` (ADR-024).
 
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after verify until step 6 lands
+pnpm spr run --diff change.patch                    # stops after narrate until Milestone 2 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <narrate|tts|direct|...> --run runs/<id>
+pnpm spr stage <tts|direct|record|...> --run runs/<id>
 pnpm spr eval golden/                               # precision/recall on golden set (step 7)
 docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container (Milestone 2)
 ```
@@ -121,6 +127,7 @@ characters of the diff's sha256 for `--diff`). Ingest writes the first three; th
 as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json, audio/, timeline.json,
 video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
+A failed Narrate stage also leaves `script.rejected.json` (ADR-024).
 
 ## Coding conventions
 

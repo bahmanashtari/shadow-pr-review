@@ -16,6 +16,44 @@ const EMPTY_ANSWER = {
   findings: [],
 };
 
+/**
+ * Placeholder narration. The lengths and the wording are not arbitrary: they satisfy the
+ * narration rules `checkScript` enforces, so a fake run reaches `script.json` like a real one.
+ */
+const STUB_NARRATION = {
+  intro:
+    "This is an automated run with no model, so there is no real narration here. The " +
+    "findings below were produced by the deterministic checks alone.",
+  step:
+    "This finding has no narration because the fake provider is selected. Choose a real " +
+    "model to hear it explained.",
+  wrapUp:
+    "That is the end of this placeholder walkthrough. Select a real model to hear the " +
+    "findings explained properly in plain words.",
+};
+
+/** The finding ids the Narrator's schema pins its answer to. */
+function narratedIds(schema: Record<string, unknown>): string[] {
+  const properties = schema.properties as Record<string, unknown>;
+  const steps = properties.steps as Record<string, unknown>;
+  const item = (steps.items as Record<string, unknown>).properties as Record<string, unknown>;
+  const id = item.finding_id as { enum?: unknown };
+  return Array.isArray(id.enum) ? (id.enum as string[]) : [];
+}
+
+/**
+ * Answers whichever stage is asking. The fake has no idea what it is reviewing, so every
+ * answer is empty or placeholder, but it is always valid for the schema it was handed.
+ */
+function fakeAnswer(schema: Record<string, unknown> | undefined): string {
+  if (schema?.title !== "NarratorAnswer") return JSON.stringify(EMPTY_ANSWER);
+  return JSON.stringify({
+    intro: STUB_NARRATION.intro,
+    steps: narratedIds(schema).map((finding_id) => ({ finding_id, text: STUB_NARRATION.step })),
+    wrap_up: STUB_NARRATION.wrapUp,
+  });
+}
+
 /** Default Ollama endpoint when the config leaves `llm.baseUrl` out. */
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
@@ -42,7 +80,7 @@ export function createProvider(config: SprConfig, secrets: Secrets = {}): LlmPro
       // `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all, which is how the
       // CLI is tested and how someone can exercise a run offline. It answers every call
       // with an empty result, so the deterministic analyzers are all that contributes.
-      return new FakeLlmProvider([() => fakeText(JSON.stringify(EMPTY_ANSWER))], {
+      return new FakeLlmProvider([(request) => fakeText(fakeAnswer(request.outputSchema))], {
         model,
         repeatLastTurn: true,
       });
