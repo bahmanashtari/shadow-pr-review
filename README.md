@@ -8,13 +8,14 @@ the working guide and `docs/ARCHITECTURE.md` for the design.
 
 ## Requirements
 
-- Node.js 22.13 or newer (`.nvmrc`)
-- pnpm 12 (enable with `corepack enable`; the version comes from `package.json`)
+- Node.js 22.22.2 or newer on the 22 line (`.nvmrc`)
+- pnpm 12 through corepack 0.36 (the pnpm version comes from `package.json`; see ADR-013)
 - Later milestones: Docker (Kokoro TTS), ffmpeg, Playwright Chromium
 
 ## Setup
 
 ```bash
+npm install -g corepack@0.36.0
 corepack enable
 pnpm install
 pnpm verify          # generated types, typecheck, lint, tests

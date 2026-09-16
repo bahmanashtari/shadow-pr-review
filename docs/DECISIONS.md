@@ -88,3 +88,13 @@ Add new decisions at the bottom. Never delete; supersede instead.
   keep the release-age protection on. Node.js 22.13+ (required by ESLint 10 and vitest 5).
 - Consequences: Revisit when typescript-eslint supports TypeScript 7. New dependencies with
   install scripts must be approved explicitly in `pnpm-workspace.yaml`.
+
+## ADR-013: Pin corepack when enabling pnpm (accepted, September 2026)
+- Context: The corepack bundled with some Node.js 22 releases is too old to run pnpm 12
+  (confirmed on a developer machine; it worked with corepack 0.36.0). The bundled version
+  differs between Node releases and machines, so a bare `corepack enable` is not reliable.
+- Decision: Install a pinned corepack before enabling it, locally and in CI:
+  `npm install -g corepack@0.36.0` then `corepack enable`. corepack 0.36 requires
+  Node.js 22.22.2 or newer on the 22 line.
+- Consequences: CI and local setup behave the same. Bump the pin deliberately. Newer Node.js
+  majors no longer bundle corepack, so the explicit install also keeps future upgrades working.
