@@ -82,6 +82,25 @@ function isMissing(error: unknown): boolean {
 }
 
 /**
+ * The duration of a media file's container, in milliseconds.
+ *
+ * Separate from {@link streamDurationMs} because Matroska - and therefore the WebM Playwright
+ * writes - carries no per-stream duration at all: `stream=duration` answers `N/A` for it, while
+ * `format=duration` answers. Anything that needs to know how long a recording really is has to
+ * ask the container.
+ *
+ * @returns the duration, or undefined when the file does not report one.
+ */
+export async function containerDurationMs(file: string, cwd: string): Promise<number | undefined> {
+  const out = await ffprobe(
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file],
+    cwd,
+  );
+  const seconds = Number(out.trim().split("\n")[0]);
+  return Number.isFinite(seconds) ? Math.round(seconds * 1000) : undefined;
+}
+
+/**
  * The duration of a media file's first stream of a kind, in milliseconds.
  * @returns the duration, or undefined when the file has no such stream.
  */

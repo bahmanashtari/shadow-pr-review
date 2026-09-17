@@ -153,10 +153,14 @@ file sizes to compare against the last run. Run it before a release and after to
 boundary. It needs the whole toolchain up at once (a model, the Kokoro container, ffmpeg,
 Chromium) and takes roughly as long as the videos it makes - 2:25 for all three on a warm cache.
 
-**Do not read the Composer's "sound and picture N ms apart" line as a sync guarantee.** It
-compares the final file's two streams, and `-shortest` has already forced those into agreement,
-so it cannot see a recording that came out short: it passed a `final.mp4` whose narration was
-cut off 429 ms early, reporting 8 ms. Milestone 3 step 8 fixes it (ADR-034).
+The Composer reports `narration complete, picture N ms short of it`. The first half is a
+checked claim: the final file's sound is compared against the clips and gaps the schedule was
+built from, which nothing in the encode can influence, and a shortfall over 40 ms fails the
+stage (ADR-035). The second half is frame quantization - the picture ends on the last whole
+frame at or before the sound does, 69 to 77 ms at 25 fps - and is printed as a number to watch,
+not as evidence. If Compose fails saying narration is missing, it names which of the two causes
+it is and the command that resumes; the run folder is kept, so nothing is re-reviewed or
+re-spoken.
 
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 

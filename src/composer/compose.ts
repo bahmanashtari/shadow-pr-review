@@ -16,7 +16,7 @@ import type { NarrationScript } from "../contracts/generated/script.js";
 import type { Timeline } from "../contracts/generated/timeline.js";
 import { StageError } from "../lib/errors.js";
 import { buildFullAudio } from "./audio.js";
-import { ffmpeg, hasFilter, streamDurationMs } from "./ffmpeg.js";
+import { containerDurationMs, ffmpeg, hasFilter, streamDurationMs } from "./ffmpeg.js";
 import { buildSrt } from "./srt.js";
 import { VIDEO_FILE } from "../recorder/record.js";
 
@@ -26,6 +26,16 @@ export const SUBTITLES_FILE = "subtitles.srt";
 
 /** ARCHITECTURE's tolerance: beyond this the sound and the picture have come apart. */
 const MAX_DRIFT_MS = 250;
+
+/**
+ * The tolerance on a duration that should match a computed one exactly (ADR-035).
+ *
+ * One video frame at 25 fps. The audio track is joined from clips this pipeline measured
+ * itself, so it should land on the schedule to the millisecond, and on three complete runs it
+ * did - by 0.2, 1.0 and 0.7 ms. The failure this guards against missed by 429. There is a lot
+ * of room between those two numbers and no reason to spend it.
+ */
+const MAX_SHORTFALL_MS = 40;
 
 /** Input for {@link runCompose}. */
 export interface RunComposeOptions {
@@ -82,6 +92,10 @@ export async function runCompose(options: RunComposeOptions): Promise<ComposeOut
     );
   }
 
+  // Before any encoding: two derivations of the narration's length that must already agree,
+  // and there is no point spending a minute of ffmpeg on a run whose inputs do not.
+  assertScheduleAgrees(manifest, timeline);
+
   const audioPath = await buildFullAudio(runDir, manifest, timeline);
   const subtitles = config.video.subtitles;
 
@@ -131,6 +145,18 @@ export async function runCompose(options: RunComposeOptions): Promise<ComposeOut
 
   const videoDurationMs = (await streamDurationMs(FINAL_FILE, "video", runDir)) ?? 0;
   const audioDurationMs = (await streamDurationMs(FINAL_FILE, "audio", runDir)) ?? 0;
+
+  // The recording is probed rather than trusted: `record.json` carries the wall clock the
+  // Recorder observed, which is not the same thing as what Playwright wrote to disk - the two
+  // were 678 ms apart on the run that failed (ADR-034). Asked for only now, and only to tell
+  // the two causes apart, so a healthy run pays one ffprobe for it.
+  const webmMs = await containerDurationMs(VIDEO_FILE, runDir);
+  assertAudioComplete({
+    expectedMs: expectedAudioMs(manifest, timeline.gap_ms),
+    finalAudioMs: audioDurationMs,
+    trimmedVideoMs: webmMs === undefined ? undefined : webmMs - record.t0_ms,
+    runDir,
+  });
   assertInSync(videoDurationMs, audioDurationMs);
 
   return {
@@ -142,7 +168,102 @@ export async function runCompose(options: RunComposeOptions): Promise<ComposeOut
 }
 
 /**
- * Refuses a file whose sound and picture have come apart.
+ * How long `audio/full.wav` will be: every clip end to end, with one gap between each pair and
+ * none at either end - the same rule `joinOrder` joins by, derived here rather than measured,
+ * so the two can be compared.
+ */
+export function expectedAudioMs(manifest: AudioManifest, gapMs: number): number {
+  const clips = manifest.clips.reduce((total, clip) => total + clip.duration_ms, 0);
+  const gaps = gapMs > 0 ? gapMs * Math.max(0, manifest.clips.length - 1) : 0;
+  return clips + gaps;
+}
+
+/**
+ * Refuses a run whose schedule and whose clips disagree about how long the narration is.
+ *
+ * Two independent derivations of the same number: the Director laid out `step_windows` from the
+ * measured clips, and {@link expectedAudioMs} adds those clips up again. They can only differ
+ * if one of the two is wrong, and finding out here is better than encoding a file around it.
+ * Nothing external is consulted, so this holds even where no recording exists yet.
+ */
+export function assertScheduleAgrees(manifest: AudioManifest, timeline: Timeline): void {
+  const last = timeline.step_windows.at(-1);
+  if (last === undefined) throw new StageError("compose", "The timeline has no step windows.");
+
+  const expected = expectedAudioMs(manifest, timeline.gap_ms);
+  const difference = last.end_ms - expected;
+  if (Math.abs(difference) <= MAX_SHORTFALL_MS) return;
+
+  throw new StageError(
+    "compose",
+    `The schedule and the clips disagree by ${String(Math.abs(difference))} ms: ` +
+      `timeline.json ends its last step at ${String(last.end_ms)} ms, but audio/manifest.json's ` +
+      `clips and ${String(timeline.gap_ms)} ms gaps add up to ${String(expected)} ms. ` +
+      `One of the two was built from stale inputs - re-run \`spr stage direct\` to rebuild the ` +
+      `schedule from the clips that are actually on disk.`,
+  );
+}
+
+/**
+ * Refuses a `final.mp4` that is missing narration, and says which stage to go back to.
+ *
+ * This is the check that `assertInSync` cannot be. `-shortest` ends the output when the shorter
+ * *input* ends, so when the recording comes up short the encoder cuts the sound to fit it - and
+ * the two streams that come out agree with each other perfectly, because the encoder made them
+ * agree. Measuring against `expected`, which no part of the encode can influence, is the only
+ * way to see it (ADR-034, ADR-035).
+ *
+ * `trimmedVideoMs` separates the two causes. A video shorter than the narration means the
+ * recording is at fault and re-recording is the remedy; a long enough video means the audio
+ * track itself came out short, which points at the join instead.
+ */
+export function assertAudioComplete(options: {
+  expectedMs: number;
+  finalAudioMs: number;
+  trimmedVideoMs: number | undefined;
+  runDir: string;
+}): void {
+  const { expectedMs, finalAudioMs, trimmedVideoMs, runDir } = options;
+  const shortfall = expectedMs - finalAudioMs;
+  if (Math.abs(shortfall) <= MAX_SHORTFALL_MS) return;
+
+  const measured = `${FINAL_FILE} carries ${String(finalAudioMs)} ms of sound where the clips and gaps come to ${String(expectedMs)} ms`;
+
+  if (shortfall < 0) {
+    throw new StageError(
+      "compose",
+      `${String(-shortfall)} ms more sound than the schedule allows: ${measured}. ` +
+        `The join is the place to look: audio/list.txt says what went in and in what order, ` +
+        `and audio/full.wav is the result, which can be played.`,
+    );
+  }
+
+  const short =
+    trimmedVideoMs !== undefined && trimmedVideoMs < expectedMs - MAX_SHORTFALL_MS
+      ? `The recording is the cause: after trimming t0 the picture runs ${String(trimmedVideoMs)} ms, ` +
+        `less than the narration, and \`-shortest\` cut the sound to fit it. Recording is real ` +
+        `time and does not always write everything it captured, so re-recording is a real remedy: ` +
+        `\`spr stage record --run ${runDir}\`, then \`spr stage compose --run ${runDir}\`.`
+      : `The picture was long enough, so the audio track itself came out short. audio/list.txt ` +
+        `says what was joined and audio/full.wav is the result - play it and compare against ` +
+        `audio/manifest.json. \`spr stage tts --run ${runDir}\` rebuilds the clips.`;
+
+  throw new StageError(
+    "compose",
+    `${String(shortfall)} ms of narration is missing from the video: ${measured}. ` +
+      `${short} The run folder is kept, so nothing has to be re-reviewed or re-spoken.`,
+  );
+}
+
+/**
+ * Reports how far the final file's own two streams sit apart.
+ *
+ * **This cannot certify that the video is complete**, and it was read that way once (ADR-034).
+ * `-shortest` forces the two streams it compares into agreement, so what is left to measure is
+ * frame granularity - the picture ends on the last whole frame at or before the sound does, 69
+ * to 77 ms short at 25 fps. {@link assertAudioComplete} is the check with a reference outside
+ * the encode. This one stays as a loose net for a gross failure that survives `-shortest`, such
+ * as a burn-in filter that changed the frame rate.
  *
  * The message names which side is longer, because the two point at different stages: video
  * longer than audio means the recording overran its timeline, audio longer means the clips add
@@ -164,11 +285,18 @@ export function assertInSync(videoMs: number, audioMs: number): void {
   );
 }
 
-/** One line such as `final.mp4: 0:57, sound and picture 12 ms apart`. */
+/**
+ * One line such as `final.mp4: 0:57, narration complete, 77 ms of trailing frame${subs}`.
+ *
+ * It leads with the check that means something. The old line led with the drift figure and read
+ * as a sync guarantee, which is exactly how a truncated video came to be reported as the
+ * project's best result (ADR-034); the frame figure is still worth printing, but as the
+ * quantization it is rather than as evidence.
+ */
 export function summarizeCompose(outcome: ComposeOutcome): string {
   const seconds = Math.round(outcome.videoDurationMs / 1000);
   const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  const drift = Math.abs(outcome.videoDurationMs - outcome.audioDurationMs);
+  const frame = outcome.audioDurationMs - outcome.videoDurationMs;
   const subs = outcome.subtitlesPath === undefined ? "" : `, ${outcome.subtitlesPath}`;
-  return `${outcome.finalPath}: ${clock}, sound and picture ${drift} ms apart${subs}`;
+  return `${outcome.finalPath}: ${clock}, narration complete, picture ${frame} ms short of it${subs}`;
 }

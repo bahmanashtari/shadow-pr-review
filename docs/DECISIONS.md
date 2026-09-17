@@ -1103,3 +1103,83 @@ the problem; the eleven seconds it holds is. Deriving the title from the review'
 would make it per-change and meaningful, but it is worth doing together with whether the intro
 should show the diff at all rather than a full-screen card, which is Milestone 5's intro and
 outro work.
+
+## ADR-035: A check needs a reference the thing it checks cannot move (accepted, September 2026)
+
+**Context.** ADR-034 found that `assertInSync` cannot fail for the reason it exists. It compared
+the final file's video stream against its audio stream, and `-shortest` ends the output when the
+shorter *input* ends - so by the time those two streams exist, the encoder has already made them
+agree. A `final.mp4` missing 429 ms of narration was reported as "8 ms apart", the best sync
+figure the project had recorded.
+
+**The decision: measure against what the audio was supposed to be, not against the other half of
+the same encode.** Three checks, each with a reference outside the thing it is checking, each
+pointing at a different stage.
+
+| Check | Reference | What it catches |
+|---|---|---|
+| `assertScheduleAgrees` | the manifest's clips and gaps, against the timeline's last window | a schedule and a set of clips built from different inputs |
+| `assertAudioComplete` | `expectedAudioMs`, which no part of the encode can influence | narration `-shortest` cut off |
+| `assertInSync` | the other stream, as before | a gross divergence that survives `-shortest` |
+
+`assertScheduleAgrees` runs *before* the encode, because there is no point spending a minute of
+ffmpeg on a run whose two descriptions of its own length already disagree. It consults nothing
+external, so it holds even where no recording exists.
+
+**Why `expectedAudioMs` and not `timeline.total_duration_ms`.** The obvious reference is wrong by
+exactly one gap. The Director schedules a trailing gap into `total_duration_ms` - 56 637 ms on
+`sample-01` - but `joinOrder` puts a gap *between* each pair of clips and never at an end, so the
+audio is 56 237 ms. The 400 ms difference is real and deliberate: it is the outro card holding
+after the last word. Reusing `total_duration_ms` would have built a 400 ms error into the check
+and then sized a tolerance around it. Deriving the number the same way the join does, and
+cross-checking *that* against the schedule, keeps both honest.
+
+**Q1: the Composer probes the recording, not the Recorder.** ADR-031 is explicit that steps 1 to
+4 need neither ffmpeg nor ffprobe, because Playwright brings its own ffmpeg for the WebM. Giving
+the Recorder a probe to diagnose its own output would overturn that for a diagnostic. The
+Composer already has ffprobe and already reads `record.json`, so it compares all three numbers
+and says which pair disagrees. The cost is honest: the fault is named one stage after it
+happens.
+
+**And `record.json` gains no field for it (Q2).** A contract change means schema, generated
+types, golden fixtures and an ADR together, for a number the Composer can measure when it needs
+it and that nothing downstream reads. A contract with no reader is how schemas start being
+written for their own sake (ADR-033).
+
+**Matroska carries no per-stream duration, so the probe needed a new shape.** `stream=duration`
+answers `N/A` for a `.webm` while `format=duration` answers, which is why `containerDurationMs`
+sits beside `streamDurationMs` rather than replacing it. Worth writing down because it is
+invisible until asked: the existing helper would have returned `undefined` for every recording
+this pipeline makes, and a check that silently degrades to "cannot tell" is the failure this ADR
+is about, repeated.
+
+**Q3: a short recording fails, and hands over.** A video with the end of the narration cut off is
+not something to ship with a warning. The stage fails, keeps the run folder, names the numbers,
+distinguishes the two causes, and gives the command that resumes - `spr stage record` when the
+picture is short, `spr stage tts` when the sound is. Re-recording is a real remedy rather than a
+formality, because recording is real time and does not always write everything it captured. The
+message says the folder is kept, because the point is that nothing has to be re-reviewed or
+re-spoken: the expensive stages are already paid for.
+
+Deliberately not done: retrying the recording automatically. It would hide the intermittency
+this check exists to surface, and how many real-time minutes a run may spend is its own
+decision.
+
+**Q4: the tolerance is 40 ms, one frame at 25 fps.** The audio is joined from clips this pipeline
+measured itself, so it should land on the schedule exactly, and on three complete runs it did -
+0.2, 1.0 and 0.7 ms. The failure missed by 429. Forty is thirty times the largest good
+observation and ten times smaller than the smallest bad one, and there is no reason to spend the
+room in between. `MAX_DRIFT_MS` stays at 250 for `assertInSync`, which is measuring a different
+thing and should not borrow this number.
+
+**The summary line changed, because it was read as a guarantee.** `final.mp4: 0:56, sound and
+picture 12 ms apart` led with the figure that meant least. It now reads `final.mp4: 0:56,
+narration complete, picture 77 ms short of it`: the claim that is checked comes first, and the
+frame quantization is printed as the quantization it is.
+
+**Verified against the run that failed.** `spr stage compose --run runs/m2s2-sample-01` now
+fails, naming 429 ms, identifying the recording as the cause (the trimmed picture runs 55 826 ms
+against 56 237 ms of narration), and giving both commands to recover. The three complete runs
+from ADR-034 still pass, at 77, 69 and 70 ms of trailing frame. That folder is git-ignored and
+exists only on the machine that produced it, so the suite's coverage comes from a synthesized
+short video instead, which needs no browser.

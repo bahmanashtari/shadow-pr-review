@@ -11,7 +11,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  assertAudioComplete,
   assertInSync,
+  assertScheduleAgrees,
+  expectedAudioMs,
   FINAL_FILE,
   SUBTITLES_FILE,
   runCompose,
@@ -59,6 +62,148 @@ describe("what this build can do", () => {
   it.runIf(process.platform === "linux")("has libass on Linux, where CI runs", () => {
     expect(hasFfmpeg).toBe(true);
     expect(canBurn).toBe(true);
+  });
+});
+
+describe("expectedAudioMs", () => {
+  const clips = (...durations: number[]) => ({
+    schema_version: "1.0" as const,
+    provider: "fake",
+    voice: "af_heart",
+    speed: 1,
+    sample_rate: 24_000,
+    clips: durations.map((duration_ms, i) => ({
+      step_id: `S0${String(i)}`,
+      path: `audio/S0${String(i)}.wav`,
+      duration_ms,
+      cache_key: "k",
+      cached: false,
+    })),
+  });
+
+  it("puts a gap between each pair of clips and none at either end", () => {
+    // Four clips take three gaps, which is what `joinOrder` joins and what the schedule ends on.
+    expect(expectedAudioMs(clips(1000, 2000, 3000, 4000), 400)).toBe(10_000 + 1200);
+  });
+
+  it("adds no gap at all for a single clip", () => {
+    expect(expectedAudioMs(clips(1000), 400)).toBe(1000);
+  });
+
+  it("ignores the gap when there is none", () => {
+    expect(expectedAudioMs(clips(1000, 2000), 0)).toBe(3000);
+  });
+});
+
+describe("assertScheduleAgrees", () => {
+  const manifest = {
+    schema_version: "1.0" as const,
+    provider: "fake",
+    voice: "af_heart",
+    speed: 1,
+    sample_rate: 24_000,
+    clips: [
+      { step_id: "S00", path: "audio/S00.wav", duration_ms: 1000, cache_key: "a", cached: false },
+      { step_id: "S01", path: "audio/S01.wav", duration_ms: 2000, cache_key: "b", cached: false },
+    ],
+  };
+  const timeline = (lastEnd: number) => ({
+    schema_version: "1.0" as const,
+    render_mode: "diff2html" as const,
+    video: { width: 1280, height: 720, theme: "dark" as const },
+    gap_ms: 400,
+    total_duration_ms: lastEnd + 400,
+    step_windows: [
+      { step_id: "S00", start_ms: 0, end_ms: 1000 },
+      { step_id: "S01", start_ms: 1400, end_ms: lastEnd },
+    ],
+    actions: [],
+  });
+
+  it("accepts a schedule that ends where the clips and gaps do", () => {
+    // 1000 + 400 + 2000.
+    expect(() => {
+      assertScheduleAgrees(manifest, timeline(3400));
+    }).not.toThrow();
+  });
+
+  it("names both numbers and the stage that rebuilds one from the other", () => {
+    // A timeline built before a clip was re-spoken is the way this happens.
+    const error = (() => {
+      try {
+        assertScheduleAgrees(manifest, timeline(3900));
+      } catch (e: unknown) {
+        return e as StageError;
+      }
+      return undefined;
+    })();
+    expect(error).toBeInstanceOf(StageError);
+    expect(error?.message).toContain("disagree by 500 ms");
+    expect(error?.message).toContain("3900");
+    expect(error?.message).toContain("3400");
+    expect(error?.message).toContain("spr stage direct");
+  });
+});
+
+describe("assertAudioComplete", () => {
+  const base = { expectedMs: 56_237, trimmedVideoMs: 56_504, runDir: "/runs/x" };
+
+  it("accepts the millisecond-level agreement a healthy run produces", () => {
+    // The three complete runs behind ADR-034 landed 0.2, 1.0 and 0.7 ms off.
+    expect(() => {
+      assertAudioComplete({ ...base, finalAudioMs: 56_236 });
+    }).not.toThrow();
+  });
+
+  it("blames the recording, and says how to redo it, when the picture came up short", () => {
+    // ADR-034's numbers exactly: `-shortest` cut 429 ms of narration to fit a short webm.
+    const error = (() => {
+      try {
+        assertAudioComplete({ ...base, finalAudioMs: 55_808, trimmedVideoMs: 55_826 });
+      } catch (e: unknown) {
+        return e as StageError;
+      }
+      return undefined;
+    })();
+    expect(error).toBeInstanceOf(StageError);
+    expect(error?.message).toContain("429 ms of narration is missing");
+    expect(error?.message).toContain("The recording is the cause");
+    expect(error?.message).toContain("spr stage record --run /runs/x");
+    // The point of keeping the folder: the model has already been paid for.
+    expect(error?.message).toContain("re-reviewed or re-spoken");
+  });
+
+  it("blames the join instead when the picture was long enough", () => {
+    const error = (() => {
+      try {
+        assertAudioComplete({ ...base, finalAudioMs: 55_808 });
+      } catch (e: unknown) {
+        return e as StageError;
+      }
+      return undefined;
+    })();
+    expect(error?.message).toContain("audio track itself came out short");
+    expect(error?.message).toContain("audio/list.txt");
+    expect(error?.message).not.toContain("The recording is the cause");
+  });
+
+  it("catches sound the schedule never allowed for", () => {
+    const error = (() => {
+      try {
+        assertAudioComplete({ ...base, finalAudioMs: 57_000 });
+      } catch (e: unknown) {
+        return e as StageError;
+      }
+      return undefined;
+    })();
+    expect(error?.message).toContain("763 ms more sound than the schedule allows");
+  });
+
+  it("still fails when the recording cannot be probed at all", () => {
+    // `trimmedVideoMs` only picks the wording; a missing duration must not excuse the shortfall.
+    expect(() => {
+      assertAudioComplete({ ...base, finalAudioMs: 55_808, trimmedVideoMs: undefined });
+    }).toThrow(StageError);
   });
 });
 
@@ -128,8 +273,12 @@ withFfmpeg("runCompose", () => {
   /**
    * A run folder holding a short real video plus the audio and timeline that match it.
    * The video is generated with ffmpeg rather than recorded, so this test needs no browser.
+   *
+   * `videoMs` overrides how long that stand-in recording is. The default comfortably covers the
+   * timeline; passing less reproduces the failure ADR-034 found, where Playwright wrote a webm
+   * shorter than the narration and `-shortest` cut the sound to fit it.
    */
-  async function runFolder(config: SprConfig) {
+  async function runFolder(config: SprConfig, videoMs?: number) {
     const runDir = mkdtempSync(path.join(tmpdir(), "spr-compose-"));
     mkdirSync(path.join(runDir, "audio"), { recursive: true });
 
@@ -171,7 +320,7 @@ withFfmpeg("runCompose", () => {
         "-i",
         "color=c=black:s=1280x720:r=25",
         "-t",
-        ((timeline.total_duration_ms + 400) / 1000).toFixed(2),
+        ((videoMs ?? timeline.total_duration_ms + 400) / 1000).toFixed(2),
         "-c:v",
         "libx264",
         "-pix_fmt",
@@ -254,6 +403,24 @@ withFfmpeg("runCompose", () => {
     },
     180_000,
   );
+
+  /*
+   * The regression this step exists for (ADR-034, ADR-035). Playwright wrote a webm 678 ms
+   * shorter than the Recorder's own clock claimed, `-shortest` cut the narration to fit it, and
+   * the old check called the result the best-synced file the project had produced - because the
+   * two streams it compared had been made to agree by the encoder that truncated them.
+   */
+  it("refuses a video whose narration `-shortest` cut off, and says to re-record", async () => {
+    const config = defaultConfig();
+    // Two 1000 ms clips and one 400 ms gap need 2400 ms; this recording has far less.
+    const { runDir, ...inputs } = await runFolder(config, 2000);
+
+    await expect(runCompose({ ...inputs, config, runDir })).rejects.toThrow(/narration is missing/);
+    await expect(runCompose({ ...inputs, config, runDir })).rejects.toThrow(
+      /The recording is the cause/,
+    );
+    await expect(runCompose({ ...inputs, config, runDir })).rejects.toThrow(/spr stage record/);
+  }, 180_000);
 
   it("says which stage to run when there is no video to compose", async () => {
     const config = defaultConfig();
