@@ -34,8 +34,8 @@ of it against the golden set.
 | Step | Scope | Status |
 |---|---|---|
 | 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations read from the WAV header, not ffprobe; TTS cache. Narration length measured against real audio (ADR-027, ADR-028). Plan: `docs/plans/m2-step1-tts.md` | done |
-| 2 | Director (pure): script + manifest to `timeline.json` | next |
-| 3 | Recorder page: diff2html bundle vendored at build time, row tagging, `window.spr` API, dark theme, title and outro cards | planned |
+| 2 | Director (pure): script + manifest to `timeline.json`, with the lead-in clamped so it never precedes the previous step. Plan: `docs/plans/m2-step2-director.md` | done |
+| 3 | Recorder page: diff2html bundle vendored at build time, row tagging, `window.spr` API, dark theme, title and outro cards | next |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 | planned |
 | 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check | planned |
 | 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples | planned |
@@ -53,7 +53,7 @@ anywhere Node does - and `SPR_TTS_PROVIDER=fake` runs it without Docker too.
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
-| 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028) | planned |
+| 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028). **Re-measure before acting**: the numbers in ADR-028 predate ADR-029, and deduplicating the analyzer findings moved finding steps from 26-33 words to 39 against the fixtures' 44-60, closing more than half the gap without touching the prompt | planned |
 | 7 | Score redundancy in `spr eval`: nothing in `src/eval/score.ts` can see two kept findings making the same claim, because every metric scores findings one at a time - `sample-01` scored 1.000/1.000 both with and without a duplicate (ADR-029). Wants its own axis, in the shape ADR-025 gave restraint | planned |
 
 ## Milestone 4: GitHub integration

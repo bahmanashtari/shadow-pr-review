@@ -152,15 +152,68 @@ describe("spr CLI", () => {
     expect(existsSync(path.join(runDir, "cost.json"))).toBe(true);
   });
 
-  it("run without --until now stops after tts, pointing at Milestone 2 step 2", async () => {
+  it("run without --until now stops after direct, pointing at Milestone 2 step 3", async () => {
     const runDir = tempDir();
     await withFakeProviders(tempDir(), () => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
 
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("direct is not implemented yet (Milestone 2, step 2)");
+    expect(err.join("\n")).toContain("record is not implemented yet (Milestone 2, step 3)");
     // The run folder is kept, with everything the stages that did run produced in it.
     expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
     expect(existsSync(path.join(runDir, "audio", "manifest.json"))).toBe(true);
+    expect(existsSync(path.join(runDir, "timeline.json"))).toBe(true);
+  });
+
+  it("run --until direct writes a timeline that matches the clips it measured", async () => {
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "direct", "--out", runDir),
+    );
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toMatch(/timeline: 4 steps, \d+ actions, \d+:\d{2} of video/);
+
+    const timeline: unknown = JSON.parse(readFileSync(path.join(runDir, "timeline.json"), "utf8"));
+    const result = validateContract("timeline", timeline);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+
+    // The windows are the measured durations, not the script's word-count estimates.
+    const manifest = JSON.parse(
+      readFileSync(path.join(runDir, "audio", "manifest.json"), "utf8"),
+    ) as { clips: { step_id: string; duration_ms: number }[] };
+    const windows = (
+      timeline as { step_windows: { step_id: string; start_ms: number; end_ms: number }[] }
+    ).step_windows;
+    for (const clip of manifest.clips) {
+      const window = windows.find((w) => w.step_id === clip.step_id);
+      expect(window && window.end_ms - window.start_ms).toBe(clip.duration_ms);
+    }
+  });
+
+  it("stage direct re-runs from script.json and audio/manifest.json", async () => {
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "direct", "--out", runDir),
+    );
+    out.length = 0;
+
+    // No provider needed: the stage reads two files and writes one, with no model and no audio.
+    await run("stage", "direct", "--run", runDir);
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("re-running direct");
+    expect(out.join("\n")).toContain("timeline: 4 steps");
+  });
+
+  it("stage direct says which file is missing when tts has not run", async () => {
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "narrate", "--out", runDir),
+    );
+
+    await run("stage", "direct", "--run", runDir);
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toMatch(/\[direct\] Cannot read .*manifest\.json/);
   });
 
   it("run --until tts writes the clips and the manifest, with no container", async () => {
@@ -301,9 +354,9 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "direct", "--run", tempDir());
+    await run("stage", "record", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage direct is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage record is not implemented yet");
   });
 
   it("eval scores the golden set and writes a report", async () => {

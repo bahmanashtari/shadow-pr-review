@@ -14,13 +14,13 @@
  * there is no handover file to write (ADR-024): that failure was a judgement the model could
  * not make, this one is a server that was not there.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checkAudioManifest, countWords } from "../contracts/checks.js";
 import type { AudioManifest } from "../contracts/generated/audio-manifest.js";
 import type { SprConfig } from "../contracts/generated/config.js";
 import type { NarrationScript } from "../contracts/generated/script.js";
-import { assertContract } from "../contracts/validate.js";
+import { assertContract, validateContract } from "../contracts/validate.js";
 import { ttsCacheKey, type TtsCache } from "../harness/cache.js";
 import { ContractError, StageError } from "../lib/errors.js";
 import type { TtsProvider } from "../providers/tts/types.js";
@@ -159,6 +159,25 @@ export async function runTts(options: RunTtsOptions): Promise<TtsOutcome> {
     cached,
     totalMs: clips.reduce((sum, clip) => sum + clip.duration_ms, 0),
   };
+}
+
+/**
+ * Reads and validates an existing `audio/manifest.json`, the Director's other input.
+ *
+ * Through the file rather than through memory, like `readScript` and `readReview`, so
+ * `spr run` and `spr stage direct` follow exactly the same path.
+ */
+export function readManifest(runDir: string): AudioManifest {
+  const file = path.join(runDir, MANIFEST_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (cause) {
+    throw new StageError("direct", `Cannot read ${file}`, { cause });
+  }
+  const result = validateContract("audio-manifest", parsed);
+  if (!result.ok) throw new ContractError(file, result.errors);
+  return result.value;
 }
 
 /** Writes `audio/manifest.json` into a run folder. The clips are already there. */

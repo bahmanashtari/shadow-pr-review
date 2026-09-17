@@ -32,7 +32,8 @@ import { createCache, createTtsCache } from "./harness/cache.js";
 import { Tracer } from "./harness/tracing.js";
 import { createProvider } from "./providers/llm/create.js";
 import { createTtsProvider } from "./providers/tts/create.js";
-import { runTts, summarizeTts, writeManifest } from "./tts/speak.js";
+import { readManifest, runTts, summarizeTts, writeManifest } from "./tts/speak.js";
+import { runDirect, summarizeDirect, writeTimeline } from "./director/direct.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
@@ -182,10 +183,28 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   await speak(runDir, config);
 
   if (opts.until === "tts") return;
+  direct(runDir, config);
+
+  if (opts.until === "direct") return;
   throw new NotImplementedError(
-    `stopped after tts: direct is not implemented yet (Milestone 2, step 2). ` +
+    `stopped after direct: record is not implemented yet (Milestone 2, step 3). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/**
+ * Runs the Direct stage over an existing run folder and prints the schedule it built.
+ * It reads `script.json` and `audio/manifest.json` back from disk, so `spr run` and
+ * `spr stage direct` follow exactly the same path.
+ */
+function direct(runDir: string, config: SprConfig): void {
+  const outcome = runDirect({
+    script: readScript(runDir),
+    manifest: readManifest(runDir),
+    config,
+  });
+  writeTimeline(runDir, outcome.timeline);
+  console.log(summarizeDirect(outcome));
 }
 
 /**
@@ -327,6 +346,13 @@ export function buildProgram(): Command {
         const runDir = path.resolve(opts.run);
         report(runDir, "re-running tts");
         await speak(runDir, config);
+        return;
+      }
+      if (stage === "direct") {
+        const config = loadConfig();
+        const runDir = path.resolve(opts.run);
+        report(runDir, "re-running direct");
+        direct(runDir, config);
         return;
       }
       if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 2");

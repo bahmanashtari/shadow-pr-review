@@ -62,7 +62,7 @@ shadow-pr-review/
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
     providers/tts/               # types.ts, kokoro-http.ts, fake.ts, create.ts (piper is later)
     tts/                         # normalize.ts, duration.ts, speak.ts - script.json -> audio/
-    director/                    # script + manifest -> timeline (pure functions)
+    director/                    # timeline.ts (pure), direct.ts (the stage)
     recorder/                    # Playwright + diff2html page (page/ holds HTML, CSS, JS)
     composer/                    # ffmpeg wrappers, SRT generation
     publish/                     # GitHub comments, artifact/storage upload
@@ -93,18 +93,19 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest, review, verify, narrate and tts run for real. `--until <stage>` exits 0 after that
+Ingest, review, verify, narrate, tts and direct run for real. `--until <stage>` exits 0 after that
 stage; without it the run stops at the first stage that is not built and exits 2, keeping the
 run folder.
 
 ```
-pnpm spr run --diff change.patch --until tts [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until direct [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
 pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
+pnpm spr stage direct --run runs/<id>              # re-schedule script + manifest; no model, offline
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
@@ -128,9 +129,9 @@ re-run `spr stage narrate` (ADR-024).
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after tts until Milestone 2 step 2 lands
+pnpm spr run --diff change.patch                    # stops after direct until Milestone 2 step 3 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <direct|record|compose|...> --run runs/<id>
+pnpm spr stage <record|compose|publish> --run runs/<id>
 ```
 
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7

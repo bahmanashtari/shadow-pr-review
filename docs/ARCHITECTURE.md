@@ -48,7 +48,8 @@ Stages communicate only through files in the run folder. Any stage can be re-run
   the kept diff exceeds `maxDiffBytes`, to keep the riskiest files (`truncated: true`).
 - `HunkIndex` (read API over `ingest.json`): does a file exist, does a line range exist on a
   side, the text of a line, and whether a snippet appears in a file's diff lines. The
-  Verifier, Director and Recorder use only this API.
+  Verifier and Recorder use only this API. (The Director needs none of it: it works from
+  `script.json` and `audio/manifest.json` alone.)
 
 ### 2. Review (analyzers, then the Reviewer agent)
 This stage has two halves and ADR-022 explains why. Deterministic rules go first; the model
@@ -141,12 +142,25 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   that fails part-way resumes for free rather than starting over.
 
 ### 6. Director (pure)
+- Input: `script.json` and `audio/manifest.json`, and nothing else. It does **not** read
+  `ingest.json`: a step's `focus` was copied from a finding the Verifier already grounded
+  against the diff, so re-checking those lines here would re-prove an upstream proof.
 - For each step: window = [start, start + duration]; next start = end + gap (default 400 ms).
-- Intro: `show_title` at its window start, `hide_title` at end.
-- Finding: `open_file` and `scroll_to` at `start - 300 ms` (clamped), `highlight` at start,
-  `clear_highlight` at end.
+  Every duration is the measured clip length (ADR-027); `estimated_seconds` is never read.
+- Intro: `show_title` at its window start, carrying the script's title so the Recorder needs
+  no other file; `hide_title` at end.
+- Finding: `open_file` and `scroll_to` at the lead-in, `highlight` at start, `clear_highlight`
+  at end.
+- **The lead-in** is `start - 300 ms`, clamped to 0 *and* to the previous step's `end_ms`.
+  The second clamp matters because `video.gapMs` may be as low as 0: without it, any gap under
+  300 ms puts the lead-in inside the previous step's window and the page scrolls away from the
+  code while that step is still being spoken.
 - Wrap-up: `show_outro`.
 - Consecutive steps in the same file skip `open_file`.
+- `total_duration_ms` is the last window's end plus one gap, so the recording does not cut on
+  the last syllable and the outro card gets a beat.
+- `render_mode` is `diff2html` (ADR-005). There is no config switch for it until the GitHub
+  page mode exists to switch to.
 
 ### 7. Recorder
 - Playwright Chromium, viewport = video size, `record_video_dir` set on the context.
