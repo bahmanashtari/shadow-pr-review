@@ -824,9 +824,25 @@ which is a third of the footprint.
 supply its own Node, so `.nvmrc` would stop governing what CI actually runs - a mismatch worth
 avoiding in a project that pins its toolchain deliberately (ADR-012).
 
-**Consequences.** One workflow step. If the first real run says CI has grown more than expected,
-that is worth reporting rather than absorbing: skipping browser tests on CI and verifying at
-step 6 stays available and costs nothing to fall back to. The browser-backed test skips itself
+**What the first real run cost, measured rather than predicted.** This ADR said CI "should land
+near a minute" and asked for the real number rather than an absorbed assumption. The number is
+better than the prediction:
+
+| Step | Before | After |
+|---|---|---|
+| Install Chromium | - | **4 s** |
+| Test | ~2 s | **10 s** |
+| Whole job | 35-45 s | **44 s** |
+
+The install took 4 seconds on the runner against 20 on a developer machine, because a
+datacentre fetches 94 MiB rather faster than a home connection - which is worth knowing the next
+time a local measurement is used to argue about CI. The test step grew by about 8 seconds, which
+is the browser launching and roughly two seconds of video being recorded in real time. Total
+cost of putting a browser in CI: about twelve seconds, on a job that was already forty.
+
+**Consequences.** One workflow step. Had the first real run said CI had grown badly, skipping
+browser tests on CI and verifying at step 6 stayed available and would have cost nothing to fall
+back to. The browser-backed test skips itself
 loudly when no browser is installed, so a contributor who has not run `playwright install` gets
 a green suite and a clear reason rather than a failure they did not cause.
 

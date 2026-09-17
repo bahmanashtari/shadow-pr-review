@@ -135,9 +135,12 @@ Three findings, each of which changed the answer:
   still worked from `chromium_headless_shell` (195 MB) plus Playwright's bundled ffmpeg
   (2.5 MB). `playwright install chromium-headless-shell` is the whole requirement.
 
-So: one workflow step, no `--with-deps`, no cache, headless shell only. CI should land near a
-minute. **If the first real run says otherwise, that is worth reporting rather than absorbing** -
-the alternative (skip on CI, verify at step 6) stays available and costs nothing to fall back to.
+So: one workflow step, no `--with-deps`, no cache, headless shell only.
+
+**Measured afterwards: the whole job runs in 44 seconds**, against 35 to 45 before. The install
+step takes 4 seconds on the runner (not the 20 measured locally - a datacentre fetches 94 MiB
+faster than a home connection), and the test step grew from about 2 seconds to 10. Twelve
+seconds in total. See ADR-031.
 
 ## 6. Two things the measurements settled for free
 
