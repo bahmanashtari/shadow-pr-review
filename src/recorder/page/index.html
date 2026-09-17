@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  The Recorder page.
+
+  A template rather than a finished document: `buildPage` replaces the __SPR_*__ markers with
+  the diff2html stylesheet, this project's stylesheet, the diff2html bundle, spr.js, and the
+  diff itself. The result is one self-contained file with no network reference in it, so it
+  renders identically on a developer's machine and in a CI container with no internet.
+
+  The diff travels as a JSON string rather than as text in the document, because a diff of an
+  HTML file can contain the characters that close a script tag. `buildPage` escapes them.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>__SPR_TITLE__</title>
+    <style>
+      __SPR_DIFF2HTML_CSS__
+    </style>
+    <style>
+      __SPR_CSS__
+    </style>
+  </head>
+  <body>
+    <div id="spr-diff"></div>
+
+    <!--
+      Visible from the start, not faded in. The Recorder begins recording before t0, and
+      `show_title` fires at millisecond zero: a card that faded in from nothing would open the
+      video on a flash of diff, and would show a bare diff during the pre-roll.
+    -->
+    <div class="spr-card spr-visible" id="spr-title">
+      <div class="spr-card-text">__SPR_TITLE__</div>
+      <div class="spr-card-rule"></div>
+    </div>
+
+    <div class="spr-card" id="spr-outro">
+      <div class="spr-card-rule"></div>
+      <div class="spr-card-text">__SPR_OUTRO__</div>
+    </div>
+
+    <script>
+      __SPR_DIFF2HTML_JS__;
+    </script>
+    <script>
+      __SPR_JS__;
+    </script>
+    <script>
+      window.spr.init(__SPR_DIFF_JSON__, {
+        drawFileList: false,
+        matching: "lines",
+        outputFormat: "line-by-line",
+        colorScheme: "dark",
+        highlight: true,
+        fileContentToggle: false,
+        stickyFileHeaders: true,
+        synchronisedScroll: false,
+      });
+    </script>
+  </body>
+</html>

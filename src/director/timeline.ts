@@ -82,6 +82,8 @@ interface StepContext {
   openFile: string | undefined;
   /** The title card's words. */
   title: string;
+  /** The outro card's words. */
+  outro: string;
 }
 
 /** The actions for one step, in the order they fire. */
@@ -96,7 +98,7 @@ function actionsFor(step: Step, context: StepContext): Action[] {
     ];
   }
   if (step.kind === "wrap_up") {
-    return [{ at_ms: window.start_ms, step_id: step.id, type: "show_outro" }];
+    return [{ at_ms: window.start_ms, step_id: step.id, type: "show_outro", text: context.outro }];
   }
 
   const focus = focusOf(step);
@@ -125,11 +127,21 @@ function actionsFor(step: Step, context: StepContext): Action[] {
  * @param script the narration, which supplies the order, the kinds and the focus.
  * @param manifest the measured clips, which supply every duration (ADR-027).
  * @param config `video.gapMs` and the frame size.
+ * @param options the outro card's words, when the stage has worked them out.
  */
+export interface BuildTimelineOptions {
+  /**
+   * The outro card's words. A string rather than a review, so this stays a pure function of
+   * the script and the measured audio: the stage above works out what to say (plan m2-step3).
+   */
+  outroText?: string;
+}
+
 export function buildTimeline(
   script: NarrationScript,
   manifest: AudioManifest,
   config: SprConfig,
+  options: BuildTimelineOptions = {},
 ): Timeline {
   const gapMs = config.video.gapMs;
   const durations = new Map(manifest.clips.map((clip) => [clip.step_id, clip.duration_ms]));
@@ -147,6 +159,7 @@ export function buildTimeline(
       previousEnd: windows[i - 1]?.end_ms ?? 0,
       openFile,
       title: script.title,
+      outro: options.outroText ?? "",
     })) {
       if (action.type === "open_file") openFile = action.file;
       actions.push(action);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTimeline } from "../../src/director/timeline.js";
 import { runDirect, summarizeDirect } from "../../src/director/direct.js";
+import { summarizeFindings } from "../../src/director/outro.js";
 import { checkTimeline } from "../../src/contracts/checks.js";
 import type { AudioManifest } from "../../src/contracts/generated/audio-manifest.js";
 import type { SprConfig } from "../../src/contracts/generated/config.js";
@@ -14,6 +15,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { defaultConfig, GOLDEN_SAMPLES, loadGolden } from "../helpers.js";
+
+/** The sample whose hand-written review the outro tests borrow findings from. */
+const SAMPLE = GOLDEN_SAMPLES[0] ?? "sample-01-order-outbox";
 
 const HANDLER = "services/orders/src/application/commands/place-order.handler.ts";
 const MIGRATION = "services/orders/src/infrastructure/migrations/1700-Add.ts";
@@ -317,5 +321,65 @@ describe("every golden script", () => {
     }).not.toThrow();
     expect(checkTimeline(timeline, manifest)).toEqual([]);
     expect(timeline.step_windows).toHaveLength(script.steps.length);
+  });
+});
+
+describe("summarizeFindings", () => {
+  /** A review carrying just the severities a test cares about. */
+  function reviewWith(severities: string[]) {
+    const { review } = loadGolden(SAMPLE);
+    const template = review.findings[0];
+    if (template === undefined) throw new Error("the golden review has no findings");
+    return {
+      ...review,
+      findings: severities.map((severity, i) => ({
+        ...template,
+        id: `F${String(i + 1).padStart(2, "0")}`,
+        severity: severity as typeof template.severity,
+      })),
+    };
+  }
+
+  it.each([
+    [["high"], "1 issue to fix - 1 high"],
+    [["high", "medium"], "2 issues to fix - 1 high, 1 medium"],
+    [["low", "low", "critical"], "3 issues to fix - 1 critical, 2 low"],
+  ])("%s -> %s", (severities, expected) => {
+    expect(summarizeFindings(reviewWith(severities))).toBe(expected);
+  });
+
+  it("orders the breakdown by severity, not by the order findings arrive", () => {
+    expect(summarizeFindings(reviewWith(["low", "critical", "medium", "high"]))).toBe(
+      "4 issues to fix - 1 critical, 1 high, 1 medium, 1 low",
+    );
+  });
+
+  it("says a clean change is clean, rather than reporting zero of something", () => {
+    const { review } = loadGolden(SAMPLE);
+    expect(summarizeFindings({ ...review, findings: [] })).toBe("No issues found");
+  });
+});
+
+describe("the outro card's words", () => {
+  it("travel in the show_outro action, so the page needs no other file", () => {
+    const { script, manifest } = scriptAndManifest(
+      [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
+      [4000, 10_000, 3000],
+    );
+    const { review } = loadGolden(SAMPLE);
+    const { timeline } = runDirect({ script, manifest, review, config: defaultConfig() });
+
+    const outro = timeline.actions.find((a) => a.type === "show_outro");
+    expect(outro?.text).toBe(summarizeFindings(review));
+  });
+
+  it("are empty rather than missing when no review is given", () => {
+    // The schedule itself does not need a review; only the card's line does.
+    const { script, manifest } = scriptAndManifest(
+      [step("S00", "intro"), step("S01", "wrap_up")],
+      [4000, 3000],
+    );
+    const { timeline } = runDirect({ script, manifest, config: defaultConfig() });
+    expect(timeline.actions.find((a) => a.type === "show_outro")?.text).toBe("");
   });
 });

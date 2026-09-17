@@ -1,0 +1,199 @@
+/*
+ * The Recorder page's own styling, layered over diff2html's.
+ *
+ * Everything here is sized for a 1280x720 video rather than a browser window: type large
+ * enough to read at that resolution, and motion slow enough to follow at 30 frames a second
+ * but short enough not to eat a narration step.
+ */
+
+:root {
+  --spr-bg: #0d1117;
+  --spr-fg: #e6edf3;
+  --spr-muted: #8b949e;
+  --spr-accent: #f0a04b;
+  --spr-hl-bg: rgba(240, 160, 75, 0.14);
+  --spr-code-size: 17px;
+  --spr-fade-ms: 320ms;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--spr-bg);
+  color: var(--spr-fg);
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
+  /* No scrollbars in frame: the page is scrolled by script, never by a person. */
+  overflow: hidden;
+}
+
+#spr-diff {
+  height: 100vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+#spr-diff::-webkit-scrollbar {
+  display: none;
+}
+
+/* Room to scroll the last finding to the middle of the frame rather than the bottom edge. */
+#spr-diff::after {
+  content: "";
+  display: block;
+  height: 50vh;
+}
+
+/* --- diff2html, resized for video ------------------------------------------------------- */
+
+.d2h-wrapper {
+  font-size: var(--spr-code-size);
+}
+
+.d2h-code-line,
+.d2h-code-line-ctn,
+.d2h-code-linenumber {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: var(--spr-code-size);
+  line-height: 1.65;
+}
+
+.d2h-file-header {
+  font-size: 15px;
+  padding: 10px 14px;
+}
+
+/*
+ * THIS RULE IS LOAD-BEARING. Do not remove it without reading the next paragraph.
+ *
+ * diff2html positions `.d2h-code-linenumber` absolutely, and with no positioned ancestor its
+ * containing block is the document. That is fine when the document scrolls, because code and
+ * gutter move together - but `#spr-diff` scrolls an inner container, so the code moved and the
+ * body-anchored numbers did not. Every line number on screen was wrong for the whole video,
+ * while the DOM stayed perfectly correct: the attributes, the tagging and the highlighting all
+ * passed their tests. Only looking at a rendered page found it.
+ *
+ * Making the row a containing block re-anchors each number to its own line.
+ */
+.d2h-diff-tbody tr {
+  position: relative;
+}
+
+/*
+ * diff2html's own line numbers sit at about 3:1 against the gutter, which is legible in a
+ * browser and marginal in a compressed video. The narration never reads a line number aloud
+ * (NARRATION_STYLE.md forbids it), so these are orientation only - but if they are on screen
+ * they may as well be readable.
+ */
+.d2h-code-linenumber {
+  color: var(--spr-muted);
+}
+
+/* diff2html hides the "Viewed" checkbox behind a label; it is chrome, not content. */
+.d2h-file-collapse {
+  display: none;
+}
+
+/* --- the highlight ---------------------------------------------------------------------- */
+
+/*
+ * A tinted band with a solid left edge. The tint has to stay light enough that the syntax
+ * colours underneath survive it - the point is "look here", not "cover this up".
+ */
+.spr-hl > td {
+  background-color: var(--spr-hl-bg) !important;
+  transition:
+    background-color var(--spr-fade-ms) ease,
+    box-shadow var(--spr-fade-ms) ease;
+}
+
+.spr-hl > td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--spr-accent);
+}
+
+.spr-hl-first > td {
+  box-shadow: inset 0 2px 0 0 var(--spr-accent);
+}
+
+.spr-hl-first > td:first-child {
+  box-shadow:
+    inset 3px 0 0 0 var(--spr-accent),
+    inset 0 2px 0 0 var(--spr-accent);
+}
+
+.spr-hl-last > td {
+  box-shadow: inset 0 -2px 0 0 var(--spr-accent);
+}
+
+.spr-hl-last > td:first-child {
+  box-shadow:
+    inset 3px 0 0 0 var(--spr-accent),
+    inset 0 -2px 0 0 var(--spr-accent);
+}
+
+.spr-hl-first.spr-hl-last > td {
+  box-shadow:
+    inset 0 2px 0 0 var(--spr-accent),
+    inset 0 -2px 0 0 var(--spr-accent);
+}
+
+/* --- the cards -------------------------------------------------------------------------- */
+
+/*
+ * Title and outro. Both cover the frame completely: the intro and the wrap-up are the two
+ * steps with `focus: null`, so there is nothing on the diff worth looking at while they play.
+ */
+.spr-card {
+  position: fixed;
+  inset: 0;
+  /*
+   * Above diff2html's sticky file headers, which carry their own stacking and would otherwise
+   * leave a stray file name floating over a full-screen card.
+   */
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--spr-bg);
+  text-align: center;
+  padding: 0 12%;
+
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--spr-fade-ms) ease,
+    visibility var(--spr-fade-ms) ease;
+}
+
+.spr-card.spr-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.spr-card-text {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.spr-card-rule {
+  width: 64px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--spr-accent);
+}
+
+#spr-outro .spr-card-text {
+  font-size: 38px;
+}

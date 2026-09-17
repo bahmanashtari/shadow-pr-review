@@ -142,9 +142,12 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   that fails part-way resumes for free rather than starting over.
 
 ### 6. Director (pure)
-- Input: `script.json` and `audio/manifest.json`, and nothing else. It does **not** read
-  `ingest.json`: a step's `focus` was copied from a finding the Verifier already grounded
-  against the diff, so re-checking those lines here would re-prove an upstream proof.
+- Input: `script.json` and `audio/manifest.json` for the schedule itself, plus `review.json`
+  for one string - the outro card's finding summary, whose severities are not carried on a
+  script step. `buildTimeline` stays a pure function of the first two and receives that summary
+  as text. It does **not** read `ingest.json`: a step's `focus` was copied from a finding the
+  Verifier already grounded against the diff, so re-checking those lines here would re-prove an
+  upstream proof.
 - For each step: window = [start, start + duration]; next start = end + gap (default 400 ms).
   Every duration is the measured clip length (ADR-027); `estimated_seconds` is never read.
 - Intro: `show_title` at its window start, carrying the script's title so the Recorder needs
@@ -164,9 +167,21 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
 
 ### 7. Recorder
 - Playwright Chromium, viewport = video size, `record_video_dir` set on the context.
-- Page: a local HTML file rendered with diff2html (side-by-side or line-by-line), plus a
-  small injected script that tags rows with `data-file`, `data-side`, `data-line` and
-  exposes `window.spr.{showTitle, openFile, scrollTo, highlight, clear, showOutro}`.
+- Page: one self-contained HTML file (`src/recorder/page.ts` builds it), with the diff2html
+  bundle, both stylesheets, the page script and the diff all inlined - no network reference and
+  no relative path, so it renders the same on a laptop and in an offline CI container.
+  Line-by-line, dark, syntax-highlighted.
+- The page tags every row itself on load with `data-file`, `data-old-line` and `data-new-line`,
+  and every selector afterwards reads those rather than diff2html's own class names, which move
+  between versions. There is no single `data-side`: a context line exists on both sides at
+  numbers that differ once lines are added, so it carries both attributes.
+- `window.spr.run(action)` is the only entry point, taking the action objects
+  `timeline.schema.json` defines. Every method is a no-op when its target is missing, never a
+  throw: a page that dies mid-recording produces a video of a stack trace. `window.spr.ready`
+  turns true once the diff is drawn and tagged, and is what the Recorder waits on.
+- The title card is up before recording starts, so the video does not open on a flash of diff.
+  The outro card carries the review's finding summary, because a `wrap_up` step has
+  `focus: null` and there is nothing on the diff worth looking at while it plays.
 - Records `t0` (the time since context creation when the timeline starts) so the Composer
   can trim the loading frames.
 - Executes actions by sleeping until `at_ms` relative to t0 (monotonic clock), then

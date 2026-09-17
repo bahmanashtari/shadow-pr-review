@@ -28,6 +28,7 @@
     "@anthropic-ai/sdk": "^0.125.0",
     "ajv": "^8.20.0",
     "commander": "^15.0.0",
+    "diff2html": "3.4.56",
     "execa": "^10.0.1",
     "picomatch": "^4.0.7"
   },
@@ -36,6 +37,7 @@
     "@types/node": "^22.20.3",
     "@types/picomatch": "^4.0.3",
     "eslint": "^10.10.0",
+    "happy-dom": "^20.14.5",
     "json-schema-to-typescript": "^16.0.0",
     "prettier": "^3.9.6",
     "tsx": "^4.23.13",

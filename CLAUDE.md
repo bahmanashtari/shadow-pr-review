@@ -63,7 +63,7 @@ shadow-pr-review/
     providers/tts/               # types.ts, kokoro-http.ts, fake.ts, create.ts (piper is later)
     tts/                         # normalize.ts, duration.ts, speak.ts - script.json -> audio/
     director/                    # timeline.ts (pure), direct.ts (the stage)
-    recorder/                    # Playwright + diff2html page (page/ holds HTML, CSS, JS)
+    recorder/                    # page.ts builds one self-contained file; page/ holds HTML, CSS, JS
     composer/                    # ffmpeg wrappers, SRT generation
     publish/                     # GitHub comments, artifact/storage upload
     lib/                         # exec.ts (execa wrapper), hash.ts, run-folder.ts, errors.ts, paths.ts
@@ -106,6 +106,7 @@ pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; 
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
 pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
 pnpm spr stage direct --run runs/<id>              # re-schedule script + manifest; no model, offline
+pnpm tsx scripts/preview-page.ts runs/<id>         # build the diff page and print its path, to look at it
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
@@ -138,8 +139,8 @@ Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`,
 characters of the diff's sha256 for `--diff`). Ingest writes the first three; the rest follow
 as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
-audio/S00.wav..., audio/manifest.json, timeline.json, video.webm, subtitles.srt, final.mp4,
-trace.jsonl, cost.json`.
+audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, subtitles.srt,
+final.mp4, trace.jsonl, cost.json`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
 `eval.json` plus one run folder per model per sample under `runs/eval/`.
 
@@ -174,11 +175,15 @@ A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` 
 - Model output and TTS audio are cached on disk across runs (`cache.dir`, default
   `.cache/spr`, git-ignored; `SPR_CACHE_DIR`, `SPR_CACHE_ENABLED`). See ADR-017. Audio is keyed
   on the *normalized* spoken text, so a clip survives an edit that changes nothing audible.
-- Installed: `ajv`, `commander`, `execa`, `picomatch`, `@anthropic-ai/sdk` (runtime);
-  `typescript`, `tsx`, `vitest`, `eslint`, `typescript-eslint`, `prettier`,
-  `json-schema-to-typescript`, `@types/picomatch` (dev).
+- Installed: `ajv`, `commander`, `execa`, `picomatch`, `@anthropic-ai/sdk`, `diff2html` 3.4.56
+  (runtime); `typescript`, `tsx`, `vitest`, `happy-dom`, `eslint`, `typescript-eslint`,
+  `prettier`, `json-schema-to-typescript`, `@types/picomatch` (dev).
 - Planned libraries (verify current versions when adding): `playwright` (library, not the
-  test runner), `diff2html`, `@octokit/rest`, `pino`. No diff-parsing library (ADR-014).
+  test runner), `@octokit/rest`, `pino`. No diff-parsing library (ADR-014).
+- `src/recorder/page/*.js` is browser JavaScript, deliberately outside the TypeScript project:
+  it ships to Chromium verbatim and `buildPage` inlines it, so there is no build step between
+  that file and the page. It has its own ESLint block and its tests evaluate the shipped source
+  in a DOM, so there is only ever one implementation.
 
 ## Harness rules (agents)
 

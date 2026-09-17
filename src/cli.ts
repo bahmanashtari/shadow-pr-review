@@ -201,6 +201,8 @@ function direct(runDir: string, config: SprConfig): void {
   const outcome = runDirect({
     script: readScript(runDir),
     manifest: readManifest(runDir),
+    // Only for the outro card's summary line; the schedule itself needs script and manifest.
+    review: readReview(runDir),
     config,
   });
   writeTimeline(runDir, outcome.timeline);

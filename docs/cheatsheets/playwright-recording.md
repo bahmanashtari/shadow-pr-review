@@ -70,9 +70,25 @@ Notes:
 
 ## Build the page
 
-diff2html is available on npm (`diff2html`) with a browser bundle and CSS. Copy the
-bundle and CSS from `node_modules/diff2html/bundles/` into the page at build time (no CDN
-at render time) so CI is offline-safe. Verify the bundle paths for your version.
+> Built against diff2html **3.4.56**, September 2026. `src/recorder/page.ts` is what actually
+> runs; this is the notes behind it.
+
+Bundles that ship in the package, with their sizes at 3.4.56:
+
+| File | Size | Notes |
+|---|---|---|
+| `bundles/js/diff2html-ui.min.js` | 1.0 MB | Bundles highlight.js. What this project uses (ADR-030). |
+| `bundles/js/diff2html-ui-slim.min.js` | 295 KB | Same UI, no syntax highlighting. The fallback if load time ever matters. |
+| `bundles/js/diff2html-ui-base.min.js` | 88 KB | Base UI only. |
+| `bundles/css/diff2html.min.css` | 17 KB | Required either way. |
+
+The package also has a Node entry point - `html(diffInput, config)` from `diff2html`, typed -
+which is what makes the row-tagging testable without a browser.
+
+Rather than copying the bundles into a `vendor/` directory, `buildPage` inlines them, so the
+page is one self-contained file with no network reference and no path to resolve (ADR-030).
+**Escape the diff before embedding it**: `JSON.stringify` does not escape `/`, so a diff of an
+HTML file containing `</script>` will close the tag.
 
 ```html
 <link rel="stylesheet" href="vendor/diff2html.min.css">
@@ -86,6 +102,12 @@ at render time) so CI is offline-safe. Verify the bundle paths for your version.
   // Then walk the rendered table and tag rows:
   // row.dataset.file, row.dataset.newLine, row.dataset.oldLine
   // so selectors become: tr[data-file="..."][data-new-line="19"]
+  //
+  // Both line attributes, never a single data-side: a context line exists on both sides at
+  // numbers that differ once lines are added above it.
+  //
+  // A rename displays as src/{old.ts → new.ts}; expand it and take the new path, which is what
+  // findings name.
 </script>
 ```
 
@@ -109,6 +131,19 @@ between Node and the page.
 
 ## Visual tips
 
-- 1280x720, dark theme, 16 to 18 px monospace, generous line height.
+- 1280x720, dark theme, 16 to 18 px monospace, generous line height. 17 px reads well.
 - Highlight with a thick left border plus a soft background; animate over ~300 ms.
-- A small caption bar with the file name and severity badge helps orientation.
+- `stickyFileHeaders: true` keeps the file name on screen, which is simpler than building a
+  caption bar - but those headers carry their own stacking, so a full-screen card needs a
+  `z-index` above them.
+- Show the title card from the start rather than fading it in at t=0, or the video opens on a
+  flash of diff and the pre-roll shows a bare page.
+
+## The trap worth knowing about
+
+`.d2h-code-linenumber` is `position: absolute`. With no positioned ancestor its containing
+block is the document, which is fine when the document scrolls - code and gutter move together.
+**Scroll an inner container instead and the numbers stay behind while the code moves**, so every
+line number on screen is wrong. Give the rows `position: relative` so each number is anchored to
+its own line. No DOM test can catch this (happy-dom does no layout); it is only visible by
+looking at a rendered page.

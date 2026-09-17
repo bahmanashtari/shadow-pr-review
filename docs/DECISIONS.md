@@ -721,3 +721,66 @@ read". Redundancy turns out to be the same kind of thing, and for a structural r
 metric here scores findings one at a time, so nothing in the harness can see that two of them
 say the same sentence. Ninety seconds of listening found what four models and a scoring harness
 called perfect.
+
+## ADR-030: The Recorder page is one self-contained file, and it tags its own rows (accepted, September 2026)
+
+**Context.** Milestone 2 step 3 builds the page the Recorder drives: a diff2html rendering
+(ADR-005) that can be told to open a file, scroll to a range and light it up. It is the first
+step whose output is judged by eye rather than by assertion, and the plan said so in advance.
+
+**One self-contained HTML file.** The roadmap said "bundle vendored at build time", meaning a
+copy of `node_modules/diff2html/bundles/` into a gitignored `vendor/`. Inlining the bundle, both
+stylesheets, the page script and the diff into a single generated document is simpler on every
+count: no build step that has to have run before a recording, no stale directory, no relative
+path to resolve under `file://`, and an artifact that can be opened, attached to a bug report or
+handed to somebody as one file. It costs about 1 MB per run folder, which is less than the audio
+already there. The full `diff2html-ui.min.js` is used rather than the 295 KB `-slim` build,
+because it carries highlight.js and the entire point of the video is reading code on screen.
+
+**The diff travels as an escaped JavaScript string.** `JSON.stringify` does not escape `/`, so a
+diff that touches an HTML file and contains `</script>` would close the tag and spill the rest of
+the patch into the document as markup. `toScriptString` escapes `</` as well. The bundle and the
+stylesheets are checked for the same sequence and the build fails loudly rather than mangling
+them, because escaping arbitrary minified JavaScript is not safe to do blindly.
+
+**The page tags its own rows, and `data-side` was the wrong shape.** ARCHITECTURE said rows get
+`data-file`, `data-side` and `data-line`. They cannot: a context line exists on *both* sides, at
+numbers that differ as soon as lines are added above it, so one row would need two values for
+`data-side`. Rows carry `data-file`, `data-old-line` and `data-new-line` instead - the shape the
+cheat sheet already used. Renames needed handling too: diff2html compacts them to
+`src/{old-name.ts → new-name.ts}`, and findings name the new path, so the displayed name is
+expanded before it is used as a tag.
+
+**There is one implementation of the page script, and the tests run it.** `spr.js` is plain
+browser JavaScript, outside the TypeScript project, because it ships to Chromium verbatim and
+`buildPage` inlines it - there is no build step between the file and the page. The tests read
+that same file and evaluate it into a happy-dom window over diff2html's real Node-rendered
+output, so the tagging is exercised as the bytes that actually run rather than as a TypeScript
+twin that could drift. That test is the one that fails when a diff2html upgrade moves the
+markup, which is the failure mode worth insuring against: the page would still render, the video
+would still record, and nothing would ever be highlighted.
+
+**The bug that justifies looking at things.** diff2html positions `.d2h-code-linenumber`
+absolutely, and with no positioned ancestor its containing block is the document. That is
+correct in ordinary use, where the whole document scrolls and code and gutter move together. The
+page scrolls an inner container instead, so the code moved and the body-anchored numbers did
+not: **every line number on screen was wrong, for the whole video.** Nothing in the test suite
+could have caught it. The markup was right, the attributes were right, the tagging was right,
+the highlighting was right - happy-dom does no layout, so the defect did not exist as far as any
+assertion was concerned. It was found in the first minute of looking at a rendered page, and the
+fix is one rule making each row a containing block, carried in the stylesheet with a comment
+saying why it must not be deleted.
+
+Two smaller things came from the same look: diff2html's sticky file headers carry their own
+stacking and floated a file name over a full-screen title card, and the title card faded in from
+nothing at millisecond zero, so the video opened on a flash of diff. Both are one line.
+
+**Consequences.** The plan's "how we decide it looks right" section earns a permanent place in
+any step whose output is visual, and the same loop runs again at step 4. `happy-dom` joins the
+dev dependencies for the one place in this project where DOM behaviour is the product.
+`scripts/preview-page.ts` builds a run's page without recording it, which stays useful for
+debugging afterwards. The outro card carries the review's finding summary rather than a line of
+branding: it exists because a `wrap_up` step has `focus: null` and there is genuinely nothing to
+look at, and that argues for an informative end frame rather than a logo. Severity is not on a
+script step, so `runDirect` reads `review.json` for that one string while `buildTimeline` stays
+a pure function of the script and the measured audio.

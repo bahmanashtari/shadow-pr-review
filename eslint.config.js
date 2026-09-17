@@ -29,4 +29,19 @@ export default defineConfig(
     files: ["eslint.config.js", "vitest.config.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
+  {
+    // The Recorder page's browser script. It ships to Chromium as it is, so it is deliberately
+    // outside the TypeScript project: there is no build step between this file and the page,
+    // and `buildPage` inlines it verbatim. Linted for real mistakes, without type information.
+    files: ["src/recorder/page/**/*.js"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: false, project: false },
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        console: "readonly",
+      },
+    },
+  },
 );
