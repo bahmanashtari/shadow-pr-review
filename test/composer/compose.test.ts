@@ -49,6 +49,19 @@ if (!hasFfmpeg) {
   );
 }
 
+describe("what this build can do", () => {
+  /*
+   * Turns an assumption into an assertion. The burn-in case skips itself where libass is
+   * missing, which is right on a Mac - but it would also skip silently for ever if the Linux
+   * package ever stopped shipping libass, and nothing would say so. CI runs on Linux, so this
+   * is where "the burn path is covered somewhere" stops being a hope.
+   */
+  it.runIf(process.platform === "linux")("has libass on Linux, where CI runs", () => {
+    expect(hasFfmpeg).toBe(true);
+    expect(canBurn).toBe(true);
+  });
+});
+
 describe("assertInSync", () => {
   it("accepts a small difference", () => {
     expect(() => {

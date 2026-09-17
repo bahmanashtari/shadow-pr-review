@@ -949,6 +949,27 @@ number that did not fit in a `.webm` (ADR-032). Nothing downstream has that prob
 Publish needs a path it can construct. A contract with no reader is how schemas start being
 written for their own sake.
 
+**What CI cost, measured.** The whole job went from 44 seconds to **66**. Almost all of it is
+the apt install:
+
+| Step | Cost |
+|---|---|
+| Install ffmpeg (apt) | **20 s** |
+| Install Chromium (Playwright) | 5 s |
+| Test | 11 s, from 10 |
+
+Twenty seconds is four times what Playwright's browser costs, which is the opposite of what the
+download sizes suggest and is worth remembering: apt resolves and configures a dependency tree,
+where Playwright unpacks one archive. It is still twenty seconds on a job that was already
+forty, so it stays - but if this job ever needs to get faster, this is the line to look at first.
+
+**A gap worth naming: the burn path cannot be confirmed from outside CI.** The burn test skips
+where libass is missing and the "cannot burn" test skips where it is present, so a green run is
+consistent with either, and the logs need authentication to read. That made the coverage claim
+unfalsifiable, so `test/composer/compose.test.ts` now asserts on Linux that libass is present.
+If a future runner image stops shipping it, CI says so instead of skipping the burn path for
+ever in silence.
+
 **What the duration check found: 8 ms.** This is the first check in the pipeline that can see
 the accumulated error of every stage before it - a mismeasured clip in step 1, an arithmetic
 slip in step 2, a scheduler that drifted in step 4 all arrive here as a mismatch. On the first
