@@ -1,6 +1,7 @@
 # Plan: Milestone 1, step 5 (the deterministic Verifier)
 
-Status: approved (both open questions decided: `src/verify/`, and the full ordering rule with the
+Status: done. Implemented in "Milestone 1 step 5: the deterministic Verifier"
+(ADR-023). Both open questions were decided before implementation: `src/verify/`, and the full ordering rule with the
 sample-02 fixture correction). Read CLAUDE.md, docs/ROADMAP.md, docs/ARCHITECTURE.md (section "3. Verifier")
 and docs/DECISIONS.md (ADR-014, ADR-016, ADR-019, ADR-020, ADR-022) first.
 

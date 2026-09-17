@@ -76,7 +76,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestone 1):
+Available now (all of Milestone 1, and Milestone 2 steps 1 to 5):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
@@ -105,11 +105,11 @@ pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch w
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
-pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
-pnpm spr stage direct --run runs/<id>              # re-schedule script + manifest; no model, offline
-pnpm spr stage record --run runs/<id>              # re-record video.webm; runs in real time
-pnpm spr stage compose --run runs/<id>             # re-mux and re-encode final.mp4; needs ffmpeg
-pnpm tsx scripts/preview-page.ts runs/<id>         # build the diff page and print its path, to look at it
+pnpm spr stage tts --run runs/<id>                  # re-speak script.json; free on a cache hit
+pnpm spr stage direct --run runs/<id>               # re-schedule script + manifest; no model, offline
+pnpm spr stage record --run runs/<id>               # re-record video.webm; runs in real time
+pnpm spr stage compose --run runs/<id>              # re-mux and re-encode final.mp4; needs ffmpeg
+pnpm tsx scripts/preview-page.ts runs/<id>          # build the diff page and print its path, to look at it
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
@@ -127,20 +127,27 @@ needs `ffmpeg-full`; `sidecar` (the default) works on any build (ADR-033).
 TTS needs the Kokoro container: `docker compose -f docker/compose.yml up -d kokoro`, which
 listens on `tts.baseUrl` (default `http://localhost:8880`). `SPR_TTS_PROVIDER=fake` runs the
 stage with no container at all and still returns real WAV bytes, so the timings downstream are
-plausible (ADR-027). The stage needs no `ffmpeg` or `ffprobe`: durations are read from the WAV
-header, and ffmpeg arrives with the Composer at Milestone 2 step 5.
+plausible (ADR-027). The TTS stage itself needs no `ffmpeg` or `ffprobe`: durations are read
+from the WAV header, and ffmpeg is the Composer's dependency rather than the pipeline's.
 
 When the Narrator cannot produce narration that passes the checks, the stage fails and leaves
 `script.rejected.json` in the run folder. Edit it into `script.json` and confirm it with
 `spr validate script.json`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
 re-run `spr stage narrate` (ADR-024).
 
+A bare `spr run` now walks the whole pipeline and produces `final.mp4`, then exits 2 at
+`publish`, which is the only stage left unbuilt. It records in real time, so it takes about as
+long as the video it makes:
+
+```
+pnpm spr run --diff change.patch                    # ingest ... compose, then exits 2 at publish
+```
+
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after compose until Milestone 4 step 2 lands
-pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage publish --run runs/<id>
+pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4 step 1)
+pnpm spr stage publish --run runs/<id>              # Milestone 4 step 2
 ```
 
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7

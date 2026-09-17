@@ -1,6 +1,7 @@
 # Plan: Milestone 1, step 7 (`spr eval`)
 
-Status: approved (all three open questions decided as recommended: eval.json gets a schema, the
+Status: done. Implemented in "Milestone 1 step 7: spr eval" (ADR-025, ADR-026).
+All three open questions were decided as recommended: eval.json gets a schema, the
 eval runs through narrate, and `--model` is repeatable so one command produces the comparison). Read CLAUDE.md, docs/ROADMAP.md,
 `golden/README.md` and docs/DECISIONS.md (ADR-015, ADR-017, ADR-018, ADR-021, ADR-022, ADR-024)
 first.

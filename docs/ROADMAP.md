@@ -38,7 +38,7 @@ of it against the golden set.
 | 3 | Recorder page: diff2html inlined into one self-contained file, row tagging, `window.spr` API, dark theme, title and outro cards. Plan: `docs/plans/m2-step3-recorder-page.md` | done |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 in `record.json` (ADR-031, ADR-032). Plan: `docs/plans/m2-step4-recorder.md` | done |
 | 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check (ADR-033). Plan: `docs/plans/m2-step5-composer.md` | done |
-| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples | next |
+| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples. The bare `spr run` path has no unit coverage since step 4 made recording real-time, and this is where it is exercised again. Plan: `docs/plans/m2-step6-end-to-end.md` | next |
 
 Needs Docker for step 1, Playwright's headless shell from step 4, and ffmpeg from step 5.
 Steps 1 to 4 deliberately need neither ffmpeg nor ffprobe (ADR-027, ADR-031): Playwright brings

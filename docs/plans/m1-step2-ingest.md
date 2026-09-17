@@ -1,6 +1,6 @@
 # Plan: Milestone 1, step 2 (Ingest)
 
-Status: approved. Read CLAUDE.md, docs/ROADMAP.md, docs/ARCHITECTURE.md (section
+Status: done. Implemented in "Milestone 1 step 2: ingest". Read CLAUDE.md, docs/ROADMAP.md, docs/ARCHITECTURE.md (section
 "1. Ingest") and docs/DECISIONS.md (ADR-013 and ADR-014) first.
 
 `schemas/ingest.schema.json` is the contract for this step and is already in the repo.

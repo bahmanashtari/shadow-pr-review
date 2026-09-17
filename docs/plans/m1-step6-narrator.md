@@ -1,6 +1,7 @@
 # Plan: Milestone 1, step 6 (the Narrator agent)
 
-Status: approved (both open questions decided: fail the stage but keep the rejected draft, and
+Status: done. Implemented in "Milestone 1 step 6: the Narrator agent" (ADR-024).
+Both open questions were decided before implementation: fail the stage but keep the rejected draft, and
 enforce the intro and wrap-up length). Read CLAUDE.md, docs/ROADMAP.md,
 docs/ARCHITECTURE.md (section "4. Narrator agent"), docs/NARRATION_STYLE.md and
 docs/DECISIONS.md (ADR-002, ADR-006, ADR-015, ADR-016, ADR-023) first.
