@@ -888,3 +888,70 @@ tests assert the page state as it is being recorded (after a highlight fires, th
 rows must match the range the timeline asked for), Playwright's own ffmpeg is trusted with the
 encoding, and duration is checked at step 5 where ARCHITECTURE already requires
 `abs(video_duration - audio_duration) < 250 ms`.
+
+## ADR-033: The Composer, and the two things ffmpeg taught it (accepted, September 2026)
+
+**Context.** Milestone 2 step 5 joins the two halves of the pipeline: the measured audio from
+step 1 and the silent video from step 4 become `final.mp4`. ADR-027 deferred `ffmpeg` to exactly
+here, so this is also where it finally had to be installed - and where two assumptions turned
+out to be wrong in ways worth recording.
+
+**How ffmpeg is delivered: Homebrew locally, apt on CI.** Two alternatives were measured first,
+because "do not install it on my machine" is a reasonable thing to want.
+
+A pinned Docker image (`jrottenberg/ffmpeg:7.1-alpine`, 41 MB compressed) works more neatly than
+expected - everything this stage touches is in one run folder, so mounting it as the working
+directory and passing relative paths needs no translation layer. It was rejected for what it
+does to the shape of the project: Docker is optional today (`SPR_TTS_PROVIDER=fake` runs the
+whole pipeline without a daemon) and this would make it mandatory, and it adds a third
+containerisation pattern next to "tool on the host, Kokoro in a container" and Milestone 4's
+whole-tool image.
+
+The npm static binaries looked best until inspected. `ffmpeg-static` has everything needed, but
+its tarball is 48 KB with an `install: node install.js` script, so the 43 MB binary is fetched
+on postinstall on every install including CI's. Worse, its companion `ffprobe-static` ships
+**ffprobe 4.4** against that **ffmpeg 6.0**. Encoding with one version and verifying with
+another two majors older is the exact mismatch this stage's duration check exists to catch.
+
+Homebrew wins on the one thing the stage cares about - the encoder and the prober are the same
+build, 9.0.1 - and installs in 27 seconds.
+
+**And then Homebrew's build turned out not to have libass.** Burning subtitles into the picture
+needs the `subtitles` filter, which needs libass, which Homebrew's regular `ffmpeg` formula does
+not include; only `ffmpeg-full` does. Debian and Ubuntu packages do, so CI can burn and this
+machine cannot - which is the precise capability split that choosing one ffmpeg over two was
+meant to avoid. `docs/cheatsheets/ffmpeg.md` had warned about this in its second line, and the
+warning was read after the install rather than before it.
+
+The resolution is not a bigger local install for a non-default feature. `video.subtitles`
+defaults to `sidecar`, which needs no filter; `burn` now checks for the filter first and fails
+with a message naming both ways out - `brew install ffmpeg-full`, or switch to `sidecar` and
+install nothing. The burn test skips itself where libass is missing and runs on CI, so the path
+is covered where it can be.
+
+**A second, simpler trap: the cheat sheet's filter string is shell syntax.** It shows
+`force_style='FontSize=20,MarginV=30'`, whose quotes a shell removes before ffmpeg sees them.
+`src/lib/exec.ts` runs with `shell: false` deliberately, so ffmpeg received the quotes literally
+and its filter parser refused them. The fix was to drop `force_style` altogether rather than
+work out the escaping: subtitle styling is Milestone 5's, and every option added to a filter
+string is another thing to escape for a parser with its own quoting rules.
+
+**The audio track is built with the concat demuxer, not a filter graph**, for what it leaves
+behind. `audio/full.wav` is a file somebody can play when the timing looks wrong and
+`audio/list.txt` says in plain text what was joined in what order. The failure mode of this
+stage is "the sound does not line up with the picture", and artifacts beat filter expressions
+for diagnosing that. The silence is generated in the clips' own format, read off the first
+clip's header rather than assumed, because `-c copy` refuses a join across formats and Kokoro's
+format is a fact about Kokoro rather than a constant.
+
+**No `compose.json`.** Step 4 added `record.json` because the Composer could not work without a
+number that did not fit in a `.webm` (ADR-032). Nothing downstream has that problem here:
+Publish needs a path it can construct. A contract with no reader is how schemas start being
+written for their own sake.
+
+**What the duration check found: 8 ms.** This is the first check in the pipeline that can see
+the accumulated error of every stage before it - a mismeasured clip in step 1, an arithmetic
+slip in step 2, a scheduler that drifted in step 4 all arrive here as a mismatch. On the first
+real compose, `sample-01` came out with video at 55.800 s and audio at 55.808 s: **8
+milliseconds apart against a 250 ms tolerance**, over a 56-second video. The failure message
+names which side is longer, because the two point at different stages.

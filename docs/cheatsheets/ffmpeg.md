@@ -1,7 +1,18 @@
 # Cheat sheet: ffmpeg for the Composer
 
 > Verify flags against ffmpeg.org documentation for the installed version.
-> The `subtitles` filter requires ffmpeg built with libass (standard in Debian/Ubuntu packages).
+> **Read the next two warnings before writing any ffmpeg call in this project.** Both were
+> learned the hard way at Milestone 2 step 5 (ADR-033).
+>
+> **1. Every command below is written for a shell. This project does not use one.**
+> `src/lib/exec.ts` runs with `shell: false`, so quotes that a shell would strip arrive at
+> ffmpeg literally and its filter parser refuses them. `force_style='FontSize=20'` works when
+> you paste it into a terminal and fails from `execa`.
+>
+> **2. The `subtitles` filter requires ffmpeg built with libass.** Debian and Ubuntu packages
+> have it; **Homebrew's regular `ffmpeg` formula does not** - only `ffmpeg-full`. Check with
+> `ffmpeg -filters | grep subtitles` before relying on burn-in, because a build without it fails
+> with a confusing complaint about option names rather than "no such filter".
 
 ## Duration
 
@@ -72,11 +83,15 @@ I found three things worth your attention.
 Split long steps into cues of at most 2 lines and ~42 characters per line, distributing
 time proportionally to character count.
 
-## Optional loudness normalization
+## Deliberately not done yet: loudness normalization
 
 ```bash
 ffmpeg -y -i audio/full.wav -af loudnorm=I=-16:TP=-1.5:LRA=11 audio/full.norm.wav
 ```
+
+Left out of the Composer on purpose (ADR-033): it is a second encode pass committing to a
+target loudness nobody has measured against, and Kokoro's clips sounded fine when they were
+listened to. Revisit if a real video sounds wrong.
 
 ## Final check
 

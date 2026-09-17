@@ -93,12 +93,13 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest, review, verify, narrate, tts, direct and record run for real. `--until <stage>` exits 0 after that
+Every stage through compose runs for real: ingest, review, verify, narrate, tts, direct,
+record and compose. `--until <stage>` exits 0 after that
 stage; without it the run stops at the first stage that is not built and exits 2, keeping the
 run folder.
 
 ```
-pnpm spr run --diff change.patch --until record [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until compose [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
@@ -107,6 +108,7 @@ pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; fr
 pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
 pnpm spr stage direct --run runs/<id>              # re-schedule script + manifest; no model, offline
 pnpm spr stage record --run runs/<id>              # re-record video.webm; runs in real time
+pnpm spr stage compose --run runs/<id>             # re-mux and re-encode final.mp4; needs ffmpeg
 pnpm tsx scripts/preview-page.ts runs/<id>         # build the diff page and print its path, to look at it
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
@@ -116,6 +118,11 @@ pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an 
 Review and narrate need a local model: `ollama serve` with the model from
 `config/default.json` pulled. `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all:
 only the deterministic analyzers (ADR-022) contribute findings, and the script is a placeholder.
+
+The Composer needs a real `ffmpeg` and `ffprobe` on the PATH: `brew install ffmpeg` here, or
+`sudo apt-get install -y ffmpeg` on Debian and Ubuntu. Playwright's bundled ffmpeg will not do -
+it only encodes VP8 and PNG. Homebrew's regular formula has no libass, so `video.subtitles: burn`
+needs `ffmpeg-full`; `sidecar` (the default) works on any build (ADR-033).
 
 TTS needs the Kokoro container: `docker compose -f docker/compose.yml up -d kokoro`, which
 listens on `tts.baseUrl` (default `http://localhost:8880`). `SPR_TTS_PROVIDER=fake` runs the
@@ -131,9 +138,9 @@ re-run `spr stage narrate` (ADR-024).
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after record until Milestone 2 step 5 lands
+pnpm spr run --diff change.patch                    # stops after compose until Milestone 4 step 2 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <compose|publish> --run runs/<id>
+pnpm spr stage publish --run runs/<id>
 ```
 
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7

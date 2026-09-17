@@ -56,6 +56,12 @@ jobs:
       - name: Install Chromium for the Recorder
         run: pnpm exec playwright install chromium-headless-shell
 
+      # ubuntu-latest ships MediaInfo but no ffmpeg. Unlike Homebrew's regular formula, the
+      # Debian/Ubuntu package is built with libass, so the subtitle burn-in path is only ever
+      # exercised here - the test skips itself on a build without it.
+      - name: Install ffmpeg for the Composer
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Test
         run: pnpm test
 

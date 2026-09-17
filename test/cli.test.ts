@@ -359,9 +359,11 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "compose", "--run", tempDir());
+    // Every stage of Milestone 2 is built now, so publish is the only one left to point at.
+    await run("stage", "publish", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage compose is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage publish is not implemented yet");
+    expect(err.join("\n")).toContain("Milestone 4");
   });
 
   it("eval scores the golden set and writes a report", async () => {

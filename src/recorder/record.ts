@@ -10,15 +10,15 @@
  * is in the video without being part of it. The Composer trims `t0` off the front before it
  * muxes the audio, otherwise every visual lands late against the narration.
  */
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium, type Browser, type Page } from "playwright";
 import type { RecordResult } from "../contracts/generated/record.js";
 import type { Timeline } from "../contracts/generated/timeline.js";
-import { assertContract } from "../contracts/validate.js";
-import { StageError } from "../lib/errors.js";
+import { assertContract, validateContract } from "../contracts/validate.js";
+import { ContractError, StageError } from "../lib/errors.js";
 import { buildPage, PAGE_FILE } from "./page.js";
 import { actionsOf, tailFor, waitFor, type ScheduledAction } from "./schedule.js";
 
@@ -170,6 +170,20 @@ async function launch(): Promise<Browser> {
       { cause },
     );
   }
+}
+
+/** Reads and validates an existing `record.json`, which is what tells the Composer about t0. */
+export function readRecord(runDir: string): RecordResult {
+  const file = path.join(runDir, RECORD_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (cause) {
+    throw new StageError("compose", `Cannot read ${file}`, { cause });
+  }
+  const result = validateContract("record", parsed);
+  if (!result.ok) throw new ContractError(file, result.errors);
+  return result.value;
 }
 
 /** Writes `record.json` into a run folder. The video is already there. */

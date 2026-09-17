@@ -37,8 +37,8 @@ of it against the golden set.
 | 2 | Director (pure): script + manifest to `timeline.json`, with the lead-in clamped so it never precedes the previous step. Plan: `docs/plans/m2-step2-director.md` | done |
 | 3 | Recorder page: diff2html inlined into one self-contained file, row tagging, `window.spr` API, dark theme, title and outro cards. Plan: `docs/plans/m2-step3-recorder-page.md` | done |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 in `record.json` (ADR-031, ADR-032). Plan: `docs/plans/m2-step4-recorder.md` | done |
-| 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check | next |
-| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples | planned |
+| 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check (ADR-033). Plan: `docs/plans/m2-step5-composer.md` | done |
+| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples | next |
 
 Needs Docker for step 1, Playwright's headless shell from step 4, and ffmpeg from step 5.
 Steps 1 to 4 deliberately need neither ffmpeg nor ffprobe (ADR-027, ADR-031): Playwright brings

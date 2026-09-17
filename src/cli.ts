@@ -36,6 +36,8 @@ import { readManifest, runTts, summarizeTts, writeManifest } from "./tts/speak.j
 import { readTimeline, runDirect, summarizeDirect, writeTimeline } from "./director/direct.js";
 import { summarizeFindings } from "./director/outro.js";
 import { runRecord, summarizeRecord, writeRecord } from "./recorder/record.js";
+import { runCompose, summarizeCompose } from "./composer/compose.js";
+import { readRecord } from "./recorder/record.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
@@ -191,10 +193,29 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   await recordVideo(runDir);
 
   if (opts.until === "record") return;
+  await compose(runDir, config);
+
+  if (opts.until === "compose") return;
   throw new NotImplementedError(
-    `stopped after record: compose is not implemented yet (Milestone 2, step 5). ` +
+    `stopped after compose: publish is not implemented yet (Milestone 4, step 2). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/**
+ * Runs the Compose stage over an existing run folder and prints what it made.
+ * Reads every input back from disk, so `spr run` and `spr stage compose` take the same path.
+ */
+async function compose(runDir: string, config: SprConfig): Promise<void> {
+  const outcome = await runCompose({
+    timeline: readTimeline(runDir),
+    manifest: readManifest(runDir),
+    script: readScript(runDir),
+    record: readRecord(runDir),
+    config,
+    runDir,
+  });
+  console.log(summarizeCompose(outcome));
 }
 
 /**
@@ -388,7 +409,14 @@ export function buildProgram(): Command {
         await recordVideo(runDir);
         return;
       }
-      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 2");
+      if (stage === "compose") {
+        const config = loadConfig();
+        const runDir = path.resolve(opts.run);
+        report(runDir, "re-running compose");
+        await compose(runDir, config);
+        return;
+      }
+      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 4");
       const config = loadConfig();
       const runDir = path.resolve(opts.run);
       const tracer = new Tracer(runDir);

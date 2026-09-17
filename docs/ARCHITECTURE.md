@@ -200,11 +200,24 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   (ADR-031). The real ffmpeg is the Composer's dependency.
 
 ### 8. Composer (ffmpeg)
-- Builds one audio track: clips plus generated silence gaps, in timeline order.
-- Trims `t0` from the video, merges audio, encodes H.264/AAC with `+faststart`.
-- Generates SRT from `step_windows` (splitting long steps into two-line cues) and burns
-  it in when `--subtitles burn`, or ships it as a sidecar file.
-- Checks: `abs(video_duration - audio_duration) < 250 ms`, otherwise fail.
+- Builds one audio track with the concat demuxer: clips plus generated silence gaps, in
+  timeline order, into `audio/full.wav`. The silence is generated in the clips' own format,
+  read off the first clip's header, because `-c copy` refuses a join across formats. The
+  intermediate and its `audio/list.txt` are kept deliberately: this stage's failure mode is
+  "the sound does not line up", and artifacts diagnose that better than a filter graph would.
+- Trims `t0` from the video with `-ss` before `-i`, merges the audio, encodes H.264/AAC with
+  `+faststart` so the file streams rather than needing a full download first.
+- Generates SRT from `step_windows` (timing) and `script.json` (words, preferring `subtitle`
+  over `text`), splitting long steps into two-line cues of about 42 characters and dividing
+  each window in proportion to character count. The last cue of a step ends exactly on the
+  window.
+- `video.subtitles`: `sidecar` writes `subtitles.srt` alongside, `burn` renders it into the
+  picture and removes the sidecar, `off` writes neither. Burning needs an ffmpeg built with
+  libass - Debian and Ubuntu packages have it, Homebrew's regular formula does not - so the
+  stage checks for the filter first and names both ways out (ADR-033).
+- Checks: `abs(video_duration - audio_duration) < 250 ms`, otherwise fail, naming which side is
+  longer because the two point at different stages. This is the first check that can see the
+  whole pipeline's accumulated timing error; it measured 8 ms on the first real compose.
 
 ### 9. Publish
 See `docs/cheatsheets/github-integration.md`. Summary:
