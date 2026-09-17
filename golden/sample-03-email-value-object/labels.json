@@ -7,6 +7,7 @@
       "file": "services/customer-service/src/domain/value-objects/email.ts",
       "line_start": 11, "line_end": 11,
       "category": "privacy",
+      "accept_categories": ["security"],
       "description": "Raw email address is included in the error message and may end up in logs."
     }
   ],

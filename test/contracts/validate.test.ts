@@ -81,7 +81,9 @@ describe("contractFromFileName", () => {
     ["golden\\s\\script.expected.json", "script"],
     ["runs/x/timeline.json", "timeline"],
     ["runs/x/audio/manifest.json", "audio-manifest"],
-    ["labels.json", undefined],
+    ["golden/s/labels.json", "labels"],
+    ["runs/eval.json", "eval"],
+    ["config/default.json", undefined],
   ])("%s -> %s", (file, expected) => {
     expect(contractFromFileName(file)).toBe(expected);
   });

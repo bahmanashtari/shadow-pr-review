@@ -15,7 +15,7 @@ Status values: done, in progress, next, planned.
 | 4 | Analyzers (deterministic findings from the diff, ADR-022) then the Reviewer agent: prompt from `docs/REVIEW_RUBRIC.md`, line-numbered diff, read-only tools, output `review.raw.json`. Plan: `docs/plans/m1-step4-reviewer.md` | done |
 | 5 | Deterministic verifier checks: lines exist (`HunkIndex.hasRange`), evidence exists (`containsSnippet`), duplicates, severity sort, cap at 10, `dropped` reasons; writes `review.json`. Plan: `docs/plans/m1-step5-verifier.md` | done |
 | 6 | Narrator agent: `script.json` from `review.json` only; code sets `focus`; word, markdown and file-name checks with retry. Plan: `docs/plans/m1-step6-narrator.md` | done |
-| 7 | `spr eval`: run the golden set, score precision and recall against `labels.json`, narration checks, print a table, write `eval.json` | next |
+| 7 | `spr eval`: run the golden set, score precision and recall against `labels.json`, narration checks, print a table, write `eval.json`. Plan: `docs/plans/m1-step7-eval.md` | done |
 
 Cost note: the default provider is local Ollama (ADR-015), so steps 4 to 7 cost nothing to
 run and need no API key. Requires `ollama serve` on `http://localhost:11434` and the model
@@ -25,11 +25,15 @@ named in `config/default.json` pulled. To compare against a hosted model for one
 That path is opt-in only: the pipeline must keep working, and reviewing well, with no key at
 all. Model output is cached on disk across runs (ADR-017), so repeating the golden set is free.
 
+Milestone 1 is complete: `spr run --diff <patch> --until narrate` produces a grounded
+`review.json` and a spoken `script.json` from a local model, and `spr eval` scores the whole
+of it against the golden set.
+
 ## Milestone 2: audio and video
 
 | Step | Scope | Status |
 |---|---|---|
-| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations from ffprobe; TTS cache | planned |
+| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations from ffprobe; TTS cache | next |
 | 2 | Director (pure): script + manifest to `timeline.json` | planned |
 | 3 | Recorder page: diff2html bundle vendored at build time, row tagging, `window.spr` API, dark theme, title and outro cards | planned |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 | planned |
@@ -45,7 +49,7 @@ Needs Docker, ffmpeg and Playwright Chromium locally and in CI.
 | 1 | Verifier agent (keep / downgrade / drop), optional larger model for high and critical findings (cost flag) | planned |
 | 2 | Prompt-injection hardening and tests (hostile comments in diffs) | planned |
 | 3 | Budget and cache tuning; cost report per run | planned |
-| 4 | Expand the golden set with real (anonymized) changes from the team's services | planned |
+| 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
 
 ## Milestone 4: GitHub integration

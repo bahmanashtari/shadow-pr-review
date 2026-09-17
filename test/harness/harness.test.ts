@@ -3,11 +3,23 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Budget } from "../../src/harness/budget.js";
-import { FileLlmCache, NullCache, createCache, llmCacheKey } from "../../src/harness/cache.js";
+import {
+  FileLlmCache,
+  NullCache,
+  createCache,
+  llmCacheKey,
+  writeOnly,
+  type LlmCache,
+} from "../../src/harness/cache.js";
 import { Tracer, type TraceEntry } from "../../src/harness/tracing.js";
 import { ToolRegistry, MAX_TOOL_RESULT_CHARS } from "../../src/harness/tools.js";
 import { FakeLlmProvider, fakeText } from "../../src/providers/llm/fake.js";
-import { ZERO_USAGE, type LlmRequest, type LlmUsage } from "../../src/providers/llm/types.js";
+import {
+  ZERO_USAGE,
+  type LlmRequest,
+  type LlmResponse,
+  type LlmUsage,
+} from "../../src/providers/llm/types.js";
 import { defaultConfig } from "../helpers.js";
 
 const temps: string[] = [];
@@ -110,6 +122,27 @@ describe("llmCacheKey", () => {
   it("changes when the model changes", () => {
     const other = new FakeLlmProvider([], { model: "other-model" });
     expect(llmCacheKey(other, REQUEST)).not.toBe(llmCacheKey(provider, REQUEST));
+  });
+});
+
+describe("writeOnly", () => {
+  it("records an answer without ever serving one", () => {
+    const inner = new Map<string, LlmResponse>();
+    const backing: LlmCache = {
+      get: (key) => inner.get(key),
+      set: (key, value) => {
+        inner.set(key, value);
+      },
+    };
+    const answer = fakeText("hello");
+
+    const cache = writeOnly(backing);
+    cache.set("k", answer);
+
+    // A cold measurement must not be handed a stale answer...
+    expect(cache.get("k")).toBeUndefined();
+    // ...but the fresh one is kept, so re-scoring it later costs nothing.
+    expect(backing.get("k")).toBe(answer);
   });
 });
 

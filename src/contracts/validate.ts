@@ -7,6 +7,8 @@ import type { ReviewResult } from "./generated/review.js";
 import type { NarrationScript } from "./generated/script.js";
 import type { AudioManifest } from "./generated/audio-manifest.js";
 import type { Timeline } from "./generated/timeline.js";
+import type { GoldenLabels } from "./generated/labels.js";
+import type { EvalReport } from "./generated/eval.js";
 
 /** Maps each contract name to its generated TypeScript type. */
 export interface ContractTypes {
@@ -15,6 +17,8 @@ export interface ContractTypes {
   script: NarrationScript;
   "audio-manifest": AudioManifest;
   timeline: Timeline;
+  labels: GoldenLabels;
+  eval: EvalReport;
 }
 
 /** Result of a validation: either the typed value or readable problems. */

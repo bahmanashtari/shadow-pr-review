@@ -58,6 +58,9 @@ interface ModelAnswer {
 export function reviewerOutputSchema(maxFindings: number): Record<string, unknown> {
   const review = loadSchema("review");
   const defs = review.$defs as Record<string, Record<string, unknown>>;
+  // Taken from the contract, never restated: a looser limit here would let the model write a
+  // summary the harness accepts and `assertContract` then rejects, after the retries are gone.
+  const summary = (review.properties as Record<string, unknown>).summary;
   const finding = structuredClone(defs.Finding) as Record<string, unknown>;
   const properties = finding.properties as Record<string, unknown>;
   delete properties.id;
@@ -71,7 +74,7 @@ export function reviewerOutputSchema(maxFindings: number): Record<string, unknow
     required: ["summary", "findings"],
     $defs: { Severity: defs.Severity, Category: defs.Category },
     properties: {
-      summary: { type: "string", minLength: 1, maxLength: 1200 },
+      summary,
       findings: { type: "array", maxItems: maxFindings, items: finding },
     },
   };

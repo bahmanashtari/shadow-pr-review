@@ -11,9 +11,17 @@ import {
   ollamaContextTokens,
   toOllamaMessages,
 } from "../../src/providers/llm/ollama.js";
-import { ZERO_USAGE, type LlmRequest } from "../../src/providers/llm/types.js";
+import { textOf, ZERO_USAGE, type LlmRequest } from "../../src/providers/llm/types.js";
+import { reviewerOutputSchema } from "../../src/agents/reviewer.js";
+import {
+  assembleScript,
+  narratorOutputSchema,
+  type NarratorAnswer,
+} from "../../src/agents/narrator.js";
+import { checkScript } from "../../src/contracts/checks.js";
+import { assertContract } from "../../src/contracts/validate.js";
 import { StageError } from "../../src/lib/errors.js";
-import { defaultConfig } from "../helpers.js";
+import { defaultConfig, GOLDEN_SAMPLES, readGoldenJson } from "../helpers.js";
 
 const REQUEST: LlmRequest = {
   system: "You review code.",
@@ -140,6 +148,56 @@ describe("OllamaProvider", () => {
     });
     await expect(provider.complete(REQUEST)).rejects.toThrow(/qwen3:30b/);
   });
+
+  it("drops thinking and retries when the model cannot think, then stops asking", async () => {
+    // Found by `spr eval --model qwen3-coder:30b`: ADR-021 turns thinking on for everyone, and
+    // a model that cannot think would otherwise be unusable rather than merely slower.
+    const bodies: { think?: unknown }[] = [];
+    const fetchImpl = ((_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { think?: unknown };
+      bodies.push(body);
+      if (body.think === true) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          text: () => Promise.resolve(JSON.stringify({ error: '"m" does not support thinking' })),
+          json: () => Promise.resolve({}),
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ message: { content: "done" }, done_reason: "stop" }),
+        text: () => Promise.resolve(""),
+      } as unknown as Response);
+    }) as unknown as typeof fetch;
+
+    const provider = new OllamaProvider({ model: "m", baseUrl: "http://x", fetchImpl });
+
+    expect((await provider.complete(REQUEST)).content).toEqual([{ type: "text", text: "done" }]);
+    expect(bodies.map((b) => b.think)).toEqual([true, false]);
+
+    // The refusal is remembered, so the second call never asks again.
+    await provider.complete(REQUEST);
+    expect(bodies.map((b) => b.think)).toEqual([true, false, false]);
+  });
+
+  it("does not retry a refusal that has nothing to do with thinking", async () => {
+    let calls = 0;
+    const fetchImpl = (() => {
+      calls += 1;
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve("model not found"),
+        json: () => Promise.resolve({}),
+      } as unknown as Response);
+    }) as unknown as typeof fetch;
+
+    const provider = new OllamaProvider({ model: "m", baseUrl: "http://x", fetchImpl });
+    await expect(provider.complete(REQUEST)).rejects.toThrow(/404/);
+    expect(calls).toBe(1);
+  });
 });
 
 describe("toOllamaMessages", () => {
@@ -245,6 +303,47 @@ describe("createProvider", () => {
     const hosted = { ...config, llm: { ...config.llm, provider: "anthropic" as const } };
     expect(() => createProvider(hosted, {})).toThrow(/ANTHROPIC_API_KEY/);
     expect(createProvider(hosted, { anthropicApiKey: "sk-test" }).name).toBe("anthropic");
+  });
+
+  describe("the fake provider answers whichever stage is asking", () => {
+    const config = {
+      ...defaultConfig(),
+      llm: { ...defaultConfig().llm, provider: "fake" as const },
+    };
+
+    async function answerFor(outputSchema: Record<string, unknown>): Promise<unknown> {
+      const response = await createProvider(config, {}).complete({ ...REQUEST, outputSchema });
+      return JSON.parse(textOf(response.content));
+    }
+
+    it("returns an empty but valid review", async () => {
+      const answer = (await answerFor(reviewerOutputSchema(10))) as { findings: unknown[] };
+      expect(answer.findings).toEqual([]);
+    });
+
+    it("returns one placeholder step per kept finding, passing the narration rules", async () => {
+      const review = assertContract(
+        "review",
+        readGoldenJson(GOLDEN_SAMPLES[0] ?? "", "review.expected.json"),
+      );
+      const answer = (await answerFor(narratorOutputSchema(review))) as NarratorAnswer;
+
+      expect(answer.steps.map((s) => s.finding_id)).toEqual(review.findings.map((f) => f.id));
+      const script = assembleScript(answer, review, defaultConfig());
+      expect(checkScript(script, review)).toEqual([]);
+    });
+
+    it("narrates nothing for a review with no findings, whose schema carries no items", async () => {
+      const review = assertContract(
+        "review",
+        readGoldenJson(GOLDEN_SAMPLES[0] ?? "", "review.expected.json"),
+      );
+      const empty = { ...review, findings: [] };
+      const answer = (await answerFor(narratorOutputSchema(empty))) as NarratorAnswer;
+
+      expect(answer.steps).toEqual([]);
+      expect(checkScript(assembleScript(answer, empty, defaultConfig()), empty)).toEqual([]);
+    });
   });
 });
 

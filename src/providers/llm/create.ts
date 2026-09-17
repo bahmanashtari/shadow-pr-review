@@ -32,13 +32,17 @@ const STUB_NARRATION = {
     "findings explained properly in plain words.",
 };
 
-/** The finding ids the Narrator's schema pins its answer to. */
+/**
+ * The finding ids the Narrator's schema pins its answer to. A clean change narrates nothing,
+ * and that schema carries no `items` at all, so an absent one means an empty answer.
+ */
 function narratedIds(schema: Record<string, unknown>): string[] {
   const properties = schema.properties as Record<string, unknown>;
-  const steps = properties.steps as Record<string, unknown>;
-  const item = (steps.items as Record<string, unknown>).properties as Record<string, unknown>;
-  const id = item.finding_id as { enum?: unknown };
-  return Array.isArray(id.enum) ? (id.enum as string[]) : [];
+  const steps = properties.steps as Record<string, unknown> | undefined;
+  const item = (steps?.items as Record<string, unknown> | undefined)?.properties as
+    Record<string, unknown> | undefined;
+  const id = item?.finding_id as { enum?: unknown } | undefined;
+  return Array.isArray(id?.enum) ? (id.enum as string[]) : [];
 }
 
 /**

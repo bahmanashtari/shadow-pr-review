@@ -156,7 +156,25 @@ See `docs/cheatsheets/github-integration.md`. Summary:
 - Push events on branches without an open PR: commit comment (optional, off by default).
 - Video storage: GitHub Actions artifact by default; object storage (S3-compatible) optional.
 
-## 3. Trigger policy
+## 3. Evaluation (`spr eval`)
+
+Not a pipeline stage: a harness that runs the pipeline over `golden/` and scores what comes
+out, so a prompt or model change can be argued about with numbers instead of read.
+
+- For each sample it runs ingest, review, verify and narrate on `diff.patch`, then scores the
+  produced `review.json` and `script.json` against `labels.json`. The matching rule and the
+  rulings around it are in `golden/README.md` and ADR-025.
+- `--model` is repeatable, so one invocation produces the whole comparison table with the same
+  labels, prompt and code across every row. This is what ADR-015 and ADR-018 defer the choice
+  of default model to.
+- `--no-cache` forces a cold measurement; otherwise the cache (ADR-017) makes a repeat free,
+  and each row records whether it was served from cache.
+- Writes `eval.json` (`schemas/eval.schema.json`) next to one run folder per model per sample,
+  so any number in the table can be traced back to the run that produced it.
+- Scoring lives in `src/eval/score.ts` and is pure: no I/O, no model, unit-tested on its own,
+  because the arithmetic is the part that has to be trusted.
+
+## 4. Trigger policy
 
 | Event | Default behavior |
 |---|---|
@@ -169,7 +187,7 @@ See `docs/cheatsheets/github-integration.md`. Summary:
 
 `concurrency` with `cancel-in-progress` ensures only the latest push on a PR is rendered.
 
-## 4. Deployment
+## 5. Deployment
 
 - Local: `docker/compose.yml` runs Kokoro-FastAPI (CPU). The tool runs with Node/pnpm on
   the host, or in its own container (official Playwright Node image + ffmpeg).
@@ -178,7 +196,7 @@ See `docs/cheatsheets/github-integration.md`. Summary:
 - CI: GitHub Actions job with Kokoro as a service container. See the cheat sheet.
 - Secrets: `ANTHROPIC_API_KEY` (or none when using Ollama), `GITHUB_TOKEN` (provided).
 
-## 5. Cost model (estimate; verify current pricing)
+## 6. Cost model (estimate; verify current pricing)
 
 - LLM: the only per-run paid cost when using a hosted model. Rough order: a few cents
   per PR with a small model, dominated by Reviewer input tokens. Cache hits cost nothing.

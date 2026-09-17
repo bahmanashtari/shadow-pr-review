@@ -133,6 +133,7 @@ Add new decisions at the bottom. Never delete; supersede instead.
   limit rather than assume one global budget. The named model is provisional: step 7's
   `spr eval` scores the installed candidates (`mistral-small3.2`, `qwen3:30b`, `qwen3:4b`)
   against `golden/*/labels.json` and against a hosted model, and the winner replaces it.
+  (Done in ADR-026: the default stands, and the golden set is now the limiting factor.)
   Severity calibration is the known weak spot - the trial rated a `min_severity: high`
   finding as `medium` - so the Reviewer prompt must anchor severity explicitly. Revisit the
   default when the tool is distributed to service repos, where a hosted model is the
@@ -195,9 +196,9 @@ Add new decisions at the bottom. Never delete; supersede instead.
   found thinking equal on recall and better on grounding. Both models
   mis-categorise (`event-consistency` where the label says `idempotency`), so the Reviewer
   prompt must anchor categories as explicitly as ADR-015 says it must anchor severity.
-- Consequences: `mistral-small3.2` stays a supported fallback. The choice remains provisional
-  until step 7 scores all three golden samples with precision and recall, including
-  `must_not_flag`. `budgets.inputTokens` (96000) still fits: qwen3:30b's context is 262144,
+- Consequences: The choice remains provisional until step 7 scores all three golden samples
+  with precision and recall, including `must_not_flag`. **Settled by ADR-026**, which ran that
+  measurement: the default stands, and `mistral-small3.2` is no longer a supported fallback. `budgets.inputTokens` (96000) still fits: qwen3:30b's context is 262144,
   twice mistral's.
 - Update, same month: `qwen3-coder:30b` was pulled and measured against the default on all
   three golden samples, with the grounded prompt and the line-numbered diff, scoring recall
@@ -420,3 +421,121 @@ its floor raised from 10 to 40 in `config/config.schema.json`: the new 15-to-40 
 a per-step cap below 15 contradict each other, so the Narrator could be configured into a job
 it could never finish. A smoke run at a cap of 10 found exactly that - the model shortened
 every finding step and could not shorten the intro, because the floor forbade it.
+
+## ADR-025: How `spr eval` scores the golden set (accepted, September 2026)
+
+**Context.** `golden/README.md` has stated a matching rule since the set was written: a
+`must_find` item is found when a kept finding has the same file, an overlapping line range, an
+accepted category, and severity at least `min_severity`. Implementing it in step 7 turned up
+four places where the wording did not say what to do, and each one changes what the numbers
+mean.
+
+**1. Severity belongs to recall, not to precision.** A finding at the right lines with the
+right category that calls a `high` issue `medium` has seen the problem and misjudged it.
+Counting it as a false positive would be false - nothing spurious was said - so it counts
+toward precision and not toward recall. `locates` and `found` in `src/eval/score.ts` are two
+functions for exactly this reason. The payoff is diagnostic: ADR-015 and ADR-018 both name
+severity calibration as the known weak spot, and this split makes a model that sees everything
+and under-rates it score precision 1.0 with recall below 1.0, which says precisely what is
+wrong instead of blending two different failures into one number.
+
+**2. `must_not_flag` is a name, not a rule.** ADR-018 asked for it to be scored, but those
+entries carry only a `key` and a `description` - one of them, `missing-tests`, is about code
+that is absent and could never have a line range. Nothing needs matching: the precision rule
+already counts a finding that matches neither `must_find` nor `acceptable` as a false positive.
+So the list is used for attribution, naming which known mistake a false positive is, and a
+false positive no entry describes is reported as `unlabelled` - the interesting case, because
+it is a mistake the set has not learned about yet. The alternative, adding locations to every
+entry so they could be matched mechanically, would have bought nothing and could not express
+the entry that matters most for restraint.
+
+**3. Undefined is not zero.** `sample-03-email-value-object` has no `must_find` labels because
+it exists to test restraint. Recall there is not 0 and not 1; it is undefined, printed as `-`,
+and contributes nothing to the aggregate denominator. Likewise a run that kept nothing has no
+precision. Totals are micro-averaged over pooled items rather than averaged over per-sample
+rates, so a sample with one finding does not weigh as much as one with four.
+
+**4. A dropped finding is not a false positive.** It never reached the viewer. What matters is
+why it went, so the reasons are reported per sample instead: a model producing good findings it
+cannot quote (`claim_not_supported`) and one producing bad findings need opposite fixes, and
+precision alone cannot tell them apart.
+
+**Restraint is scored separately.** `labels.json` already carried a `max_findings` budget on
+sample-03 that nothing read. It is now scored as its own axis, because a run can be entirely
+defensible and still say too much, and precision cannot see that.
+
+**Narration is measured, not scored.** `checkScript` runs inside the Narrate stage, which fails
+rather than writing a script that breaks it (ADR-024), so re-checking word counts, markdown and
+file names in the eval would be a test that can only pass. The eval reports what the checks do
+not constrain - steps, words, duration against `script.expected.json` - and records a sample
+that never reached a script as a result rather than an error. Tone stays a human read.
+
+**Consequences.** Two schemas were added. `schemas/eval.schema.json` gives `eval.json` the same
+treatment as every other file the tool writes, and `schemas/labels.schema.json` pins the golden
+labels, which were being read unvalidated by the thing that scores everything. The labels schema
+immediately earned itself: it caught `max_findings`, `notes` and a `file` on a `must_not_flag`
+entry, all real and all undocumented. `spr eval --model` is repeatable so one invocation
+produces a whole comparison table, because rows from separate invocations can silently differ in
+prompt - the trap ADR-018's closing note describes, where recall moved from three findings to
+one because of a prompt paragraph rather than a model.
+
+## ADR-026: The model comparison ADR-015 and ADR-018 deferred (accepted, September 2026)
+
+**Context.** ADR-015 named a default model provisionally and ADR-018 replaced it, both saying
+the choice stood "until step 7 scores all three golden samples with precision and recall". Step
+7 built `spr eval`, and this is that measurement: every installed local model, all three
+samples, `--no-cache`, one invocation so the labels, prompt and code are identical across rows.
+
+| Model | precision | recall | must_find | optional | false pos. | over budget | seconds |
+|---|---|---|---|---|---|---|---|
+| `qwen3:30b` (default) | 1.000 | 1.000 | 4/4 | 2 | 0 | 0 | 397.7 |
+| `qwen3-coder:30b` | 1.000 | 1.000 | 4/4 | 1 | 0 | 0 | 63.8 |
+| `mistral-small3.2` | 0.750 | 0.750 | 3/4 | 1 | 2 | 1 | 340.9 |
+| `qwen3:4b` | 1.000 | 1.000 | 4/4 | 2 | 0 | 0 | 731.7 |
+
+**Decision: keep `qwen3:30b`, and stop calling the choice provisional on these grounds -
+because the golden set can no longer settle it.**
+
+Three of the four models tie at 1.000 precision and 1.000 recall. That is not four models being
+equally good; it is a benchmark that has run out of discrimination. Worse, the analyzers
+(ADR-022) now supply two of the four `must_find` items deterministically for every row, so the
+models are being separated on two findings. No default should change on that basis.
+
+**Why not `qwen3-coder:30b`, which is 6.2 times faster at the same rates.** It was the only
+model to report *nothing at all* on `sample-03-email-value-object`, where a real privacy issue
+exists as an `acceptable` label. On a set with few labels, silence is cheap and scores well:
+it cannot produce a false positive and cannot miss a `must_find` that is not there. The
+`optional` column was added during this measurement for exactly this reason - without it the
+table said "tied, take the fast one", which is a conclusion drawn from a metric that could not
+see the difference. The speed is real and makes this the first candidate to revisit.
+
+**Why not `qwen3:4b`.** It matches the default exactly on every quality number and is the
+slowest model measured, at 731.7 seconds against 397.7. A dense 4B is slower per token than a
+30B mixture-of-experts with far fewer active parameters, so reaching for the small model to save
+time does the opposite here. Worth writing down because the intuition is so strong the other way.
+
+**`mistral-small3.2` is no longer a supported fallback**, which ADR-018 left it as. It misses
+`non-idempotent-consumer`, produces the only false positives in the table, is the only model to
+break a `max_findings` budget, and failed to narrate two of three samples. Its two failures did
+leave a usable `script.rejected.json` each (ADR-024), one of them two words over the intro
+limit, so the handover works - but a model that needs hand-finishing on two thirds of a tiny set
+is not a fallback.
+
+**Consequences.** Expanding the golden set with real anonymized changes - Milestone 3 step 4 -
+is now the precondition for any further model comparison, and is promoted from "nice to have"
+to the blocker it actually is. Until then `spr eval` is still worth running on every prompt
+change, because it catches regressions even when it cannot rank models.
+
+Two observations the table records without scoring. Every model produced narration
+substantially shorter than the hand-written fixtures (51.2s against 89s, 55.6s against 88s,
+25.2s against 32s), consistently enough to be the prompt rather than the models. And
+`qwen3:30b` rated the sample-03 privacy issue `critical` where the fixture says `low`; ADR-015
+and ADR-018 both flagged severity calibration as the weak spot, and it is still there, now
+pointing at over-rating rather than under-rating.
+
+**This measurement paid for itself in bugs, not rankings.** It found a `maxLength` of 1200 in
+the Reviewer's output schema against 600 in the contract, which let a model write a summary the
+harness accepted and `assertContract` then rejected after the retries were spent - a crash
+waiting for any model that writes long summaries. It found that `--model` could not run a model
+that cannot think, because ADR-021 turns thinking on for everyone. It found that one model
+failing discarded every other model's work. All three are fixed.

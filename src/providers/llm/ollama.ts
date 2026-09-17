@@ -1,9 +1,10 @@
 /**
  * The default provider (ADR-015): a local Ollama server, no API key, no cost.
  *
- * Two things here are measured rather than assumed (ADR-018): thinking is switched off,
- * because it made the reviewer produce fewer and worse findings at five to ten times the
- * wall clock, and the context limits come from what `ollama show` reports per model.
+ * Two things here are measured rather than assumed: thinking is on (ADR-021, correcting
+ * ADR-018 - equal recall and better grounding, at about 15 times the wall clock), and the
+ * context limits come from what `ollama show` reports per model. A model that cannot think
+ * says so, and the provider drops the option for that model rather than failing.
  */
 import { StageError } from "../../lib/errors.js";
 import {
@@ -63,6 +64,10 @@ interface OllamaChatResponse {
   prompt_eval_count?: unknown;
   eval_count?: unknown;
 }
+
+/** The outcome of one POST: the parsed answer, or the server's refusal. */
+type SendResult =
+  { ok: true; json: OllamaChatResponse } | { ok: false; status: number; error: string };
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -124,6 +129,8 @@ export class OllamaProvider implements LlmProvider {
   private readonly numCtx: number;
   private readonly think: boolean;
   private readonly timeoutMs: number;
+  /** Set once the server has told us this model cannot think, so later calls do not ask again. */
+  private thinkRejected = false;
 
   constructor(options: OllamaProviderOptions) {
     this.model = options.model;
@@ -135,6 +142,11 @@ export class OllamaProvider implements LlmProvider {
     this.timeoutMs = options.timeoutMs ?? 600_000;
   }
 
+  /** Whether this call should ask the model to think: configured on, and not refused before. */
+  private get thinks(): boolean {
+    return this.think && !this.thinkRejected;
+  }
+
   /** Builds the request body. Exported through the class so tests can assert on it. */
   buildBody(request: LlmRequest): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -142,7 +154,7 @@ export class OllamaProvider implements LlmProvider {
       stream: false,
       // ADR-021: on the final prompt, thinking is equal on recall and better on grounding,
       // at 15x the wall clock. Affordable because TTS and rendering dominate a run.
-      think: this.think,
+      think: this.thinks,
       messages: toOllamaMessages(request.system, request.messages),
       options: { temperature: request.temperature, num_ctx: this.numCtx },
     };
@@ -153,6 +165,27 @@ export class OllamaProvider implements LlmProvider {
   }
 
   async complete(request: LlmRequest, signal?: AbortSignal): Promise<LlmResponse> {
+    let sent = await this.send(request, signal);
+
+    // ADR-021 turns thinking on by default, but not every local model can think, and comparing
+    // models is exactly where the others turn up. The server says so in as many words, so drop
+    // it and retry instead of leaving those models unusable.
+    if (!sent.ok && this.thinks && /does not support thinking/i.test(sent.error)) {
+      this.thinkRejected = true;
+      sent = await this.send(request, signal);
+    }
+
+    if (!sent.ok) {
+      throw new StageError(
+        "review",
+        `Ollama returned ${sent.status} for model ${this.model}: ${sent.error.slice(0, 500)}`,
+      );
+    }
+    return this.toResponse(sent.json);
+  }
+
+  /** One POST to `/api/chat`. A refusal comes back as a value so the caller can react to it. */
+  private async send(request: LlmRequest, signal?: AbortSignal): Promise<SendResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();
@@ -186,15 +219,11 @@ export class OllamaProvider implements LlmProvider {
     }
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new StageError(
-        "review",
-        `Ollama returned ${response.status} for model ${this.model}: ${detail.slice(0, 500)}`,
-      );
+      const error = await response.text().catch(() => "");
+      return { ok: false, status: response.status, error };
     }
 
-    const json = (await response.json()) as OllamaChatResponse;
-    return this.toResponse(json);
+    return { ok: true, json: (await response.json()) as OllamaChatResponse };
   }
 
   private toResponse(json: OllamaChatResponse): LlmResponse {

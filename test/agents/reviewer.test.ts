@@ -17,6 +17,7 @@ import { Budget } from "../../src/harness/budget.js";
 import { Tracer } from "../../src/harness/tracing.js";
 import { FakeLlmProvider, fakeText } from "../../src/providers/llm/fake.js";
 import { validateContract } from "../../src/contracts/validate.js";
+import { loadSchema } from "../../src/contracts/schemas.js";
 import { checkReview } from "../../src/contracts/checks.js";
 import type { IngestResult, Source } from "../../src/contracts/generated/ingest.js";
 import { GOLDEN_SAMPLES, defaultConfig, readGoldenDiff } from "../helpers.js";
@@ -227,6 +228,16 @@ describe("reviewerOutputSchema", () => {
     expect(properties.evidence).toBeDefined();
     expect(item.required).not.toContain("id");
     expect(findings.maxItems).toBe(15);
+  });
+
+  it("takes the summary limit from the contract, so the two cannot disagree", () => {
+    // Found by `spr eval`: a looser limit here let a model write a summary the harness
+    // accepted and `assertContract` then rejected, after the retries were spent.
+    const schema = reviewerOutputSchema(15);
+    const properties = schema.properties as Record<string, { maxLength?: number }>;
+    const contract = loadSchema("review").properties as Record<string, { maxLength?: number }>;
+
+    expect(properties.summary?.maxLength).toBe(contract.summary?.maxLength);
   });
 });
 

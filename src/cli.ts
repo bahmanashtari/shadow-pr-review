@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, InvalidArgumentError } from "commander";
@@ -18,6 +18,8 @@ import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
 import { runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
+import { runEval } from "./eval/run.js";
+import { formatReport } from "./eval/report.js";
 import {
   readRawReview,
   readReview,
@@ -117,6 +119,13 @@ interface RunOptions {
   out?: string;
   force?: boolean;
   until?: StageName;
+}
+
+/** Options of `spr eval`, as Commander hands them over (`--no-cache` arrives as `cache: false`). */
+interface EvalOptions {
+  model: string[];
+  out?: string;
+  cache?: boolean;
 }
 
 /** Prints where the run went and what ingest kept. */
@@ -306,7 +315,36 @@ export function buildProgram(): Command {
     .command("eval")
     .description("Score the pipeline on the golden set (precision and recall)")
     .argument("[dir]", "golden set folder", "golden")
-    .action(() => notYet("spr eval", "Milestone 1, step 7"));
+    .option(
+      "--model <name>",
+      "model to score; repeat to compare several in one table",
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
+    )
+    .option("--out <dir>", "where the per-sample run folders go (default: runs/eval)")
+    .option("--no-cache", "ignore the on-disk model cache, for a cold measurement")
+    .action(async (dir: string, opts: EvalOptions) => {
+      const config = loadConfig();
+      const outDir = path.resolve(opts.out ?? path.join(config.runs.dir, "eval"));
+      const report = await runEval({
+        goldenDir: path.resolve(dir),
+        outDir,
+        config,
+        secrets: readSecrets(),
+        models: opts.model,
+        noCache: opts.cache === false,
+        onProgress: (line) => {
+          console.log(line);
+        },
+      });
+
+      mkdirSync(outDir, { recursive: true });
+      const file = path.join(outDir, "eval.json");
+      writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+
+      for (const line of formatReport(report)) console.log(line);
+      console.log(`wrote ${file}`);
+    });
 
   program
     .command("validate")

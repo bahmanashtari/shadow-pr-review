@@ -57,6 +57,7 @@ shadow-pr-review/
     analyzers/                   # rules.ts, analyze.ts - deterministic findings (ADR-022)
     agents/                      # reviewer.ts, narrator.ts, diff-view.ts, prompts/, tools/; verifier.ts is M3
     verify/                      # grounding.ts, verify.ts - review.raw.json -> review.json, no model (ADR-023)
+    eval/                        # score.ts (pure), report.ts, run.ts - scores the golden set (ADR-025)
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
     providers/tts/               # types.ts, kokoro-http.ts, piper.ts
@@ -74,7 +75,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (Milestone 1, steps 1 and 2):
+Available now (all of Milestone 1):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
@@ -87,7 +88,7 @@ pnpm format / pnpm format:check            # prettier (code only; docs, schemas,
 pnpm test                                  # vitest
 pnpm verify                                # check:types + typecheck + lint + test
 pnpm build                                 # tsc -> dist/
-pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timeline]
+pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timeline|labels|eval]
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
@@ -101,6 +102,9 @@ pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch w
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
+pnpm spr eval                                      # score the golden set with the configured model
+pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
+pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
 ```
 
 Review and narrate need a local model: `ollama serve` with the model from
@@ -118,7 +122,6 @@ Registered in `src/cli.ts` but not built yet, so each of these exits with code 2
 pnpm spr run --diff change.patch                    # stops after narrate until Milestone 2 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
 pnpm spr stage <tts|direct|record|...> --run runs/<id>
-pnpm spr eval golden/                               # precision/recall on golden set (step 7)
 docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container (Milestone 2)
 ```
 
@@ -127,7 +130,8 @@ characters of the diff's sha256 for `--diff`). Ingest writes the first three; th
 as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json, audio/, timeline.json,
 video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
-A failed Narrate stage also leaves `script.rejected.json` (ADR-024).
+A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
+`eval.json` plus one run folder per model per sample under `runs/eval/`.
 
 ## Coding conventions
 

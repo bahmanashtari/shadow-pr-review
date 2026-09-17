@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { main } from "../src/cli.js";
 import { fromRoot } from "../src/lib/paths.js";
+import { validateContract } from "../src/contracts/validate.js";
 
 const run = (...args: string[]): Promise<void> => main(["node", "spr", ...args]);
 
@@ -57,9 +58,15 @@ describe("spr CLI", () => {
   });
 
   it("validate fails when the contract cannot be inferred", async () => {
-    await run("validate", fromRoot("golden", "sample-01-order-outbox", "labels.json"));
+    await run("validate", fromRoot("config", "default.json"));
     expect(process.exitCode).toBe(1);
     expect(err.join("\n")).toContain("pass --schema");
+  });
+
+  it("validate knows the golden labels and an eval report by name", async () => {
+    await run("validate", fromRoot("golden", "sample-01-order-outbox", "labels.json"));
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("(labels)");
   });
 
   it("validate --schema reports schema errors", async () => {
@@ -69,7 +76,7 @@ describe("spr CLI", () => {
   });
 
   it("planned commands exit with code 2 and a clear message", async () => {
-    await run("eval");
+    await run("run", "--pr", "142", "--repo", "acme/shop");
     expect(process.exitCode).toBe(2);
     expect(err.join("\n")).toContain("not implemented yet");
   });
@@ -230,6 +237,45 @@ describe("spr CLI", () => {
     await run("stage", "tts", "--run", tempDir());
     expect(process.exitCode).toBe(2);
     expect(err.join("\n")).toContain("spr stage tts is not implemented yet");
+  });
+
+  it("eval scores the golden set and writes a report", async () => {
+    const outDir = tempDir();
+    await withFakeProvider(() => run("eval", "--out", outDir));
+
+    expect(process.exitCode).toBeUndefined();
+    const file = path.join(outDir, "eval.json");
+    expect(existsSync(file)).toBe(true);
+
+    const report: unknown = JSON.parse(readFileSync(file, "utf8"));
+    const result = validateContract("eval", report);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+
+    const text = out.join("\n");
+    expect(text).toContain("sample-01-order-outbox");
+    expect(text).toContain("TOTAL");
+    // With no model, only the deterministic analyzers contribute (ADR-022), and they never
+    // invent anything: the run misses judgement calls but keeps its precision.
+    expect(text).toContain("2/4 must_find");
+    // A single model prints no comparison table.
+    expect(text).not.toContain("comparison");
+  });
+
+  it("eval compares several models in one table", async () => {
+    const outDir = tempDir();
+    await withFakeProvider(() =>
+      run("eval", "--out", outDir, "--model", "alpha", "--model", "beta"),
+    );
+
+    const text = out.join("\n");
+    expect(text).toContain("comparison");
+    expect(text).toContain("alpha");
+    expect(text).toContain("beta");
+
+    const report = JSON.parse(readFileSync(path.join(outDir, "eval.json"), "utf8")) as {
+      models: { model: string }[];
+    };
+    expect(report.models.map((m) => m.model)).toEqual(["alpha", "beta"]);
   });
 
   it("stage rejects an unknown name", async () => {

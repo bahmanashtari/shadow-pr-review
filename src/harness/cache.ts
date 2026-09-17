@@ -85,3 +85,19 @@ export class FileLlmCache implements LlmCache {
 export function createCache(config: { enabled: boolean; dir: string }): LlmCache {
   return config.enabled ? new FileLlmCache(config.dir) : new NullCache();
 }
+
+/**
+ * A cache that records answers but never serves them.
+ *
+ * What `spr eval --no-cache` wants: a cold measurement should not be handed a stale answer,
+ * but there is no reason to forget the fresh one. Without this, re-scoring a comparison after
+ * adding a metric or fixing a label costs another full run of every model.
+ */
+export function writeOnly(cache: LlmCache): LlmCache {
+  return {
+    get: () => undefined,
+    set: (key, value) => {
+      cache.set(key, value);
+    },
+  };
+}

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shadow-pr-review.local/schemas/labels.schema.json",
+  "title": "GoldenLabels",
+  "description": "Contract for golden/<sample>/labels.json: the hand-written ground truth `spr eval` scores against. `must_find` items drive recall, `must_find` and `acceptable` together drive precision, and `must_not_flag` names the mistakes this sample exists to catch. Code-level validators must additionally enforce: line_end >= line_start, keys are unique within a sample, and `sample` matches the folder name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sample", "must_find", "acceptable", "must_not_flag"],
+  "properties": {
+    "sample": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The sample folder's name, for example sample-01-order-outbox."
+    },
+    "must_find": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RequiredLabel" },
+      "description": "Issues the Reviewer must report. An empty list is meaningful: the sample tests restraint, and its recall is undefined rather than zero."
+    },
+    "acceptable": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AcceptableLabel" },
+      "description": "Real issues that do not have to be found, but count as true positives when they are."
+    },
+    "must_not_flag": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ForbiddenLabel" },
+      "description": "Known false positives. A location is optional and often impossible - some entries are about code that is absent - so these name a mistake rather than define one. A finding matching neither must_find nor acceptable is already a false positive by the precision rule; these only give it a name."
+    },
+    "max_findings": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The most kept findings a good run should produce on this sample. Restraint is a separate axis from precision: a run can be entirely defensible and still say too much."
+    },
+    "notes": {
+      "type": "string",
+      "description": "What this sample is for, in prose. Read by people, not scored."
+    }
+  },
+  "$defs": {
+    "Category": {
+      "enum": [
+        "correctness",
+        "security",
+        "privacy",
+        "event-consistency",
+        "idempotency",
+        "ddd-boundaries",
+        "data-migration",
+        "api-contract",
+        "concurrency",
+        "performance",
+        "error-handling",
+        "testing",
+        "maintainability"
+      ]
+    },
+    "Severity": { "enum": ["critical", "high", "medium", "low"] },
+    "RequiredLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "file",
+        "line_start",
+        "line_end",
+        "category",
+        "min_severity",
+        "description"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Stable identifier, unique within the sample. Scores are reported against it."
+        },
+        "file": { "type": "string", "minLength": 1 },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "category": { "$ref": "#/$defs/Category" },
+        "accept_categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Category" },
+          "description": "Other categories that still count as a match, for an issue a reasonable reviewer could file under more than one heading."
+        },
+        "min_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The lowest severity that still counts as finding this issue. Calibration is a known weak spot (ADR-015, ADR-018), so it is scored rather than assumed."
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "AcceptableLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "file", "line_start", "line_end", "category", "description"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "file": { "type": "string", "minLength": 1 },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "category": { "$ref": "#/$defs/Category" },
+        "accept_categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Category" }
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ForbiddenLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "description"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the mistake would be made, when it has a place at all. Only used to attribute a false positive to this key; it never decides whether one occurred."
+        },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "category": { "$ref": "#/$defs/Category" },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
