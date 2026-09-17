@@ -18,6 +18,9 @@ export interface AnalyzerFinding extends Omit<Finding, "id" | "verification"> {
  */
 const ANALYZER_CONFIDENCE = 0.95;
 
+/** The longest `evidence` list `review.schema.json` allows. Extra offenders are not quoted. */
+const MAX_EVIDENCE = 5;
+
 /** Options for {@link analyze}. */
 export interface AnalyzeOptions {
   /** Rules to run. Defaults to every rule; tests use this to isolate one. */
@@ -27,6 +30,19 @@ export interface AnalyzeOptions {
 /**
  * Finds everything the rules can prove from the diff text.
  * Results are in diff order, then rule order, so the output is deterministic.
+ *
+ * **One rule firing several times in one hunk is one finding** (ADR-029). The rules are
+ * per-line predicates, so a layering violation spread over two `import` statements used to
+ * arrive as two findings with byte-identical summaries, and the Narrator dutifully spoke both:
+ * the second step of `sample-01` said "This is the same problem as the previous one." The
+ * hand-written `review.expected.json` for that sample has always treated it as one finding
+ * with two quotes, which is the shape this produces.
+ *
+ * Merging is confined to a single hunk on purpose. `HunkIndex.hasRange` requires *every* line
+ * between `line_start` and `line_end` to be in the diff, so a range spanning two hunks would
+ * cross a gap and the Verifier would drop the merged finding as `lines_not_in_diff` - turning
+ * two correct findings into none. A hunk's lines are contiguous by construction, so a range
+ * inside one always exists.
  */
 export function analyze(ingest: IngestResult, options: AnalyzeOptions = {}): AnalyzerFinding[] {
   const rules = options.rules ?? RULES;
@@ -39,6 +55,10 @@ export function analyze(ingest: IngestResult, options: AnalyzeOptions = {}): Ana
     );
 
     for (const hunk of file.hunks) {
+      // Findings still open for more lines of this hunk, by rule and verdict. Cleared per
+      // hunk, which is what keeps a merged range inside one contiguous run of lines.
+      const open = new Map<string, AnalyzerFinding>();
+
       for (const line of hunk.lines) {
         if (line.kind !== "add" || line.new === null) continue;
         const context: RuleContext = { path: file.path, layer, text: line.text, addedLines };
@@ -46,21 +66,34 @@ export function analyze(ingest: IngestResult, options: AnalyzeOptions = {}): Ana
         for (const rule of rules) {
           const hit = rule.check(context);
           if (!hit) continue;
-          findings.push({
-            rule: rule.key,
-            file: file.path,
-            side: "new",
-            line_start: line.new,
-            line_end: line.new,
-            severity: hit.severity,
-            category: hit.category,
-            summary: hit.summary,
-            rationale: hit.rationale,
-            suggestion: hit.suggestion,
-            confidence: ANALYZER_CONFIDENCE,
-            // The rule fired on this exact line, so the evidence is verbatim by construction.
-            evidence: [line.text.trim()],
-          });
+          // The summary is in the key as cheap insurance: every rule returns one fixed verdict
+          // today, and if one ever varies, two different claims must not merge into one.
+          const key = `${rule.key}\n${hit.summary}`;
+          const started = open.get(key);
+
+          if (started === undefined) {
+            const finding: AnalyzerFinding = {
+              rule: rule.key,
+              file: file.path,
+              side: "new",
+              line_start: line.new,
+              line_end: line.new,
+              severity: hit.severity,
+              category: hit.category,
+              summary: hit.summary,
+              rationale: hit.rationale,
+              suggestion: hit.suggestion,
+              confidence: ANALYZER_CONFIDENCE,
+              // The rule fired on this exact line, so the evidence is verbatim by construction.
+              evidence: [line.text.trim()],
+            };
+            open.set(key, finding);
+            // Pushed on first sight, then widened, so the result stays in diff order.
+            findings.push(finding);
+          } else {
+            started.line_end = line.new;
+            if (started.evidence.length < MAX_EVIDENCE) started.evidence.push(line.text.trim());
+          }
         }
       }
     }
@@ -73,6 +106,11 @@ export function analyze(ingest: IngestResult, options: AnalyzeOptions = {}): Ana
 export function describeForPrompt(findings: readonly AnalyzerFinding[]): string {
   if (findings.length === 0) return "";
   return findings
-    .map((f) => `- ${f.file}:${f.line_start} [${f.severity}/${f.category}] ${f.summary}`)
+    .map((f) => {
+      // A merged finding covers a range, and the model is being told not to repeat it - so it
+      // has to see every line that is already spoken for, not just the first.
+      const at = f.line_end === f.line_start ? `${f.line_start}` : `${f.line_start}-${f.line_end}`;
+      return `- ${f.file}:${at} [${f.severity}/${f.category}] ${f.summary}`;
+    })
     .join("\n");
 }

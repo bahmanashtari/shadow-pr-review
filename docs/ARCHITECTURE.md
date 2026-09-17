@@ -58,7 +58,10 @@ handles only what needs judgement.
 import statements and SQL strings, covering DDD layer boundaries and migration safety. They
 need no dependency and no checkout, so they run for every source. Each rule quotes the line it
 fired on, so its evidence is verbatim by construction. Findings carry `confidence: 0.95` and
-are still checked by the Verifier.
+are still checked by the Verifier. A rule that fires on several lines of one hunk produces
+**one** finding spanning them, quoting each (ADR-029): two symptoms of one violation with one
+identical fix are one thing to say. Merging stops at the hunk boundary, because a range
+crossing a gap in the diff would fail `HunkIndex.hasRange` and be dropped.
 
 **Reviewer agent.**
 - Model: local Ollama by default and no API key (ADR-015, ADR-018); a hosted model is opt-in

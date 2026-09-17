@@ -191,18 +191,89 @@ describe("analyze", () => {
     }
   });
 
-  it("finds the layer violation both models missed", () => {
+  it("finds the layer violation both models missed, as one finding", () => {
+    // It used to be two, one per import line, with byte-identical summaries - and the
+    // Narrator spoke both, the second saying "This is the same problem as the previous one."
+    // The hand-written review.expected.json for this sample has always had it as one
+    // finding quoting both lines (ADR-029).
     const { ingest } = buildIngest({
       rawDiff: readGoldenDiff("sample-01-order-outbox"),
       source: SOURCE,
       config: defaultConfig(),
     });
     const findings = analyze(ingest);
-    expect(findings.map((f) => f.rule)).toEqual([
-      "application-imports-orm",
-      "application-imports-orm",
+
+    expect(findings.map((f) => f.rule)).toEqual(["application-imports-orm"]);
+    expect(findings[0]?.line_start).toBe(2);
+    expect(findings[0]?.line_end).toBe(7);
+    expect(findings[0]?.evidence).toEqual([
+      "import { DataSource } from 'typeorm';",
+      "import { OrderEntity } from '../../infrastructure/persistence/order.entity';",
     ]);
-    expect(findings.map((f) => f.line_start)).toEqual([2, 7]);
+  });
+
+  describe("merging repeated hits", () => {
+    it("keeps one finding per rule per hunk, quoting every offender", () => {
+      const findings = analyze(
+        ingestOf(APPLICATION, [
+          "import { DataSource } from 'typeorm';",
+          "import { Injectable } from '@nestjs/common';",
+          "import { OrderEntity } from '../../infrastructure/persistence/order.entity';",
+        ]),
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.line_start).toBe(1);
+      expect(findings[0]?.line_end).toBe(3);
+      expect(findings[0]?.evidence).toHaveLength(2);
+    });
+
+    it("does not merge different rules that fire on the same lines", () => {
+      // sample-01 reports an event-consistency bug and a layering problem on the same lines,
+      // and both are real; only the same rule with the same verdict collapses.
+      const findings = analyze(
+        ingestOf(MIGRATION, [
+          '    await q.query(`ALTER TABLE "stock" ADD COLUMN "q" integer NOT NULL`);',
+          "    await q.query(`CREATE INDEX idx_stock_q ON stock (q)`);",
+        ]),
+      );
+      expect(new Set(findings.map((f) => f.rule)).size).toBe(findings.length);
+    });
+
+    it("caps the quotes at the five the schema allows", () => {
+      const imports = Array.from(
+        { length: 8 },
+        (_, i) => `import { E${i} } from '../../infrastructure/persistence/e${i}.entity';`,
+      );
+      const findings = analyze(ingestOf(APPLICATION, imports));
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.evidence).toHaveLength(5);
+      // The range still covers every offender, even the ones there was no room to quote.
+      expect(findings[0]?.line_start).toBe(1);
+      expect(findings[0]?.line_end).toBe(8);
+    });
+
+    it("never merges across hunks, because the range would cross a gap", () => {
+      // HunkIndex.hasRange needs every line in between to be in the diff. A merged range
+      // spanning two hunks would be dropped as lines_not_in_diff, losing both findings.
+      const rawDiff =
+        `diff --git a/${APPLICATION} b/${APPLICATION}\n` +
+        `--- a/${APPLICATION}\n+++ b/${APPLICATION}\n` +
+        `@@ -1,1 +1,2 @@\n context\n+import { DataSource } from 'typeorm';\n` +
+        `@@ -40,1 +41,2 @@\n context\n+import { Repo } from '../../infrastructure/repo';\n`;
+      const { ingest } = buildIngest({ rawDiff, source: SOURCE, config: defaultConfig() });
+      const findings = analyze(ingest);
+      const index = HunkIndex.fromIngest(ingest);
+
+      expect(findings).toHaveLength(2);
+      for (const finding of findings) {
+        expect(finding.line_start).toBe(finding.line_end);
+        expect(index.hasRange(finding.file, "new", finding.line_start, finding.line_end)).toBe(
+          true,
+        );
+      }
+    });
   });
 
   it("finds the migration problems in sample 02", () => {

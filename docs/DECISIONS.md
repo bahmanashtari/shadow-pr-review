@@ -659,3 +659,65 @@ an unvalidated prompt edit into the TTS commit would make both harder to review 
 `docs/NARRATION_STYLE.md` is read into the prompt verbatim, so correcting its length section
 is the same prompt change and belongs in the same commit as the target band and the eval run
 behind it. Milestone 3 carries it.
+
+## ADR-029: One rule firing several times in one hunk is one finding (accepted, September 2026)
+
+**Context.** Listening to the finished audio for `sample-01-order-outbox` - the check the
+Milestone 2 step 1 plan puts in its finish list, and the reason it is there - turned up
+something no number had. The video has three finding steps and describes two problems. The
+second and third are the same layering violation, and the narration says so out loud: *"This
+is the same problem as the previous one."*
+
+The cause is in `src/analyzers/analyze.ts`, not in the Narrator. Rules are per-line predicates
+(`check(context) -> RuleHit | null`), and the driver emitted one finding per line that matched.
+`application-imports-orm` fires on both of that handler's persistence imports, at lines 2 and
+7, producing two findings with byte-identical summaries, rationales and suggestions.
+
+**The Verifier was right not to catch it.** `sameClaim` requires the line ranges to overlap,
+and 2 and 7 do not. That overlap test is not an oversight - the comment above it defends itself
+with this same sample, where an `event-consistency` finding and a layering finding land on the
+same lines and are genuinely different problems. Loosening it to catch this would risk merging
+those. The fault was upstream: two symptoms of one violation, with one identical fix, should
+never have been two findings.
+
+**Decision: the analyzer coalesces hits of the same rule and verdict within one hunk into a
+single finding**, spanning `line_start` to `line_end` and quoting each offending line as
+evidence. The hand-written `golden/sample-01-order-outbox/review.expected.json` has always had
+this shape - its `F02` reads "Application layer depends directly on TypeORM **and** the
+persistence entity" with two quotes - so this aligns the analyzer with the standard the golden
+set already set.
+
+**Why the hunk, and not the file.** `HunkIndex.hasRange` requires *every* line between
+`line_start` and `line_end` to be present in the diff. A range spanning two hunks crosses a gap
+the diff does not contain, so the Verifier would drop the merged finding as `lines_not_in_diff`
+and two correct findings would become none. A hunk's lines are contiguous by construction, so a
+range inside one always exists. Repeats in separate hunks therefore stay separate, which is the
+honest outcome anyway: they are in different parts of the file and the screen scrolls to each.
+The cost is that the merged range covers the untouched lines between the offenders - the
+contract has one range per finding and no way to say "lines 2 and 7 but not 3 to 6" - which for
+imports means highlighting the import block, and that is a reasonable thing to look at.
+
+**Two things fell out of it.** The Verifier's dedup got stronger for free: the analyzer's range
+now spans lines 2 to 7, so a model finding anywhere in that span is shadowed as a duplicate,
+where before only one landing exactly on line 2 was. And the narration got *richer*, not merely
+shorter - finding steps went from 29 words on average to 39, and the script gained words (128
+to 135) while losing a step. The Narrator had been spending its budget restating a duplicate.
+That is a second, independent piece of evidence for ADR-028: the model's brevity is not a
+preference for saying little, it is a budget being spent badly.
+
+**`spr eval` cannot see this, and still cannot.** It scored `sample-01` at 1.000 precision and
+1.000 recall before the change and after it. `labels.json` has one `must_find` entry,
+`application-depends-on-orm`; both duplicate findings matched it, so recall counted it once and
+precision counted both as true positives. A `max_findings` budget was considered and rejected:
+the old behaviour produced exactly three findings and the hand-written fixture also has three,
+so any budget loose enough to be fair is too loose to catch the duplicate. Scoring redundancy
+would need its own axis in `src/eval/score.ts`, in the shape ADR-025 gave restraint. The guard
+for now is a unit test in `test/analyzers/analyze.test.ts` pinning the merged shape, which is
+the right place: the analyzer is deterministic code and deserves a deterministic test rather
+than a stochastic one.
+
+**The general lesson is about the check, not the bug.** ADR-025 records that "tone stays a human
+read". Redundancy turns out to be the same kind of thing, and for a structural reason: every
+metric here scores findings one at a time, so nothing in the harness can see that two of them
+say the same sentence. Ninety seconds of listening found what four models and a scoring harness
+called perfect.

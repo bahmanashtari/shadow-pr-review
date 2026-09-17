@@ -250,11 +250,13 @@ describe("runReview", () => {
 
     expect(validateContract("review", outcome.review).ok).toBe(true);
     expect(checkReview(outcome.review)).toEqual([]);
-    expect(outcome.analyzerFindings).toBe(2);
+    // One analyzer finding, not two: the rule fires on both of this handler's persistence
+    // imports and they collapse into a single claim about a single hunk (ADR-029).
+    expect(outcome.analyzerFindings).toBe(1);
     expect(outcome.modelFindings).toBe(1);
-    expect(outcome.review.findings.map((f) => f.id)).toEqual(["F01", "F02", "F03"]);
-    // Severity order: the model's high finding comes before the analyzers' medium ones.
-    expect(outcome.review.findings.map((f) => f.severity)).toEqual(["high", "medium", "medium"]);
+    expect(outcome.review.findings.map((f) => f.id)).toEqual(["F01", "F02"]);
+    // Severity order: the model's high finding comes before the analyzers' medium one.
+    expect(outcome.review.findings.map((f) => f.severity)).toEqual(["high", "medium"]);
   });
 
   it("copies the source and the file stats from ingest", async () => {
@@ -277,7 +279,9 @@ describe("runReview", () => {
       summary: "x",
       findings: [duplicate],
     });
-    expect(outcome.analyzerFindings).toBe(2);
+    expect(outcome.analyzerFindings).toBe(1);
+    // Merging widened the analyzer's range to lines 2-7, so it now shadows a model finding
+    // anywhere in that span rather than only one landing on the same line.
     expect(outcome.modelFindings).toBe(0);
   });
 
@@ -293,7 +297,7 @@ describe("runReview", () => {
     });
 
     expect(outcome.stopped).toBe("budget:agentSteps");
-    expect(outcome.review.findings).toHaveLength(2); // the analyzers still ran
+    expect(outcome.review.findings).toHaveLength(1); // the analyzers still ran
     expect(outcome.review.summary).toContain("has not been fully reviewed");
     expect(checkReview(outcome.review)).toEqual([]);
   });
@@ -343,6 +347,6 @@ describe("summarizeReview", () => {
       summary: "x",
       findings: [MODEL_FINDING],
     });
-    expect(summarizeReview(outcome)).toBe("3 findings: 2 from checks, 1 from the model");
+    expect(summarizeReview(outcome)).toBe("2 findings: 1 from checks, 1 from the model");
   });
 });

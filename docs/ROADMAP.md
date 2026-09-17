@@ -54,6 +54,7 @@ anywhere Node does - and `SPR_TTS_PROVIDER=fake` runs it without Docker too.
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
 | 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028) | planned |
+| 7 | Score redundancy in `spr eval`: nothing in `src/eval/score.ts` can see two kept findings making the same claim, because every metric scores findings one at a time - `sample-01` scored 1.000/1.000 both with and without a duplicate (ADR-029). Wants its own axis, in the shape ADR-025 gave restraint | planned |
 
 ## Milestone 4: GitHub integration
 
