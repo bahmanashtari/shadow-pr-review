@@ -101,3 +101,73 @@ export function writeOnly(cache: LlmCache): LlmCache {
     },
   };
 }
+
+/**
+ * The same bargain for audio (ADR-017, ADR-027). A clip is expensive in wall clock rather
+ * than money, and a script that changed one step should re-synthesize one step.
+ */
+export interface TtsCache {
+  get(key: string): Uint8Array | undefined;
+  set(key: string, wav: Uint8Array): void;
+}
+
+/**
+ * Hashes what the manifest says it hashes: provider, voice, speed and the *normalized* text.
+ * The model that wrote the words is deliberately not in the key - two models that produce the
+ * same sentence should share the clip.
+ */
+export function ttsCacheKey(
+  provider: string,
+  voice: string,
+  speed: number,
+  normalizedText: string,
+): string {
+  return sha256(JSON.stringify([provider, voice, speed, normalizedText]));
+}
+
+/** A cache that never hits, used when `cache.enabled` is false. */
+export class NullTtsCache implements TtsCache {
+  get(): undefined {
+    return undefined;
+  }
+  set(): void {
+    // Intentionally does nothing.
+  }
+}
+
+/** Stores one WAV file per key under `<dir>/tts/`. */
+export class FileTtsCache implements TtsCache {
+  private readonly dir: string;
+
+  constructor(baseDir: string) {
+    this.dir = path.resolve(baseDir, "tts");
+  }
+
+  private fileFor(key: string): string {
+    return path.join(this.dir, key.slice(0, 2), `${key}.wav`);
+  }
+
+  get(key: string): Uint8Array | undefined {
+    try {
+      return readFileSync(this.fileFor(key));
+    } catch {
+      // A missing or unreadable entry is a miss, never a failed run.
+      return undefined;
+    }
+  }
+
+  set(key: string, wav: Uint8Array): void {
+    const file = this.fileFor(key);
+    try {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, wav);
+    } catch {
+      // A cache that cannot be written must not break the run.
+    }
+  }
+}
+
+/** Builds the audio cache named in the configuration. */
+export function createTtsCache(config: { enabled: boolean; dir: string }): TtsCache {
+  return config.enabled ? new FileTtsCache(config.dir) : new NullTtsCache();
+}

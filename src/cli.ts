@@ -17,7 +17,7 @@ import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
-import { runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
+import { readScript, runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
 import { runEval } from "./eval/run.js";
 import { formatReport } from "./eval/report.js";
 import {
@@ -28,9 +28,11 @@ import {
   writeVerifiedReview,
 } from "./verify/verify.js";
 import { Budget } from "./harness/budget.js";
-import { createCache } from "./harness/cache.js";
+import { createCache, createTtsCache } from "./harness/cache.js";
 import { Tracer } from "./harness/tracing.js";
 import { createProvider } from "./providers/llm/create.js";
+import { createTtsProvider } from "./providers/tts/create.js";
+import { runTts, summarizeTts, writeManifest } from "./tts/speak.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
@@ -177,10 +179,31 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   }
 
   if (opts.until === "narrate") return;
+  await speak(runDir, config);
+
+  if (opts.until === "tts") return;
   throw new NotImplementedError(
-    `stopped after narrate: tts is not implemented yet (Milestone 2, step 1). ` +
+    `stopped after tts: direct is not implemented yet (Milestone 2, step 2). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/**
+ * Runs the TTS stage over an existing run folder and prints what it measured.
+ * Like verify and narrate, it reads `script.json` back from disk, so `spr run` and
+ * `spr stage tts` follow exactly the same path - including for a script a person finished
+ * by hand after a rejected draft.
+ */
+async function speak(runDir: string, config: SprConfig): Promise<void> {
+  const outcome = await runTts({
+    script: readScript(runDir),
+    provider: createTtsProvider(config),
+    config,
+    cache: createTtsCache(config.cache),
+    runDir,
+  });
+  writeManifest(runDir, outcome.manifest);
+  console.log(summarizeTts(outcome));
 }
 
 /**
@@ -297,6 +320,13 @@ export function buildProgram(): Command {
         } finally {
           tracer.writeCost(runDir);
         }
+        return;
+      }
+      if (stage === "tts") {
+        const config = loadConfig();
+        const runDir = path.resolve(opts.run);
+        report(runDir, "re-running tts");
+        await speak(runDir, config);
         return;
       }
       if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 2");

@@ -20,6 +20,25 @@ async function withFakeProvider(body: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Runs something with no model and no speech container: `SPR_TTS_PROVIDER=fake` returns
+ * real WAV bytes, so the whole pipeline walks offline. The cache goes to a temporary folder
+ * so a test never writes clips into the developer's own `.cache/spr`.
+ */
+async function withFakeProviders(cacheDir: string, body: () => Promise<void>): Promise<void> {
+  const previous = { tts: process.env.SPR_TTS_PROVIDER, cache: process.env.SPR_CACHE_DIR };
+  process.env.SPR_TTS_PROVIDER = "fake";
+  process.env.SPR_CACHE_DIR = cacheDir;
+  try {
+    await withFakeProvider(body);
+  } finally {
+    if (previous.tts === undefined) delete process.env.SPR_TTS_PROVIDER;
+    else process.env.SPR_TTS_PROVIDER = previous.tts;
+    if (previous.cache === undefined) delete process.env.SPR_CACHE_DIR;
+    else process.env.SPR_CACHE_DIR = previous.cache;
+  }
+}
+
 const GOLDEN_DIFF = fromRoot("golden", "sample-02-inventory-consumer", "diff.patch");
 
 const temps: string[] = [];
@@ -133,13 +152,61 @@ describe("spr CLI", () => {
     expect(existsSync(path.join(runDir, "cost.json"))).toBe(true);
   });
 
-  it("run without --until now stops after narrate, pointing at Milestone 2", async () => {
+  it("run without --until now stops after tts, pointing at Milestone 2 step 2", async () => {
     const runDir = tempDir();
-    await withFakeProvider(() => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
+    await withFakeProviders(tempDir(), () => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
 
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("tts is not implemented yet (Milestone 2, step 1)");
+    expect(err.join("\n")).toContain("direct is not implemented yet (Milestone 2, step 2)");
+    // The run folder is kept, with everything the stages that did run produced in it.
     expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
+    expect(existsSync(path.join(runDir, "audio", "manifest.json"))).toBe(true);
+  });
+
+  it("run --until tts writes the clips and the manifest, with no container", async () => {
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "tts", "--out", runDir),
+    );
+
+    expect(process.exitCode).toBeUndefined();
+    // Two findings survive verify, so the script is intro + two + wrap-up.
+    for (const id of ["S00", "S01", "S02", "S03"]) {
+      expect(existsSync(path.join(runDir, "audio", `${id}.wav`))).toBe(true);
+    }
+    expect(out.join("\n")).toMatch(/audio: 4 clips, \d+:\d{2} of speech/);
+
+    const manifest: unknown = JSON.parse(
+      readFileSync(path.join(runDir, "audio", "manifest.json"), "utf8"),
+    );
+    const result = validateContract("audio-manifest", manifest);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+  });
+
+  it("stage tts re-runs from script.json, and the second run is a cache hit", async () => {
+    const runDir = tempDir();
+    const cacheDir = tempDir();
+    await withFakeProviders(cacheDir, () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "tts", "--out", runDir),
+    );
+    out.length = 0;
+
+    await withFakeProviders(cacheDir, () => run("stage", "tts", "--run", runDir));
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("re-running tts");
+    expect(out.join("\n")).toContain("(4 cached)");
+  });
+
+  it("stage tts says which file is missing when there is no script yet", async () => {
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "ingest", "--out", runDir),
+    );
+
+    await withFakeProviders(tempDir(), () => run("stage", "tts", "--run", runDir));
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toMatch(/\[tts\] Cannot read .*script\.json/);
   });
 
   it("stage narrate re-runs the Narrator over an existing run folder", async () => {
@@ -234,9 +301,9 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "tts", "--run", tempDir());
+    await run("stage", "direct", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage tts is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage direct is not implemented yet");
   });
 
   it("eval scores the golden set and writes a report", async () => {

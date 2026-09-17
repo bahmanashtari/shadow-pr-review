@@ -6,19 +6,19 @@
  * (ADR-024). Its input is the verified review and nothing else: never the diff, which keeps the
  * Narrator from inventing an issue it was not handed.
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checkScript, countWords } from "../contracts/checks.js";
 import type { SprConfig } from "../contracts/generated/config.js";
 import type { Finding, ReviewResult } from "../contracts/generated/review.js";
 import type { NarrationScript, Step } from "../contracts/generated/script.js";
 import { loadSchema } from "../contracts/schemas.js";
-import { assertContract } from "../contracts/validate.js";
+import { assertContract, validateContract } from "../contracts/validate.js";
 import type { Budget } from "../harness/budget.js";
 import type { LlmCache } from "../harness/cache.js";
 import { runAgent } from "../harness/loop.js";
 import type { Tracer } from "../harness/tracing.js";
-import { StageError } from "../lib/errors.js";
+import { ContractError, StageError } from "../lib/errors.js";
 import type { LlmProvider } from "../providers/llm/types.js";
 import { buildNarratorPrompt } from "./prompts/narrator.js";
 
@@ -279,6 +279,26 @@ function handOver(
       `\`spr stage narrate --run ${runDir}\`.`,
     cause === undefined ? {} : { cause },
   );
+}
+
+/**
+ * Reads and validates an existing `script.json`, the TTS stage's only input.
+ *
+ * It goes through the file rather than through memory on purpose, so `spr run` and
+ * `spr stage tts` follow exactly the same path - and so does a `script.json` a person
+ * finished by hand after a rejected draft (ADR-024).
+ */
+export function readScript(runDir: string): NarrationScript {
+  const file = path.join(runDir, SCRIPT_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (cause) {
+    throw new StageError("tts", `Cannot read ${file}`, { cause });
+  }
+  const result = validateContract("script", parsed);
+  if (!result.ok) throw new ContractError(file, result.errors);
+  return result.value;
 }
 
 /** Writes `script.json` into a run folder. */

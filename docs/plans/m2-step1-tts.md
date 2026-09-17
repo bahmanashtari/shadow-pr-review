@@ -1,7 +1,9 @@
 # Plan: Milestone 2, step 1 (TTS and `audio/manifest.json`)
 
-Status: approved (both open questions decided as recommended: duration is read from the WAV
-header, and the pronunciation map lives in code). Read CLAUDE.md, docs/ROADMAP.md,
+Status: done. Implemented in "Milestone 2 step 1: TTS and measured durations" (ADR-027), with
+the narration-length question it deferred answered in ADR-028. Both open questions were decided
+as recommended before implementation: duration is read from the WAV
+header, and the pronunciation map lives in code. Read CLAUDE.md, docs/ROADMAP.md,
 docs/ARCHITECTURE.md (section "2. Stages", subsection 5), docs/NARRATION_STYLE.md,
 `docs/cheatsheets/kokoro-docker.md` and docs/DECISIONS.md (ADR-017, ADR-024, ADR-026) first.
 

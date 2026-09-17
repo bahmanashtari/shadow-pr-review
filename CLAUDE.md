@@ -60,7 +60,8 @@ shadow-pr-review/
     eval/                        # score.ts (pure), report.ts, run.ts - scores the golden set (ADR-025)
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
-    providers/tts/               # types.ts, kokoro-http.ts, piper.ts
+    providers/tts/               # types.ts, kokoro-http.ts, fake.ts, create.ts (piper is later)
+    tts/                         # normalize.ts, duration.ts, speak.ts - script.json -> audio/
     director/                    # script + manifest -> timeline (pure functions)
     recorder/                    # Playwright + diff2html page (page/ holds HTML, CSS, JS)
     composer/                    # ffmpeg wrappers, SRT generation
@@ -92,16 +93,18 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest, review, verify and narrate run for real. `--until <stage>` exits 0 after that stage;
-without it the run stops at the first stage that is not built and exits 2, keeping the run folder.
+Ingest, review, verify, narrate and tts run for real. `--until <stage>` exits 0 after that
+stage; without it the run stops at the first stage that is not built and exits 2, keeping the
+run folder.
 
 ```
-pnpm spr run --diff change.patch --until narrate [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until tts [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
+pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
@@ -111,6 +114,12 @@ Review and narrate need a local model: `ollama serve` with the model from
 `config/default.json` pulled. `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all:
 only the deterministic analyzers (ADR-022) contribute findings, and the script is a placeholder.
 
+TTS needs the Kokoro container: `docker compose -f docker/compose.yml up -d kokoro`, which
+listens on `tts.baseUrl` (default `http://localhost:8880`). `SPR_TTS_PROVIDER=fake` runs the
+stage with no container at all and still returns real WAV bytes, so the timings downstream are
+plausible (ADR-027). The stage needs no `ffmpeg` or `ffprobe`: durations are read from the WAV
+header, and ffmpeg arrives with the Composer at Milestone 2 step 5.
+
 When the Narrator cannot produce narration that passes the checks, the stage fails and leaves
 `script.rejected.json` in the run folder. Edit it into `script.json` and confirm it with
 `spr validate script.json`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
@@ -119,17 +128,17 @@ re-run `spr stage narrate` (ADR-024).
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after narrate until Milestone 2 lands
+pnpm spr run --diff change.patch                    # stops after tts until Milestone 2 step 2 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <tts|direct|record|...> --run runs/<id>
-docker compose -f docker/compose.yml up -d kokoro   # Kokoro TTS container (Milestone 2)
+pnpm spr stage <direct|record|compose|...> --run runs/<id>
 ```
 
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
 characters of the diff's sha256 for `--diff`). Ingest writes the first three; the rest follow
 as their stages land:
-`diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json, audio/, timeline.json,
-video.webm, subtitles.srt, final.mp4, trace.jsonl, cost.json`.
+`diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
+audio/S00.wav..., audio/manifest.json, timeline.json, video.webm, subtitles.srt, final.mp4,
+trace.jsonl, cost.json`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
 `eval.json` plus one run folder per model per sample under `runs/eval/`.
 
@@ -162,7 +171,8 @@ A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` 
   When a local model is too weak for a job, compare the installed Ollama models on the golden
   set and recommend a better local one to pull, rather than reaching for the paid API.
 - Model output and TTS audio are cached on disk across runs (`cache.dir`, default
-  `.cache/spr`, git-ignored; `SPR_CACHE_DIR`, `SPR_CACHE_ENABLED`). See ADR-017.
+  `.cache/spr`, git-ignored; `SPR_CACHE_DIR`, `SPR_CACHE_ENABLED`). See ADR-017. Audio is keyed
+  on the *normalized* spoken text, so a clip survives an edit that changes nothing audible.
 - Installed: `ajv`, `commander`, `execa`, `picomatch`, `@anthropic-ai/sdk` (runtime);
   `typescript`, `tsx`, `vitest`, `eslint`, `typescript-eslint`, `prettier`,
   `json-schema-to-typescript`, `@types/picomatch` (dev).

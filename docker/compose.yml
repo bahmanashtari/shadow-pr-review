@@ -1,0 +1,28 @@
+# Kokoro-FastAPI, the default TTS provider (ADR-004). CPU is fast enough for review
+# narration, which is a handful of short clips per run.
+#
+# The tag is pinned rather than `latest` because image names, tags, ports and endpoints
+# move between releases; see docs/cheatsheets/kokoro-docker.md.
+#
+#   docker compose -f docker/compose.yml up -d kokoro
+#   docker compose -f docker/compose.yml down
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0
+    container_name: spr-kokoro
+    ports:
+      # Must match `tts.baseUrl` in config/default.json (or SPR_KOKORO_URL).
+      - "8880:8880"
+    restart: unless-stopped
+    healthcheck:
+      # The TTS stage waits on this endpoint itself, so the container is not required to
+      # report healthy for a run to work; this is for `docker compose ps`.
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8880/health'')"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s

@@ -118,11 +118,24 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   `spr stage narrate`. A stage boundary is a file, so a person can take over at that point.
 
 ### 5. TTS
-- Provider interface: `synthesize(text, voice, speed) -> wav bytes`.
-- Default provider: Kokoro-FastAPI container (OpenAI-compatible `/v1/audio/speech`).
+- Provider interface: `synthesize(text, voice, speed) -> wav bytes` (`src/providers/tts/`);
+  the stage itself is `src/tts/`, the same split ADR-023 made for the Verifier.
+- Default provider: Kokoro-FastAPI container (OpenAI-compatible `/v1/audio/speech`), pinned in
+  `docker/compose.yml`. The client waits on `/health` before the first clip, because a cold
+  container is still loading its model, and a container that is not running is named as such.
+- `SPR_TTS_PROVIDER=fake` returns real WAV bytes - silence whose length follows the word count -
+  so the whole pipeline walks offline with plausible timings and needs no Docker (ADR-027).
 - Text normalization before synthesis: pronunciation map (`NestJS -> Nest J S`,
   `PostgreSQL -> Postgres`, `DTO -> D T O`, `CQRS -> C Q R S`), strip backticks, expand `/`.
-- Durations are measured with ffprobe and written to `audio/manifest.json`.
+  It runs *before* the cache key, which the manifest defines over the normalized text.
+- Durations are read from the WAV header, not ffprobe (ADR-027), so this stage needs no
+  external binary. `estimated_seconds` in `script.json` is never consulted: it is the
+  word-count guess this stage exists to replace.
+- Checks before the manifest is written: every clip's length is within a fifth to five times
+  its word count, and every clip shares one sample rate (the Composer concatenates with
+  `-c copy`).
+- Clips are written as they are produced and the TTS cache is keyed on content, so a stage
+  that fails part-way resumes for free rather than starting over.
 
 ### 6. Director (pure)
 - For each step: window = [start, start + duration]; next start = end + gap (default 400 ms).

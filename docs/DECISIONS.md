@@ -539,3 +539,123 @@ harness accepted and `assertContract` then rejected after the retries were spent
 waiting for any model that writes long summaries. It found that `--model` could not run a model
 that cannot think, because ADR-021 turns thinking on for everyone. It found that one model
 failing discarded every other model's work. All three are fixed.
+
+## ADR-027: The TTS stage measures its own audio, and needs no external binary (accepted, September 2026)
+
+**Context.** Milestone 2 step 1 turns `script.json` into clips and into the measured durations
+every later stage takes its timing from (CLAUDE.md principle 1). `audio-manifest.schema.json`
+allowed "ffprobe or the WAV header" and `docs/ARCHITECTURE.md` named ffprobe; the step had to
+pick one, and the choice decides what the tool depends on.
+
+**Durations are read from the WAV header.** Kokoro is asked for WAV and answers 24 kHz mono
+16-bit PCM, so the header carries an exact frame count. Reading it is exact, costs no
+subprocess per clip, and leaves this stage with no external binary at all - which matters
+because neither `ffmpeg` nor `ffprobe` is installed on the machine this was built on, and CI
+can now run the whole TTS stage without installing either. The Composer needs `ffmpeg`
+regardless and arrives at step 5, so nothing is avoided permanently; this only declines to
+pull it forward by four steps. The honest cost is that the project will have two ways of
+measuring audio once the Composer lands, and a non-WAV provider would still need `ffprobe`.
+
+**The first real clip corrected the design.** Kokoro streams its response through ffmpeg's
+muxer, which writes the header before it knows how much audio follows and leaves *both* the
+RIFF size and the `data` chunk size at `0xFFFFFFFF`. So counting the bytes actually present is
+not the fallback the plan described - it is the path every real clip takes, and the declared
+size is the exception. The reader also has to step over a `LIST`/`INFO` chunk that ffmpeg
+writes between `fmt ` and `data`. A reader that trusted the declared size would have reported
+every clip as zero-length, and the manifest's `duration_ms` minimum of 1 would have been the
+only thing standing between that and a silent video.
+
+**The fake provider returns real WAV bytes.** Not a stub: silence whose length follows the
+word count at the rate `script.schema.json` estimates with. `SPR_TTS_PROVIDER=fake` has to
+walk the whole pipeline offline with plausible timings, because the Director (step 2) and the
+Recorder (step 4) both consume `audio/manifest.json` and both have to be buildable and
+testable before anyone installs Docker. The fake LLM provider exists for the same reason and
+had to learn the Narrator's answer shape to do it.
+
+**A clip that does not match its text fails the stage.** Measured audio is compared against
+`words / 2.5 / speed` and rejected outside a fifth to five times that. This is not defensive
+padding. A TTS server answering with an error page, an empty body or a truncated clip returns
+bytes that parse, and the result is a video that is silently broken until somebody watches it;
+this stage prints the last numbers a person sees before they become a rendered video. The
+bounds earned themselves immediately, on the first draft of the stage's own tests, which
+handed back a fixed-length clip for every step and were correctly refused. Clips are also
+required to share one sample rate, because the Composer concatenates them with `-c copy`.
+
+**Failure is resumable by construction, and needs no handover file.** Clips are written as
+they are produced and the cache is keyed on content, so a stage that dies on step 7 of 9
+leaves six clips behind and a re-run replays them for free and starts work at the one that
+failed. This is deliberately unlike the Narrator's handover (ADR-024): that failure was a
+judgement the model could not make, so a person had to finish it. This one is a container that
+was not there, so the message names the command that starts it.
+
+**The pronunciation map lives in code**, in `src/tts/normalize.ts`. It is small, unit-tested,
+versioned with the code that applies it, and `docs/NARRATION_STYLE.md` already fixes the cases
+it must handle. It runs before the cache key, because the manifest defines `cache_key` over
+the normalized text, and it is the last thing to touch the words - `checkScript` has already
+guaranteed no markdown, file name, path or URL reaches it (ADR-024), so it handles
+pronunciation, not sanitisation. Milestone 4 will want it configurable, when the tool meets
+service names no built-in map could predict; `tts.pronunciations` through the existing
+`--file` / `SPR_CONFIG` mechanism is where it goes. Knowing where it goes was not a reason to
+build it now.
+
+**Consequences.** `docs/ARCHITECTURE.md` section 2.5 no longer says ffprobe. The image is
+pinned at `ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0`, confirmed against the registry's tag
+list as the current release, and the cheat sheet is corrected where the running container
+contradicted it.
+
+## ADR-028: The Narrator needs a length target, not a longer cap (accepted, September 2026)
+
+**Context.** ADR-026 recorded, without scoring it, that every model produced narration
+substantially shorter than the hand-written fixtures - 51.2s against 89s, 55.6s against 88s,
+25.2s against 32s - "consistently enough to be the prompt rather than the models". Those were
+word counts over an assumed speaking rate, not audio. The roadmap deferred the question to
+this step because this step produces the first real measurement.
+
+**The measurement.** Every golden sample, spoken by the configured voice, against the
+`1 to 5 minutes` whole-video target in `docs/NARRATION_STYLE.md`. "Video" adds the Director's
+400 ms gap between steps.
+
+| Sample | Script | Steps | Words | Estimated | Measured | Video |
+|---|---|---|---|---|---|---|
+| order-outbox | fixture | 5 | 219 | 89.0s | 80.7s | 82.3s |
+| order-outbox | model | 5 | 128 | 51.2s | 54.4s | 56.0s |
+| inventory-consumer | fixture | 6 | 219 | 88.0s | 75.9s | 77.9s |
+| inventory-consumer | model | 5 | 139 | 55.6s | 52.0s | 53.6s |
+| email-value-object | fixture | 3 | 80 | 32.0s | 30.7s | 31.5s |
+| email-value-object | model | 3 | 63 | 25.2s | 24.8s | 25.6s |
+
+**The word-count proxy was sound.** Measured over estimated ranges from 0.86 to 1.06, and the
+real rate is about 2.35 words per second against the schema's assumed 2.5. ADR-026's numbers
+did not need re-deriving, which is worth writing down: the cheap proxy was accurate enough to
+have argued from, and the expensive measurement confirmed rather than overturned it.
+
+**But the target it was being compared against is wrong.** Not one run reaches five minutes,
+and the shortest misses the one-minute floor - and so does the *hand-written fixture* for the
+same sample, at 31.5s. The fixtures are the standard this tool is aiming at, so a target they
+fail is a target, not a diagnosis. Video length is dominated by how many findings there are,
+not by how much is said about each: `review.maxFindings` is 10, and the schema's 12-step
+ceiling at the 60-word cap is about 4:50. So `1 to 5 minutes` is really the structural range
+of the format from a full review down to a small one, and a one-finding change cannot reach
+the floor and should not try.
+
+**The decision: the Narrator prompt needs a per-step length target, and the whole-video line
+needs restating.** The cause is identified rather than inferred. `HOW_TO_ANSWER` in
+`src/agents/prompts/narrator.ts` ends with "Those are hard limits, not targets." - so the
+model is told what it may not exceed and explicitly told that number is not a goal, and it
+settles at 26 to 33 words against a cap of 60. The fixtures sit at 44 to 60.
+
+**A number alone is the wrong instrument, though.** Reading the two side by side, the words
+the fixtures spend are the concrete consequence, which is exactly the beat
+`docs/NARRATION_STYLE.md` already asks for: where the fixture says "other services hear about
+an order that was never saved", the model says "the event might be sent without the data being
+saved". The model states the mechanism and skips the outcome. A bare floor would invite
+padding, which collides with the voice the style file asks for and with grounding (CLAUDE.md
+principle 5). So the change is a target band tied to the beats already documented - what is
+there, what goes wrong because of it, what to do - with a range rather than only a ceiling.
+
+**Deliberately not made in this step.** It is a Narrate-stage change, it moves ADR-026's
+baseline, and every prompt change is supposed to be argued with `spr eval` (ADR-025). Bundling
+an unvalidated prompt edit into the TTS commit would make both harder to review and to revert.
+`docs/NARRATION_STYLE.md` is read into the prompt verbatim, so correcting its length section
+is the same prompt change and belongs in the same commit as the target band and the eval run
+behind it. Milestone 3 carries it.

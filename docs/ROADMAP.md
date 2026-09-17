@@ -33,14 +33,16 @@ of it against the golden set.
 
 | Step | Scope | Status |
 |---|---|---|
-| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations read from the WAV header, not ffprobe; TTS cache. **Also check narration length against real measured audio** - every model produces scripts around 60% of the hand-written fixtures' length (ADR-026), which is a word-count proxy; this step produces the real number, and that is the point to decide whether the Narrator prompt needs a length target rather than only a cap. Plan: `docs/plans/m2-step1-tts.md` | next |
-| 2 | Director (pure): script + manifest to `timeline.json` | planned |
+| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations read from the WAV header, not ffprobe; TTS cache. Narration length measured against real audio (ADR-027, ADR-028). Plan: `docs/plans/m2-step1-tts.md` | done |
+| 2 | Director (pure): script + manifest to `timeline.json` | next |
 | 3 | Recorder page: diff2html bundle vendored at build time, row tagging, `window.spr` API, dark theme, title and outro cards | planned |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 | planned |
 | 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check | planned |
 | 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples | planned |
 
-Needs Docker, ffmpeg and Playwright Chromium locally and in CI.
+Needs Docker for step 1, and ffmpeg and Playwright Chromium from step 4 onwards, locally and
+in CI. Step 1 deliberately needs neither ffmpeg nor ffprobe (ADR-027), so the TTS stage runs
+anywhere Node does - and `SPR_TTS_PROVIDER=fake` runs it without Docker too.
 
 ## Milestone 3: quality and robustness
 
@@ -51,6 +53,7 @@ Needs Docker, ffmpeg and Playwright Chromium locally and in CI.
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
+| 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028) | planned |
 
 ## Milestone 4: GitHub integration
 

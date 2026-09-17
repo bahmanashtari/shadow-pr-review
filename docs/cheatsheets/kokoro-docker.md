@@ -1,16 +1,17 @@
 # Cheat sheet: Kokoro TTS in Docker
 
-> Snapshot written September 2026. Image names, tags, ports, endpoints and voice names
-> change. Verify against the Kokoro-FastAPI README (github.com/remsky/Kokoro-FastAPI)
-> and pin a specific tag instead of `latest`.
+> Snapshot written September 2026, corrected against a real `v0.9.0` pull the same month.
+> Image names, tags, ports, endpoints and voice names change. Verify against the
+> Kokoro-FastAPI README (github.com/remsky/Kokoro-FastAPI) and pin a specific tag instead of
+> `latest`. What the tool actually runs is `docker/compose.yml`; this file is the notes behind it.
 
 ## Run locally (CPU)
 
 ```yaml
-# docker/compose.yml
+# docker/compose.yml (abridged - the file itself also carries a healthcheck)
 services:
   kokoro:
-    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest   # pin a version tag
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0   # confirmed current, September 2026
     ports:
       - "8880:8880"
     restart: unless-stopped
@@ -18,6 +19,13 @@ services:
 
 ```bash
 docker compose -f docker/compose.yml up -d kokoro
+```
+
+Tags are listable without pulling, which is the cheapest way to check the pin is still real:
+
+```bash
+TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:remsky/kokoro-fastapi-cpu:pull&service=ghcr.io" | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+curl -s -H "Authorization: Bearer $TOKEN" https://ghcr.io/v2/remsky/kokoro-fastapi-cpu/tags/list
 ```
 
 A GPU image also exists (`kokoro-fastapi-gpu`) and needs the NVIDIA container toolkit.
@@ -54,7 +62,12 @@ export async function synthesize(
 }
 ```
 
-List voices (check the README if this path differs): `GET /v1/audio/voices`.
+List voices: `GET /v1/audio/voices`. In `v0.9.0` it answers `{"voices": [...]}` where each
+entry is an **object**, not a string - `{"id": "af_heart", "name": "af_heart",
+"target_quality": "A", "overall_grade": "A"}` - so anything reading it must take `.id`. 72
+voices ship, and the configured default `af_heart` is one of the few the server itself grades A.
+
+Readiness: `GET /health` answers `{"status":"healthy"}`.
 
 ## Voices
 
@@ -65,12 +78,21 @@ American English voices use the `a` prefix: `af_*` female, `am_*` male
 ## Tips
 
 - Output is 24 kHz mono. Keep every clip in the same format so ffmpeg can concat with `-c copy`.
-- Wait for readiness before the first request (health endpoint per README, commonly `/health`).
-  The first request after startup is slower (model warm-up).
+- Wait for readiness before the first request: `GET /health`, confirmed in `v0.9.0`. The first
+  request after startup is slower (model warm-up); the client in `src/providers/tts/kokoro-http.ts`
+  polls health once and then reuses the result.
 - Normalize text before sending (see NARRATION_STYLE.md): acronyms, slashes, backticks.
 - Cache by sha256(provider, voice, speed, normalized text).
-- Measure duration from the file, not from text length:
-  `ffprobe -v error -show_entries format=duration -of csv=p=0 S00.wav`
+- Measure duration from the file, not from text length - but **not with ffprobe**. ADR-027
+  reads the WAV header instead, so the TTS stage needs no external binary at all. The reason it
+  is not a one-liner: Kokoro streams its response through ffmpeg's muxer, which writes the
+  header before it knows the length, so both the RIFF size and the `data` chunk size come back
+  as `0xFFFFFFFF` and the real length is the bytes actually present. There is also a
+  `LIST`/`INFO` chunk between `fmt ` and `data` to step over. `src/tts/duration.ts` does all of
+  this; `ffprobe -v error -show_entries format=duration -of csv=p=0 S00.wav` is still the way to
+  check its answer by hand, once ffmpeg is installed at Milestone 2 step 5.
+- Measured speech runs at about 2.35 words per second at `speed: 1.0`, against the 2.5 that
+  `script.schema.json` estimates with (ADR-028).
 
 ## Alternatives
 
