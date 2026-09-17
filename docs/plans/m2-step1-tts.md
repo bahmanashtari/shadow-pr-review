@@ -84,7 +84,8 @@ Two properties matter beyond the mapping itself:
 ## 5. Measuring duration
 
 Every duration comes from the written file. The manifest's own description says "measured from
-the written files (ffprobe or the WAV header), never estimated" - which of the two is section 7.
+the written files (ffprobe or the WAV header), never estimated"; section 7 settles which, and
+the answer is the WAV header.
 
 A **sanity check** either way: a clip whose duration is wildly out of step with its word count
 (say, under a fifth or over five times `words / 2.5`) fails the stage naming the step. This is
