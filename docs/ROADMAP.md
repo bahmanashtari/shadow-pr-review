@@ -33,7 +33,7 @@ of it against the golden set.
 
 | Step | Scope | Status |
 |---|---|---|
-| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations from ffprobe; TTS cache. **Also check narration length against real measured audio** - every model produces scripts around 60% of the hand-written fixtures' length (ADR-026), which is a word-count proxy; ffprobe gives the real number, and that is the point to decide whether the Narrator prompt needs a length target rather than only a cap | next |
+| 1 | `docker/compose.yml` for Kokoro-FastAPI (pinned tag); TTS provider interface, Kokoro HTTP client, fake provider; text normalization (pronunciation map); `audio/manifest.json` with durations read from the WAV header, not ffprobe; TTS cache. **Also check narration length against real measured audio** - every model produces scripts around 60% of the hand-written fixtures' length (ADR-026), which is a word-count proxy; this step produces the real number, and that is the point to decide whether the Narrator prompt needs a length target rather than only a cap. Plan: `docs/plans/m2-step1-tts.md` | next |
 | 2 | Director (pure): script + manifest to `timeline.json` | planned |
 | 3 | Recorder page: diff2html bundle vendored at build time, row tagging, `window.spr` API, dark theme, title and outro cards | planned |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 | planned |
