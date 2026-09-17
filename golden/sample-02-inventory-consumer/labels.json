@@ -8,6 +8,7 @@
       "category": "idempotency",
       "accept_categories": ["event-consistency", "correctness"],
       "min_severity": "high",
+      "max_severity": "high",
       "description": "Redelivered order.placed events decrement stock again; no dedupe by orderId/eventId."
     },
     {
@@ -17,6 +18,7 @@
       "category": "data-migration",
       "accept_categories": ["correctness"],
       "min_severity": "high",
+      "max_severity": "high",
       "description": "ADD COLUMN ... NOT NULL without DEFAULT fails on PostgreSQL when stock_item already has rows."
     }
   ],
@@ -26,6 +28,8 @@
       "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
       "line_start": 16, "line_end": 18,
       "category": "concurrency",
+      "min_severity": "low",
+      "max_severity": "medium",
       "description": "Per-item decrements are not atomic; a failure midway leaves partial updates."
     },
     {
@@ -33,6 +37,8 @@
       "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
       "line_start": 10, "line_end": 10,
       "category": "data-migration",
+      "min_severity": "low",
+      "max_severity": "medium",
       "description": "down() is empty, so the migration cannot be reverted."
     },
     {

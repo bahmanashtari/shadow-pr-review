@@ -78,6 +78,18 @@ export interface ReviewScore {
   acceptable_found: Match[];
   false_positives: FalsePositive[];
   /**
+   * The share of matched findings whose severity sits inside its label's band. A separate axis from precision and recall, in the shape within_budget gave restraint: a finding at the right lines with the right category and the wrong severity has spotted the issue and misjudged it. Null when no matched label carries a band, so a set that has not been banded yet reports nothing rather than a flattering 1.
+   */
+  calibrated?: number | null;
+  /**
+   * The matched findings that fell outside their band, named. Direction matters more than count: over-rating and under-rating call for opposite corrections, and until this axis existed only under-rating was visible at all, as a recall gap.
+   */
+  miscalibrated?: Miscalibration[];
+  /**
+   * How many matched findings had a band to be scored against, which is `calibrated`'s denominator. Reported rather than left to be recovered from the rounded rate, so totals across samples add up exactly.
+   */
+  calibration_scored?: number;
+  /**
    * What the Verifier removed, by reason. Not a score: a finding dropped before the viewer saw it is not a false positive, but the reason says whether the model is producing bad claims or good claims it cannot quote.
    */
   dropped: {
@@ -103,6 +115,17 @@ export interface FalsePositive {
    */
   must_not_flag_key?: string | null;
 }
+export interface Miscalibration {
+  key: string;
+  finding_id: string;
+  severity: Severity;
+  max_severity: Severity;
+  min_severity: Severity;
+  /**
+   * Over: rated more serious than the band's ceiling. Under: less serious than its floor - which for a must_find label also costs recall, so it is already visible there.
+   */
+  direction: "over" | "under";
+}
 export interface ScriptResult {
   /**
    * False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues.
@@ -125,6 +148,14 @@ export interface Totals {
   acceptable_found?: number;
   kept: number;
   false_positives: number;
+  /**
+   * Matched findings inside their band, over every sample that had one. Null when no sample did.
+   */
+  calibrated?: number | null;
+  /**
+   * How many matched findings fell outside their band, over every sample.
+   */
+  miscalibrated?: number;
   seconds: number;
   narrated?: number;
   /**

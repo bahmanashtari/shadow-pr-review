@@ -87,6 +87,10 @@
           "$ref": "#/$defs/Severity",
           "description": "The lowest severity that still counts as finding this issue. Calibration is a known weak spot (ADR-015, ADR-018), so it is scored rather than assumed."
         },
+        "max_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The most serious a correctly calibrated finding may be. With min_severity it forms a band, and a kept finding outside that band is scored on the calibration axis without affecting precision or recall. Optional: a label with no max_severity is not scored for calibration at all, so the axis fills in as the set grows rather than demanding every label be rewritten at once."
+        },
         "description": { "type": "string", "minLength": 1 }
       }
     },
@@ -103,6 +107,14 @@
         "accept_categories": {
           "type": "array",
           "items": { "$ref": "#/$defs/Category" }
+        },
+        "min_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The least serious a correctly calibrated finding may be. Unlike on a RequiredLabel this decides nothing about recall, which an acceptable issue does not affect - it exists only to close the calibration band."
+        },
+        "max_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The most serious a correctly calibrated finding may be. Scored only when both ends of the band are given."
         },
         "description": { "type": "string", "minLength": 1 }
       }

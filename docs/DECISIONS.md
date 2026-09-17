@@ -1183,3 +1183,94 @@ against 56 237 ms of narration), and giving both commands to recover. The three 
 from ADR-034 still pass, at 77, 69 and 70 ms of trailing frame. That folder is git-ignored and
 exists only on the machine that produced it, so the suite's coverage comes from a synthesized
 short video instead, which needs no browser.
+
+## ADR-036: Calibration is an axis, because over-rating was free (accepted, September 2026)
+
+**Context.** Milestone 3 step 1 is the Verifier agent - keep, downgrade or drop. Planning it
+turned up a problem with building it at all: nothing in this repository could tell whether it
+helped.
+
+**Precision and recall are already 1.000.** ADR-026 measured that and concluded the golden set
+"has run out of discrimination". For a component whose only powers are keep, downgrade and drop,
+that ceiling has a sharp consequence: the best available outcome is "no change", and every other
+outcome is a regression. There was no measurable win to aim at.
+
+**And the one thing it is for was invisible.** The Verifier's real job is calibration - the weak
+spot ADR-015, ADR-018 and ADR-026 all name. But `spr eval` could not see over-rating:
+
+- `found()` requires `SEVERITY_RANK[finding] <= SEVERITY_RANK[label.min_severity]`, which is "at
+  least as serious as demanded". Rating a `low` issue `critical` passes it.
+- `locates()`, which is all an `acceptable` label gets, ignores severity entirely.
+- `AcceptableLabel` had no severity field of any kind.
+
+ADR-025 chose the first of those deliberately and gave a good reason: a finding at the right
+lines with the right category that under-rates severity has spotted the issue and misjudged it,
+so counting it as a false positive would be false. That ruling stands. **The asymmetry it left
+behind is what this ADR corrects**: under-rating showed up as a recall gap, and over-rating cost
+nothing anywhere.
+
+**Measured, not argued.** Comparing each sample's `review.expected.json` against what the default
+model produced in the Milestone 2 step 6 runs:
+
+| Sample | expected | actual | scored |
+|---|---|---|---|
+| order-outbox | high, medium | high, medium | 1.000 / 1.000 |
+| inventory-consumer | high, high, medium, low | high, high, low | 1.000 / 1.000 |
+| email-value-object | **low, privacy** | **critical, security** | **1.000 / 1.000** |
+
+One calibration error in the whole set, three levels of over-rating, on the sample whose `notes`
+say it exists to check restraint - and full marks. ADR-034 then watched that error reach the
+viewer: the narration says "a critical security issue" twice and the outro card reads "1
+critical". The one video of the three whose voice and card agreed with each other was the one
+furthest from the ground truth, because both read the same over-rated field.
+
+**The decision: a band on the label, and a third rate beside precision and recall.**
+
+`max_severity` joins `min_severity` on `RequiredLabel`; `AcceptableLabel` gains both. Together
+they are the range a correctly calibrated finding sits in, and `calibrated` is the share of
+matched findings inside it. The shape is the one `within_budget` already gave restraint - its
+own axis, reported alongside, never folded into precision - which is also what roadmap step 7
+wants for redundancy.
+
+**A label with no band is not scored, rather than passed.** The axis starts almost empty and
+fills in as the golden set grows, so Milestone 3 step 4 does not have to band every label the
+day it lands. `calibrated` is null when nothing was scored, because a set that has not been
+banded should report nothing rather than a flattering 1. `payload-not-validated` in
+`sample-02` is deliberately left unbanded as the worked example: the ideal review has no
+counterpart for it, so there is no honest ceiling to give it.
+
+**Under-rating a `must_find` is still counted once, not twice.** `found()` already rejects it on
+severity, so it never reaches the calibration check - it is a recall gap and nothing else, which
+is exactly ADR-025's design. The band adds a ceiling there. On an `acceptable` label, which
+`locates()` matches without looking at severity at all, it adds both ends.
+
+**How the bands were set**, since a ground truth invented carelessly is worse than none. For a
+`must_find` label the ceiling is the severity `review.expected.json` assigns - the fixtures are
+the standard this tool aims at, so a rating above the hand-written ideal is over-rating - and
+the existing `min_severity` stays as the floor. An `acceptable` label gets one level of latitude
+above the ideal, because choosing to report an optional issue at all implies weighting it. That
+gives eight banded labels and one unbanded.
+
+**What it says today.** Scoring the three Milestone 2 step 6 reviews:
+
+```
+sample-01-order-outbox         prec 1  rec 1     cal 1  (2 scored)
+sample-02-inventory-consumer   prec 1  rec 1     cal 1  (3 scored)
+sample-03-email-value-object   prec 1  rec null  cal 0  (1 scored)
+    over-rated F01 (pii-in-error) critical, band medium..low
+TOTAL                          prec 1  rec 1     cal 0.833   miscal 1
+```
+
+**0.833 is the first number below 1.000 the default model has scored since ADR-026.** The
+benchmark can discriminate again, on the axis that matters for the step it was blocking.
+
+**Totals add up over findings, not over samples**, so a sample with three banded findings
+outweighs one with a single banded finding. `calibration_scored` is reported rather than left to
+be recovered from the rounded rate - the first version of this did recover it, by dividing the
+miscount by `1 - calibrated`, which is the sort of arithmetic that is correct until a rate
+rounds.
+
+**Consequences.** The Verifier agent now has something to move and something to be judged by,
+and its finishing claim is checkable: correct the one known over-rating and change nothing else.
+With one calibration case the set can show the mechanism works and cannot establish a rate, so
+Milestone 3 step 4 still governs any claim about how often this happens.

@@ -65,6 +65,10 @@ export interface RequiredLabel {
    * The lowest severity that still counts as finding this issue. Calibration is a known weak spot (ADR-015, ADR-018), so it is scored rather than assumed.
    */
   min_severity: "critical" | "high" | "medium" | "low";
+  /**
+   * The most serious a correctly calibrated finding may be. With min_severity it forms a band, and a kept finding outside that band is scored on the calibration axis without affecting precision or recall. Optional: a label with no max_severity is not scored for calibration at all, so the axis fills in as the set grows rather than demanding every label be rewritten at once.
+   */
+  max_severity?: "critical" | "high" | "medium" | "low";
   description: string;
 }
 export interface AcceptableLabel {
@@ -74,6 +78,14 @@ export interface AcceptableLabel {
   line_end: number;
   category: Category;
   accept_categories?: Category[];
+  /**
+   * The least serious a correctly calibrated finding may be. Unlike on a RequiredLabel this decides nothing about recall, which an acceptable issue does not affect - it exists only to close the calibration band.
+   */
+  min_severity?: "critical" | "high" | "medium" | "low";
+  /**
+   * The most serious a correctly calibrated finding may be. Scored only when both ends of the band are given.
+   */
+  max_severity?: "critical" | "high" | "medium" | "low";
   description: string;
 }
 export interface ForbiddenLabel {

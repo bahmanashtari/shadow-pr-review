@@ -8,6 +8,7 @@
       "category": "event-consistency",
       "accept_categories": ["correctness", "error-handling"],
       "min_severity": "high",
+      "max_severity": "high",
       "description": "Event emitted inside the transaction before commit; fire-and-forget emit loses broker errors. Needs a transactional outbox."
     },
     {
@@ -17,6 +18,7 @@
       "category": "ddd-boundaries",
       "accept_categories": ["maintainability"],
       "min_severity": "low",
+      "max_severity": "medium",
       "description": "Application layer uses TypeORM DataSource and the infrastructure entity directly instead of a repository port."
     }
   ],
@@ -26,6 +28,8 @@
       "file": "services/order-service/src/application/commands/place-order.handler.ts",
       "line_start": 22, "line_end": 26,
       "category": "api-contract",
+      "min_severity": "low",
+      "max_severity": "medium",
       "description": "Inline, unversioned event payload without event id / timestamp."
     }
   ],

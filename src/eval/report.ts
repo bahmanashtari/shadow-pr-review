@@ -49,6 +49,7 @@ export function formatModel(run: ModelRun): string[] {
       padLeft("kept", COLUMNS.kept),
       padLeft("prec", COLUMNS.rate),
       padLeft("rec", COLUMNS.rate),
+      padLeft("cal", COLUMNS.rate),
       padLeft("fp", COLUMNS.fp),
       "  dropped / script",
     ].join(" "),
@@ -61,6 +62,7 @@ export function formatModel(run: ModelRun): string[] {
         padLeft(String(s.review.kept), COLUMNS.kept),
         padLeft(rate(s.review.precision), COLUMNS.rate),
         padLeft(rate(s.review.recall), COLUMNS.rate),
+        padLeft(rate(s.review.calibrated ?? null), COLUMNS.rate),
         padLeft(String(s.review.false_positives.length), COLUMNS.fp),
         `  ${droppedCell(s)} / ${scriptCell(s)}`,
       ].join(" "),
@@ -74,6 +76,7 @@ export function formatModel(run: ModelRun): string[] {
       padLeft(String(t.kept), COLUMNS.kept),
       padLeft(rate(t.precision), COLUMNS.rate),
       padLeft(rate(t.recall), COLUMNS.rate),
+      padLeft(rate(t.calibrated ?? null), COLUMNS.rate),
       padLeft(String(t.false_positives), COLUMNS.fp),
       `  ${t.found}/${t.must_find} must_find, +${t.acceptable_found ?? 0} optional, ` +
         `${t.narrated ?? 0}/${run.samples.length} narrated, ${t.seconds}s`,
@@ -91,6 +94,13 @@ export function formatModel(run: ModelRun): string[] {
       detail.push(
         `false positive ${fp.finding_id} (${name}) ${fp.category} ` +
           `${fp.file}:${fp.line_start}-${fp.line_end} - ${fp.summary}`,
+      );
+    }
+    for (const m of s.review.miscalibrated ?? []) {
+      // The direction is the point: over-rating and under-rating call for opposite corrections.
+      detail.push(
+        `${m.direction}-rated ${m.finding_id} (${m.key}) ${m.severity}, ` +
+          `band ${m.max_severity}..${m.min_severity}`,
       );
     }
     if (!s.script.narrated && s.script.failure) detail.push(`narrate failed: ${s.script.failure}`);
@@ -111,6 +121,7 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
       pad("model", width),
       padLeft("prec", COLUMNS.rate),
       padLeft("rec", COLUMNS.rate),
+      padLeft("cal", COLUMNS.rate),
       padLeft("found", COLUMNS.rate),
       padLeft("opt", COLUMNS.fp),
       padLeft("fp", COLUMNS.fp),
@@ -124,6 +135,7 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
         pad(m.failed ? `${m.model} *` : m.model, width),
         padLeft(rate(m.totals.precision), COLUMNS.rate),
         padLeft(rate(m.totals.recall), COLUMNS.rate),
+        padLeft(rate(m.totals.calibrated ?? null), COLUMNS.rate),
         padLeft(`${m.totals.found}/${m.totals.must_find}`, COLUMNS.rate),
         padLeft(String(m.totals.acceptable_found ?? 0), COLUMNS.fp),
         padLeft(String(m.totals.false_positives), COLUMNS.fp),

@@ -108,6 +108,22 @@
           "description": "Optional issues the run spotted. These never affect precision or recall - they are already true positives and are not required - but they are the only place a run that says something real and a run that says nothing look different."
         },
         "false_positives": { "type": "array", "items": { "$ref": "#/$defs/FalsePositive" } },
+        "calibrated": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "The share of matched findings whose severity sits inside its label's band. A separate axis from precision and recall, in the shape within_budget gave restraint: a finding at the right lines with the right category and the wrong severity has spotted the issue and misjudged it. Null when no matched label carries a band, so a set that has not been banded yet reports nothing rather than a flattering 1."
+        },
+        "miscalibrated": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Miscalibration" },
+          "description": "The matched findings that fell outside their band, named. Direction matters more than count: over-rating and under-rating call for opposite corrections, and until this axis existed only under-rating was visible at all, as a recall gap."
+        },
+        "calibration_scored": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many matched findings had a band to be scored against, which is `calibrated`'s denominator. Reported rather than left to be recovered from the rounded rate, so totals across samples add up exactly."
+        },
         "dropped": {
           "type": "array",
           "items": {
@@ -131,6 +147,22 @@
         "key": { "type": "string" },
         "finding_id": { "type": "string", "pattern": "^F[0-9]{2}$" },
         "severity": { "$ref": "#/$defs/Severity" }
+      }
+    },
+    "Miscalibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "finding_id", "severity", "max_severity", "min_severity", "direction"],
+      "properties": {
+        "key": { "type": "string" },
+        "finding_id": { "type": "string", "pattern": "^F[0-9]{2}$" },
+        "severity": { "$ref": "#/$defs/Severity" },
+        "max_severity": { "$ref": "#/$defs/Severity" },
+        "min_severity": { "$ref": "#/$defs/Severity" },
+        "direction": {
+          "enum": ["over", "under"],
+          "description": "Over: rated more serious than the band's ceiling. Under: less serious than its floor - which for a must_find label also costs recall, so it is already visible there."
+        }
       }
     },
     "FalsePositive": {
@@ -190,6 +222,17 @@
         "acceptable_found": { "type": "integer", "minimum": 0 },
         "kept": { "type": "integer", "minimum": 0 },
         "false_positives": { "type": "integer", "minimum": 0 },
+        "calibrated": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Matched findings inside their band, over every sample that had one. Null when no sample did."
+        },
+        "miscalibrated": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many matched findings fell outside their band, over every sample."
+        },
         "seconds": { "type": "number", "minimum": 0 },
         "narrated": { "type": "integer", "minimum": 0 },
         "over_budget": {

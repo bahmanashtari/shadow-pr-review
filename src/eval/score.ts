@@ -10,6 +10,7 @@ import type {
   EvalReport,
   FalsePositive,
   Match,
+  Miscalibration,
   ReviewScore,
   ScriptResult,
   SampleResult,
@@ -61,6 +62,30 @@ export function found(finding: Finding, label: RequiredLabel): boolean {
   );
 }
 
+/**
+ * Whether a finding's severity sits inside the band its label allows, and which way out it is.
+ *
+ * The axis ADR-025 left open. Its ruling - that a finding at the right lines with the right
+ * category counts for precision whatever severity it carries - is right, and the asymmetry it
+ * leaves is not: under-rating shows up as a recall gap through {@link found}, while over-rating
+ * costs nothing anywhere. `sample-03` rated a `low` privacy issue `critical` and scored
+ * 1.000/1.000 (ADR-036), and the over-rating reached the viewer as "a critical security issue"
+ * in the narration and "1 critical" on the outro card.
+ *
+ * @returns `null` when the label carries no band, which is not a pass - such a label is left
+ * out of the score entirely, so an unbanded set reports nothing rather than a flattering 1.
+ */
+export function calibration(finding: Finding, label: PlacedLabel): "over" | "under" | "in" | null {
+  const { max_severity: ceiling, min_severity: floor } = label;
+  if (ceiling === undefined || floor === undefined) return null;
+
+  const rank = SEVERITY_RANK[finding.severity];
+  // `critical` ranks 0, so the more serious end of the band is the lower number.
+  if (rank < SEVERITY_RANK[ceiling]) return "over";
+  if (rank > SEVERITY_RANK[floor]) return "under";
+  return "in";
+}
+
 /** The `must_not_flag` entry a false positive appears to be, when one names its place. */
 function nameFor(finding: Finding, forbidden: readonly ForbiddenLabel[]): string | null {
   const hit = forbidden.find((label) => {
@@ -85,12 +110,18 @@ function droppedByReason(review: ReviewResult): ReviewScore["dropped"] {
 export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewScore {
   const kept = review.findings;
 
+  // Every finding that matched a label, with the label it matched, so calibration can be scored
+  // over exactly the findings the other axes already counted - and never twice.
+  const pairs: { finding: Finding; label: PlacedLabel }[] = [];
+
   const matched: Match[] = [];
   const missed: string[] = [];
   for (const label of labels.must_find) {
     const hit = kept.find((f) => found(f, label));
-    if (hit) matched.push({ key: label.key, finding_id: hit.id, severity: hit.severity });
-    else missed.push(label.key);
+    if (hit) {
+      matched.push({ key: label.key, finding_id: hit.id, severity: hit.severity });
+      pairs.push({ finding: hit, label });
+    } else missed.push(label.key);
   }
 
   // Optional issues the run spotted. Scored nowhere, but without them a run that says
@@ -98,8 +129,29 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
   const optional: Match[] = [];
   for (const label of labels.acceptable) {
     const hit = kept.find((f) => locates(f, label));
-    if (hit) optional.push({ key: label.key, finding_id: hit.id, severity: hit.severity });
+    if (hit) {
+      optional.push({ key: label.key, finding_id: hit.id, severity: hit.severity });
+      pairs.push({ finding: hit, label });
+    }
   }
+
+  // On a must_find label the floor is already enforced by `found`, so an under-rated finding is
+  // counted as missed and never arrives here: the band's ceiling is what it adds. On an
+  // acceptable label, which `locates` matches without looking at severity at all, it adds both.
+  const banded = pairs
+    .map(({ finding, label }) => ({ finding, label, verdict: calibration(finding, label) }))
+    .filter((p) => p.verdict !== null);
+  const miscalibrated: Miscalibration[] = banded
+    .filter((p) => p.verdict !== "in")
+    .map(({ finding, label, verdict }) => ({
+      key: label.key,
+      finding_id: finding.id,
+      severity: finding.severity,
+      // Both are defined: `calibration` returned a verdict rather than null.
+      max_severity: label.max_severity ?? finding.severity,
+      min_severity: label.min_severity ?? finding.severity,
+      direction: verdict === "over" ? ("over" as const) : ("under" as const),
+    }));
 
   const placed: PlacedLabel[] = [...labels.must_find, ...labels.acceptable];
   const falsePositives: FalsePositive[] = kept
@@ -126,6 +178,9 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
     missed,
     acceptable_found: optional,
     false_positives: falsePositives,
+    calibrated: rate(banded.length - miscalibrated.length, banded.length),
+    calibration_scored: banded.length,
+    miscalibrated,
     dropped: droppedByReason(review),
   };
 }
@@ -183,6 +238,10 @@ export function total(samples: readonly SampleResult[]): Totals {
   let seconds = 0;
   let narrated = 0;
   let overBudget = 0;
+  // Counted over findings rather than averaged over samples, so a sample with four banded
+  // findings weighs four times one with a single banded finding.
+  let banded = 0;
+  let miscalibrated = 0;
 
   for (const s of samples) {
     mustFind += s.review.found.length + s.review.missed.length;
@@ -193,6 +252,8 @@ export function total(samples: readonly SampleResult[]): Totals {
     seconds += s.seconds ?? 0;
     if (s.script.narrated) narrated += 1;
     if (!s.review.within_budget) overBudget += 1;
+    banded += s.review.calibration_scored ?? 0;
+    miscalibrated += s.review.miscalibrated?.length ?? 0;
   }
 
   return {
@@ -203,6 +264,8 @@ export function total(samples: readonly SampleResult[]): Totals {
     acceptable_found: optionalFound,
     kept,
     false_positives: falsePositives,
+    calibrated: rate(banded - miscalibrated, banded),
+    miscalibrated,
     seconds: Math.round(seconds * 10) / 10,
     narrated,
     over_budget: overBudget,

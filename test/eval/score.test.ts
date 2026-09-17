@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReport,
+  calibration,
   found,
   locates,
   measureScript,
@@ -113,6 +114,43 @@ describe("found", () => {
     expect(score.recall).toBe(0);
     expect(score.missed).toEqual(["publish-before-commit"]);
     expect(score.false_positives).toEqual([]);
+  });
+});
+
+describe("calibration", () => {
+  it("is not scored at all when the label has no band", () => {
+    // Not a pass: an unbanded label must leave the axis alone rather than flatter it. A
+    // RequiredLabel always has a floor, so its band is open exactly when the ceiling is absent;
+    // an AcceptableLabel can be missing either end.
+    expect(calibration(finding(), required())).toBeNull();
+    expect(
+      calibration(finding(), {
+        key: "half-banded",
+        file: FILE,
+        line_start: 19,
+        line_end: 27,
+        category: "event-consistency",
+        max_severity: "high",
+        description: "Only a ceiling.",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["critical", "over"],
+    ["high", "in"],
+    ["medium", "in"],
+    ["low", "under"],
+  ] as const)("puts a %s finding %s a high..medium band", (severity, verdict) => {
+    const label = required({ max_severity: "high", min_severity: "medium" });
+    expect(calibration(finding({ severity }), label)).toBe(verdict);
+  });
+
+  it("accepts only one severity when the band is a single level", () => {
+    const label = required({ max_severity: "high", min_severity: "high" });
+    expect(calibration(finding({ severity: "high" }), label)).toBe("in");
+    expect(calibration(finding({ severity: "critical" }), label)).toBe("over");
+    expect(calibration(finding({ severity: "medium" }), label)).toBe("under");
   });
 });
 
@@ -240,6 +278,82 @@ describe("scoreReview", () => {
   });
 });
 
+describe("scoreReview and calibration", () => {
+  it("reports the band a matched finding missed, and which way", () => {
+    // sample-03's real shape: a low privacy issue rated critical, which scored 1.000/1.000
+    // on precision and recall before this axis existed (ADR-036).
+    const label = required({ max_severity: "medium", min_severity: "low" });
+    const score = scoreReview(
+      review([finding({ severity: "critical" })]),
+      labels({ must_find: [label] }),
+    );
+
+    expect(score.precision).toBe(1);
+    expect(score.recall).toBe(1);
+    expect(score.calibrated).toBe(0);
+    expect(score.calibration_scored).toBe(1);
+    expect(score.miscalibrated).toEqual([
+      {
+        key: "publish-before-commit",
+        finding_id: "F01",
+        severity: "critical",
+        max_severity: "medium",
+        min_severity: "low",
+        direction: "over",
+      },
+    ]);
+  });
+
+  it("leaves calibration null when no matched label carries a band", () => {
+    // The state the golden set was in before this step: nothing to say, so it says nothing.
+    const score = scoreReview(review([finding()]), labels());
+    expect(score.precision).toBe(1);
+    expect(score.calibrated).toBeNull();
+    expect(score.calibration_scored).toBe(0);
+    expect(score.miscalibrated).toEqual([]);
+  });
+
+  it("never counts an under-rated must_find twice", () => {
+    // `found` already rejects it on severity, so it is a recall gap and not also a calibration
+    // one - which is exactly the asymmetry ADR-025 chose and this axis must not disturb.
+    const label = required({ min_severity: "high", max_severity: "high" });
+    const score = scoreReview(
+      review([finding({ severity: "low" })]),
+      labels({ must_find: [label] }),
+    );
+
+    expect(score.recall).toBe(0);
+    expect(score.missed).toEqual(["publish-before-commit"]);
+    expect(score.calibration_scored).toBe(0);
+    expect(score.miscalibrated).toEqual([]);
+  });
+
+  it("scores an acceptable label's band at both ends", () => {
+    // `locates` ignores severity, so an optional finding can be under-rated as well as over.
+    const score = scoreReview(
+      review([finding({ severity: "low" })]),
+      labels({
+        must_find: [],
+        acceptable: [
+          {
+            key: "untyped-event-contract",
+            file: FILE,
+            line_start: 19,
+            line_end: 27,
+            category: "event-consistency",
+            min_severity: "medium",
+            max_severity: "high",
+            description: "Optional.",
+          },
+        ],
+      }),
+    );
+
+    expect(score.calibrated).toBe(0);
+    expect(score.miscalibrated?.[0]?.direction).toBe("under");
+  });
+});
+
 describe("total", () => {
   function sample(over: Partial<SampleResult["review"]>, seconds = 1): SampleResult {
     return {
@@ -312,6 +426,43 @@ describe("total", () => {
 function rounded(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
+
+describe("total and calibration", () => {
+  const sample = (over: Partial<SampleResult["review"]>): SampleResult =>
+    ({
+      sample: "s",
+      review: {
+        kept: 1,
+        within_budget: true,
+        precision: 1,
+        recall: 1,
+        found: [],
+        missed: [],
+        acceptable_found: [],
+        false_positives: [],
+        dropped: [],
+        ...over,
+      },
+      script: { narrated: true },
+    }) as SampleResult;
+
+  it("adds up over findings, not over samples", () => {
+    // One sample with three banded findings should outweigh one with a single banded finding,
+    // which averaging the per-sample rates would not do.
+    const t = total([
+      sample({ calibrated: 1, calibration_scored: 3, miscalibrated: [] }),
+      sample({ calibrated: 0, calibration_scored: 1, miscalibrated: [{}] as never }),
+    ]);
+    expect(t.calibrated).toBe(0.75);
+    expect(t.miscalibrated).toBe(1);
+  });
+
+  it("stays null when no sample had a band to score", () => {
+    const t = total([sample({ calibrated: null }), sample({ calibrated: null })]);
+    expect(t.calibrated).toBeNull();
+    expect(t.miscalibrated).toBe(0);
+  });
+});
 
 describe("measureScript", () => {
   it("measures what the checks do not constrain", () => {
