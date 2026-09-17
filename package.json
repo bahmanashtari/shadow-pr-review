@@ -30,7 +30,8 @@
     "commander": "^15.0.0",
     "diff2html": "3.4.56",
     "execa": "^10.0.1",
-    "picomatch": "^4.0.7"
+    "picomatch": "^4.0.7",
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

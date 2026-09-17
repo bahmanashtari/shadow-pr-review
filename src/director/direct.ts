@@ -9,7 +9,7 @@
  * because a script and a manifest that disagree produce a timeline whose windows are silently
  * wrong, and the useful error names the mismatch rather than the symptom.
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checkAudioManifest, checkTimeline } from "../contracts/checks.js";
 import type { AudioManifest } from "../contracts/generated/audio-manifest.js";
@@ -17,8 +17,8 @@ import type { SprConfig } from "../contracts/generated/config.js";
 import type { ReviewResult } from "../contracts/generated/review.js";
 import type { NarrationScript } from "../contracts/generated/script.js";
 import type { Timeline } from "../contracts/generated/timeline.js";
-import { assertContract } from "../contracts/validate.js";
-import { ContractError } from "../lib/errors.js";
+import { assertContract, validateContract } from "../contracts/validate.js";
+import { ContractError, StageError } from "../lib/errors.js";
 import { formatDuration, MANIFEST_FILE } from "../tts/speak.js";
 import { summarizeFindings } from "./outro.js";
 import { buildTimeline } from "./timeline.js";
@@ -60,6 +60,23 @@ export function runDirect(options: RunDirectOptions): DirectOutcome {
   if (problems.length > 0) throw new ContractError(TIMELINE_FILE, problems);
 
   return { timeline };
+}
+
+/**
+ * Reads and validates an existing `timeline.json`, the Recorder's input.
+ * Through the file rather than through memory, like every other stage boundary.
+ */
+export function readTimeline(runDir: string): Timeline {
+  const file = path.join(runDir, TIMELINE_FILE);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (cause) {
+    throw new StageError("record", `Cannot read ${file}`, { cause });
+  }
+  const result = validateContract("timeline", parsed);
+  if (!result.ok) throw new ContractError(file, result.errors);
+  return result.value;
 }
 
 /** Writes `timeline.json` into a run folder. */

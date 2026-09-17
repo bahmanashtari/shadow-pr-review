@@ -8,12 +8,30 @@
 
 ```bash
 pnpm add playwright          # the library; @playwright/test is not needed
-pnpm exec playwright install --with-deps chromium
+pnpm exec playwright install chromium-headless-shell
 ```
+
+> Measured at **playwright 1.63.0**, September 2026 (ADR-031). Three findings, each of which
+> changed what this section used to say:
+>
+> - **The headless shell is enough**, including for `recordVideo`. A default install fetches
+>   `chromium` (369 MB), `chromium-headless-shell` (195 MB) and Playwright's own `ffmpeg`
+>   (2.5 MB); with the full Chromium moved aside, recording still worked. About 94 MiB of
+>   download, ~20 s.
+> - **`--with-deps` is unnecessary on `ubuntu-latest`**, which already ships Google Chrome,
+>   Chromium, Firefox and Selenium, so the system libraries are present.
+> - **Do not reach for `actions/cache`.** A full install is 567 MB on disk; saving and
+>   restoring that is plausibly slower than downloading 94 MiB again.
 
 Container option: the official Playwright Node image
 (`mcr.microsoft.com/playwright:v<version>-<distro>`, match the npm package version)
-plus `apt-get install -y ffmpeg`.
+plus `apt-get install -y ffmpeg`. Measured at **912 MB compressed** for
+`v1.63.0-noble` amd64 - about ten times the browser download - and it supplies its own Node,
+which would override an `.nvmrc` pin. Worth it when you want parity with a shipped image, not
+for running tests.
+
+**Playwright brings its own ffmpeg** and uses it to encode the WebM, so recording needs no
+system ffmpeg. The Composer still does.
 
 ## Record a context
 
@@ -61,12 +79,23 @@ export async function record(htmlPath: string, outDir: string, timeline: Timelin
 
 Notes:
 - The output is WebM (VP8). The Composer re-encodes to H.264 MP4.
-- t0 is approximate. For tighter sync, show a solid color frame for ~200 ms at t0 and
-  detect it with ffmpeg (`blackdetect`), or accept up to ~100 ms drift.
+- Playwright names the file after an internal hash, so rename it to the contract's name.
+- **Close the context on the failure path too.** The video file is finalised on close, so a
+  crash that skips it leaves nothing rather than most of a video.
+- t0 is approximate, and in practice small: **measured at about 130 ms** on a developer
+  machine, and 134 ms on a real 57-second run. The `blackdetect` trick below is therefore not
+  worth it - it would add a visible flash to the opening of every video to correct an error
+  nobody can perceive. Record the number in `record.json` and let the Composer trim it; revisit
+  only if the Composer's duration check starts failing.
+- The old advice, kept for the day it is needed: for tighter sync, show a solid colour frame for
+  ~200 ms at t0 and detect it with ffmpeg (`blackdetect`).
 - Always sleep until each action's `at_ms` on a monotonic clock (`performance.now()`);
   never chain fixed sleeps, or drift accumulates.
-- `(window as any)` is confined to this file; declare a `Window` interface in
-  `recorder/page/global.d.ts` to remove it.
+- `(window as any)` is not needed: `src/recorder/page/global.d.ts` declares `window`, its `spr`
+  shape and a minimal `document`, which is what lets `page.evaluate` callbacks type-check in a
+  project with no DOM lib.
+- Recording runs in **real time** - a 57-second video takes 57 seconds - so keep it out of unit
+  suites and give any test that does record a generous timeout.
 
 ## Build the page
 

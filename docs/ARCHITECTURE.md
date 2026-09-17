@@ -182,10 +182,22 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
 - The title card is up before recording starts, so the video does not open on a flash of diff.
   The outro card carries the review's finding summary, because a `wrap_up` step has
   `focus: null` and there is nothing on the diff worth looking at while it plays.
-- Records `t0` (the time since context creation when the timeline starts) so the Composer
-  can trim the loading frames.
-- Executes actions by sleeping until `at_ms` relative to t0 (monotonic clock), then
-  waits until `total_duration_ms` before closing the context.
+- Executes actions by sleeping until `at_ms` relative to t0 on a monotonic clock, then waits
+  until `total_duration_ms` before closing the context. Every wait is computed from one origin,
+  never chained: chaining accumulates each scheduler overshoot across the video, and an action
+  that is already late fires immediately rather than waiting a negative time.
+- Writes `video.webm` and `record.json` (contract: `schemas/record.schema.json`). The second
+  exists because `t0` cannot live inside a `.webm`: recording starts when the browser context
+  is created, the timeline's clock starts when the page is drawn and tagged, and the page load
+  between them is in the video without being part of it. The Composer trims `t0` before muxing,
+  or every visual lands late against the narration. Measured at about 130 ms (ADR-031).
+- `record.json` also carries the frame size actually recorded and the wall clock the Recorder
+  observed, the latter as a cross-check against the timeline's `total_duration_ms`.
+- The context is closed on the failure path as well as the happy one, because Playwright
+  finalises the video file on close: a crash part-way through should leave most of a video and
+  a clear message rather than nothing.
+- Needs only `chromium-headless-shell`; Playwright brings its own ffmpeg for the WebM
+  (ADR-031). The real ffmpeg is the Composer's dependency.
 
 ### 8. Composer (ffmpeg)
 - Builds one audio track: clips plus generated silence gaps, in timeline order.

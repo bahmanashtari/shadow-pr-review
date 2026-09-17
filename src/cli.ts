@@ -33,7 +33,9 @@ import { Tracer } from "./harness/tracing.js";
 import { createProvider } from "./providers/llm/create.js";
 import { createTtsProvider } from "./providers/tts/create.js";
 import { readManifest, runTts, summarizeTts, writeManifest } from "./tts/speak.js";
-import { runDirect, summarizeDirect, writeTimeline } from "./director/direct.js";
+import { readTimeline, runDirect, summarizeDirect, writeTimeline } from "./director/direct.js";
+import { summarizeFindings } from "./director/outro.js";
+import { runRecord, summarizeRecord, writeRecord } from "./recorder/record.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
@@ -186,10 +188,32 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   direct(runDir, config);
 
   if (opts.until === "direct") return;
+  await recordVideo(runDir);
+
+  if (opts.until === "record") return;
   throw new NotImplementedError(
-    `stopped after direct: record is not implemented yet (Milestone 2, step 3). ` +
+    `stopped after record: compose is not implemented yet (Milestone 2, step 5). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/**
+ * Runs the Record stage over an existing run folder and prints what it captured.
+ * Reads `timeline.json`, `script.json`, `review.json` and `diff.patch` back from disk, so
+ * `spr run` and `spr stage record` follow exactly the same path. The frame size is the
+ * timeline's, so there is nothing here for the configuration to say.
+ */
+async function recordVideo(runDir: string): Promise<void> {
+  const review = readReview(runDir);
+  const outcome = await runRecord({
+    timeline: readTimeline(runDir),
+    diffText: readFileSync(path.join(runDir, "diff.patch"), "utf8"),
+    title: readScript(runDir).title,
+    outro: summarizeFindings(review),
+    runDir,
+  });
+  writeRecord(runDir, outcome.result);
+  console.log(summarizeRecord(outcome));
 }
 
 /**
@@ -355,6 +379,13 @@ export function buildProgram(): Command {
         const runDir = path.resolve(opts.run);
         report(runDir, "re-running direct");
         direct(runDir, config);
+        return;
+      }
+      if (stage === "record") {
+        // The frame size comes from the timeline, so this stage needs no configuration.
+        const runDir = path.resolve(opts.run);
+        report(runDir, "re-running record");
+        await recordVideo(runDir);
         return;
       }
       if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 2");

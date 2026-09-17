@@ -89,16 +89,16 @@ pnpm format / pnpm format:check            # prettier (code only; docs, schemas,
 pnpm test                                  # vitest
 pnpm verify                                # check:types + typecheck + lint + test
 pnpm build                                 # tsc -> dist/
-pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timeline|labels|eval]
+pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timeline|record|labels|eval]
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Ingest, review, verify, narrate, tts and direct run for real. `--until <stage>` exits 0 after that
+Ingest, review, verify, narrate, tts, direct and record run for real. `--until <stage>` exits 0 after that
 stage; without it the run stops at the first stage that is not built and exits 2, keeping the
 run folder.
 
 ```
-pnpm spr run --diff change.patch --until direct [--title "..."] [--out runs/x] [--force]
+pnpm spr run --diff change.patch --until record [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
@@ -106,6 +106,7 @@ pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; 
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
 pnpm spr stage tts --run runs/<id>                 # re-speak script.json; free on a cache hit
 pnpm spr stage direct --run runs/<id>              # re-schedule script + manifest; no model, offline
+pnpm spr stage record --run runs/<id>              # re-record video.webm; runs in real time
 pnpm tsx scripts/preview-page.ts runs/<id>         # build the diff page and print its path, to look at it
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
@@ -130,17 +131,17 @@ re-run `spr stage narrate` (ADR-024).
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --diff change.patch                    # stops after direct until Milestone 2 step 3 lands
+pnpm spr run --diff change.patch                    # stops after record until Milestone 2 step 5 lands
 pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4)
-pnpm spr stage <record|compose|publish> --run runs/<id>
+pnpm spr stage <compose|publish> --run runs/<id>
 ```
 
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
 characters of the diff's sha256 for `--diff`). Ingest writes the first three; the rest follow
 as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
-audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, subtitles.srt,
-final.mp4, trace.jsonl, cost.json`.
+audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, record.json,
+subtitles.srt, final.mp4, trace.jsonl, cost.json`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
 `eval.json` plus one run folder per model per sample under `runs/eval/`.
 
@@ -177,9 +178,12 @@ A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` 
   on the *normalized* spoken text, so a clip survives an edit that changes nothing audible.
 - Installed: `ajv`, `commander`, `execa`, `picomatch`, `@anthropic-ai/sdk`, `diff2html` 3.4.56
   (runtime); `typescript`, `tsx`, `vitest`, `happy-dom`, `eslint`, `typescript-eslint`,
-  `prettier`, `json-schema-to-typescript`, `@types/picomatch` (dev).
-- Planned libraries (verify current versions when adding): `playwright` (library, not the
-  test runner), `@octokit/rest`, `pino`. No diff-parsing library (ADR-014).
+  `prettier`, `json-schema-to-typescript`, `@types/picomatch` (dev). Also `playwright` 1.63.0
+  (the library, not the test runner), whose browser is installed separately with
+  `pnpm exec playwright install chromium-headless-shell` - the headless shell alone is enough,
+  and it brings its own ffmpeg for the WebM (ADR-031).
+- Planned libraries (verify current versions when adding): `@octokit/rest`, `pino`.
+  No diff-parsing library (ADR-014).
 - `src/recorder/page/*.js` is browser JavaScript, deliberately outside the TypeScript project:
   it ships to Chromium verbatim and `buildPage` inlines it, so there is no build step between
   that file and the page. It has its own ESLint block and its tests evaluate the shipped source

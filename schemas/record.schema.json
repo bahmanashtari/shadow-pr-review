@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shadow-pr-review.local/schemas/record.schema.json",
+  "title": "RecordResult",
+  "description": "Contract for record.json. Produced by the Recorder alongside video.webm. Exists because the Composer needs a number that cannot live inside a .webm: t0, the length of the page-load head that recording captured before the timeline's clock started.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "video_path", "t0_ms", "video", "recorded_duration_ms"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "video_path": {
+      "type": "string",
+      "description": "Relative to the run folder, e.g. video.webm."
+    },
+    "t0_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Milliseconds of recording before the timeline started: the gap between the browser context being created and window.spr.ready. The Composer trims this from the front of the video, otherwise every visual lands late against the narration."
+    },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "description": "The frame size actually recorded, which is not necessarily the size the timeline asked for.",
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "recorded_duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall clock the Recorder observed between t0 and closing the context. A cross-check the Composer can hold against the timeline's total_duration_ms; it is not the encoded video's duration, which only ffprobe can tell."
+    }
+  }
+}

@@ -8,6 +8,7 @@ export const CONTRACT_NAMES = [
   "script",
   "audio-manifest",
   "timeline",
+  "record",
   "labels",
   "eval",
 ] as const;
@@ -52,6 +53,7 @@ export function contractFromFileName(filePath: string): ContractName | undefined
   if (/^review(\.raw|\.expected)?\.json$/.test(base)) return "review";
   if (/^script(\.expected)?\.json$/.test(base)) return "script";
   if (/^timeline(\.expected)?\.json$/.test(base)) return "timeline";
+  if (base === "record.json") return "record";
   if (base === "manifest.json" || base === "audio-manifest.json") return "audio-manifest";
   if (base === "labels.json") return "labels";
   if (base === "eval.json") return "eval";

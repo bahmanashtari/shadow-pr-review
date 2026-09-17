@@ -7,6 +7,7 @@ import type { ReviewResult } from "./generated/review.js";
 import type { NarrationScript } from "./generated/script.js";
 import type { AudioManifest } from "./generated/audio-manifest.js";
 import type { Timeline } from "./generated/timeline.js";
+import type { RecordResult } from "./generated/record.js";
 import type { GoldenLabels } from "./generated/labels.js";
 import type { EvalReport } from "./generated/eval.js";
 
@@ -17,6 +18,7 @@ export interface ContractTypes {
   script: NarrationScript;
   "audio-manifest": AudioManifest;
   timeline: Timeline;
+  record: RecordResult;
   labels: GoldenLabels;
   eval: EvalReport;
 }

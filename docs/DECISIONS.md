@@ -784,3 +784,91 @@ branding: it exists because a `wrap_up` step has `focus: null` and there is genu
 look at, and that argues for an informative end frame rather than a logo. Severity is not on a
 script step, so `runDirect` reads `review.json` for that one string while `buildTimeline` stays
 a pure function of the script and the measured audio.
+
+## ADR-031: CI installs Playwright's headless shell, and does not cache it (accepted, September 2026)
+
+**Context.** Milestone 2 step 4 is the first step that needs a browser, so CI needs one too -
+or needs a reason not to. CI currently finishes in **35 to 45 seconds**, which is the number
+this decision is really about: not whether a browser costs something, but whether that number
+stays in the same order of magnitude.
+
+The estimate that started the conversation was "one to three minutes", and every part of it was
+wrong. This ADR records the measurements instead, because the wrong estimate was believable and
+would have been believed again.
+
+| Option | Measured cost |
+|---|---|
+| `playwright install chromium-headless-shell` | 94 MiB download, ~20 s |
+| Full `chromium` as well | 567 MB on disk, same step |
+| `mcr.microsoft.com/playwright:v1.63.0-noble` as a job container | **912 MB** compressed, 7 layers |
+| No browser on CI at all | 0 |
+
+**Decision: install the headless shell, with no cache and no `--with-deps`.**
+
+**`--with-deps` is unnecessary.** `ubuntu-latest` already ships Google Chrome 152, Chromium 152,
+Firefox 155 and Selenium, so the system libraries Playwright would `apt install` are already
+there. That was most of the original overestimate.
+
+**Caching would probably make it worse.** The instinct with a repeated download is to cache it,
+but a full install is 567 MB on disk: saving and restoring that through `actions/cache` is
+plausibly slower than fetching 94 MiB from Playwright's CDN, and it adds a cache key to keep in
+step with the Playwright version. Not every repeated cost is worth caching, and the way to tell
+is to measure both rather than assume the cache wins.
+
+**Only the headless shell is needed.** Playwright installs three things by default: `chromium`
+(369 MB), `chromium-headless-shell` (195 MB) and its own `ffmpeg` (2.5 MB). Moving the full
+Chromium aside and re-running the recording proved the headless shell and ffmpeg are sufficient,
+which is a third of the footprint.
+
+**The container image was the intuitive answer and is ten times the download.** It would also
+supply its own Node, so `.nvmrc` would stop governing what CI actually runs - a mismatch worth
+avoiding in a project that pins its toolchain deliberately (ADR-012).
+
+**Consequences.** One workflow step. If the first real run says CI has grown more than expected,
+that is worth reporting rather than absorbing: skipping browser tests on CI and verifying at
+step 6 stays available and costs nothing to fall back to. The browser-backed test skips itself
+loudly when no browser is installed, so a contributor who has not run `playwright install` gets
+a green suite and a clear reason rather than a failure they did not cause.
+
+**Two things the measurements settled for free.** Playwright bundles its own ffmpeg and uses it
+to encode the WebM, so recording needs no system ffmpeg - exactly as ADR-027 assumed when it
+kept that dependency at step 5. And the cheat sheet's suggestion of painting a colour frame at
+t0 and finding it with `blackdetect` is unnecessary: measured `t0` is about 130 ms, and that
+machinery would add a visible flash to the opening of every video to correct an error nobody can
+perceive. Record the number; revisit only if step 5's duration check starts failing.
+
+## ADR-032: `record.json` carries t0, because a number cannot live in a .webm (accepted, September 2026)
+
+**Context.** ARCHITECTURE's contract chain ends this stage at `video.webm`, which was written
+before anyone noticed the video alone is not enough. The Composer needs `t0`: recording starts
+when the browser context is created, but the timeline's clock starts when the page is drawn and
+tagged, and the page load between them is in the video without being part of it. Trimming it is
+the difference between the highlight arriving with the words about it and arriving after them.
+
+**Decision: a new `record.json`, with a schema.** Stages communicate only through files in the
+run folder, so the number needs a file. The question was whether that file is a contract.
+
+There is precedent both ways here. `cost.json` and `trace.jsonl` are run-folder files with no
+schema; every file one stage *reads from another* has one. The split is not arbitrary: the first
+kind are reports, and the second are contracts. `record.json` is read by the Composer, so it gets
+`schemas/record.schema.json`, generated types, Ajv validation at the boundary and a
+`spr validate` entry like everything else. Writing it unvalidated would have made it the first
+consumed file that is not checked, which weakens the rule for everything after it.
+
+The alternative considered was adding `t0` to `timeline.json`. Rejected: no stage rewrites
+another stage's output, and re-running `spr stage direct` would silently erase it.
+
+**It carries more than t0.** `video_path` and `video` answer different questions - which file,
+and what was actually recorded into it, which need not match what the timeline asked for if a
+browser clamps the viewport. `recorded_duration_ms` is the wall clock the Recorder observed, and
+exists so the Composer has something to hold the timeline's `total_duration_ms` against before
+trusting either. On the first real run those two were 56638 ms and 56637 ms - one millisecond
+apart over a 57-second video, which is the reassurance the field was added for.
+
+**What this stage still cannot prove.** Not that the video is correct - only that one was
+produced and driven correctly. Checking a real duration needs `ffprobe`, which ADR-027 keeps out
+until the Composer, and which is not on the CI runner either. So the division of labour is: the
+tests assert the page state as it is being recorded (after a highlight fires, the count of lit
+rows must match the range the timeline asked for), Playwright's own ffmpeg is trusted with the
+encoding, and duration is checked at step 5 where ARCHITECTURE already requires
+`abs(video_duration - audio_duration) < 250 ms`.

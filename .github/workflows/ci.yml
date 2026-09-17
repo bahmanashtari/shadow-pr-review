@@ -48,6 +48,14 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Only the headless shell, and no --with-deps: ubuntu-latest already ships Chrome,
+      # Chromium and Firefox, so Playwright's system libraries are present. Measured at
+      # 94 MiB and about 20 seconds, which is why there is no actions/cache here - a full
+      # install is 567 MB on disk, and saving and restoring that is plausibly slower than
+      # downloading it again (ADR-031).
+      - name: Install Chromium for the Recorder
+        run: pnpm exec playwright install chromium-headless-shell
+
       - name: Test
         run: pnpm test
 

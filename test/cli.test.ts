@@ -152,13 +152,18 @@ describe("spr CLI", () => {
     expect(existsSync(path.join(runDir, "cost.json"))).toBe(true);
   });
 
-  it("run without --until now stops after direct, pointing at Milestone 2 step 3", async () => {
+  it("run --until direct walks the whole pipeline that costs nothing to run", async () => {
+    // This used to be the "run with no --until" test, asserting the exit code 2 at the first
+    // unbuilt stage. Now that `record` is built, a bare `spr run` records a video in real
+    // time - about forty seconds for this sample - which does not belong in a unit suite. The
+    // unbuilt-stage message is covered by the `stage compose` test below, and the full
+    // no---until path is exercised by Milestone 2 step 6's end-to-end run.
     const runDir = tempDir();
-    await withFakeProviders(tempDir(), () => run("run", "--diff", GOLDEN_DIFF, "--out", runDir));
+    await withFakeProviders(tempDir(), () =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "direct", "--out", runDir),
+    );
 
-    expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("record is not implemented yet (Milestone 2, step 3)");
-    // The run folder is kept, with everything the stages that did run produced in it.
+    expect(process.exitCode).toBeUndefined();
     expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
     expect(existsSync(path.join(runDir, "audio", "manifest.json"))).toBe(true);
     expect(existsSync(path.join(runDir, "timeline.json"))).toBe(true);
@@ -354,9 +359,9 @@ describe("spr CLI", () => {
   });
 
   it("stage points at the milestone for stages that are not built", async () => {
-    await run("stage", "record", "--run", tempDir());
+    await run("stage", "compose", "--run", tempDir());
     expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage record is not implemented yet");
+    expect(err.join("\n")).toContain("spr stage compose is not implemented yet");
   });
 
   it("eval scores the golden set and writes a report", async () => {
