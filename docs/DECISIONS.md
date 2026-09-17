@@ -976,3 +976,130 @@ slip in step 2, a scheduler that drifted in step 4 all arrive here as a mismatch
 real compose, `sample-01` came out with video at 55.800 s and audio at 55.808 s: **8
 milliseconds apart against a 250 ms tolerance**, over a 56-second video. The failure message
 names which side is longer, because the two point at different stages.
+
+## ADR-034: What the first complete run showed (accepted, September 2026)
+
+**Context.** Milestone 2 step 6 ran `spr run --diff golden/<sample>/diff.patch` with no
+`--until` for all three golden samples - the first time anything has started from a bare diff
+and come out as a watchable `final.mp4`. Steps 1 to 5 were each verified on their own, and step
+5 on `sample-01` only, by re-running single stages against a run folder built up over hours.
+This is what starting from nothing turned up.
+
+**It works.** Three of three samples produced a video, unattended, in 2:25 of wall clock with a
+warm cache. The measured chain holds end to end: every final file's audio track matches its
+timeline to within a millisecond.
+
+| Sample | final | audio vs timeline | kept | steps | words | w/step | cues | MB |
+|---|---|---|---|---|---|---|---|---|
+| order-outbox | 0:56 | 56.2368s vs 56.237s | 2 | 4 | 135 | 33.8 | 14 | 1.8 |
+| inventory-consumer | 0:54 | 53.6290s vs 53.628s | 3 | 5 | 139 | 27.8 | 12 | 1.4 |
+| email-value-object | 0:25 | 25.5503s vs 25.551s | 1 | 3 | 63 | 21.0 | 6 | 0.6 |
+
+**The end-to-end walk is a script, not a test.** A full run records in real time and calls a
+model on a cold cache, so three samples cost minutes - which belongs in neither `pnpm test`
+(four seconds) nor the per-push CI job (sixty-six). `scripts/end-to-end.ts` spawns the real CLI
+with no `--until`, expects the exit code 2 at `publish`, and prints the table above. What it
+prints is numbers to compare against the last run, not a pass or a fail. If this is ever worth
+automating, a scheduled job is the place.
+
+**The finding that matters: `assertInSync` cannot detect the failure it exists to detect.**
+ADR-033 recorded 8 ms between sound and picture on `sample-01` and read it as the accumulated
+error of every stage before it. Re-running the identical inputs shows that reading was wrong.
+
+The two run folders sit side by side with the same timeline (56 637 ms), the same clips
+(55 037 ms in four), and the same `t0` (134 ms). They produced different videos:
+
+| | step 5's run | this run |
+|---|---|---|
+| `recorded_duration_ms` in `record.json` | 56 638 | 56 642 |
+| the `video.webm` actually on disk | **55.960s** | 56.640s |
+| `final.mp4` video stream | 55.800s | 56.160s |
+| `final.mp4` audio stream | **55.808s** | 56.2368s |
+| against the timeline's 56.237s | **429 ms short** | exact |
+| what `assertInSync` said | 8 ms apart | 77 ms apart |
+
+Playwright wrote a webm 678 ms shorter than the Recorder's own clock said it had recorded.
+`-ss` then trimmed `t0` off the front, leaving a video input shorter than the audio input, and
+`-shortest` cut the audio to fit it. The step-5 `final.mp4` ends **mid-signal**, with no trailing
+silence at all, where this run's ends with Kokoro's intact 360 ms tail: the last word of "Good
+work on the rest of the implementation" was cut off. And the check passed, reporting the best
+sync figure the project has recorded - because `-shortest` equalises the two streams that
+`assertInSync` compares. **A check whose two inputs have been forced into agreement by the
+encoder can only ever measure frame granularity**, which is what both 8 ms and 77 ms are.
+
+The fix is a fixed reference rather than the other stream: compare the final audio against
+`timeline.total_duration_ms`, which is what the audio was scheduled to be, and validate
+`recorded_duration_ms` against the webm's real duration so a short recording is caught at the
+stage that made it. Milestone 3 carries it. Deliberately not fixed here: this step's scope is
+the run and the judgement, and a correctness fix to a safety check deserves its own commit and
+its own tests.
+
+**It is intermittent, which is why the check has to exist.** Three of three runs here came out
+exact; one of one runs at step 5 came out truncated. Nothing in the pipeline currently notices.
+
+**The drift that remains is frame granularity, and it costs nothing.** The video stream is 25
+fps exactly and ends on a frame boundary below the audio's end, so it is 69 to 77 ms short in
+all three samples. The audio - the narration - is complete to the millisecond, and the frames
+not written are the tail of a static outro card. Video longer than audio would be the direction
+worth worrying about.
+
+**The narration-length measurement (ADR-028 re-taken, post-ADR-029).**
+
+| Sample | model steps | finding-step words | fixture finding-step words | video |
+|---|---|---|---|---|
+| order-outbox | 4 | 39, 39 | 60, 53, 44 | 0:56 |
+| inventory-consumer | 5 | 36, 32, 30 | 50, 49, 42, 24 | 0:54 |
+| email-value-object | 3 | 26 | 35 | 0:25 |
+
+The model's finding steps mean **33.7 words against the fixtures' 44.6**, so it now spends 76%
+of the words the hand-written standard does, against 55% before ADR-029's deduplication. The
+roadmap's "moved to 39 words" was `sample-01` alone; the real range is 26 to 39. **The gap
+narrowed by half and did not close**, so ADR-028's decision stands unchanged.
+
+**Two numbers in ADR-028 are superseded.** The speaking rate is **2.52 to 2.77 words per
+second** excluding Kokoro's fixed tail (2.45 to 2.67 including it), not the 2.35 that ADR-028
+derived - so `docs/NARRATION_STYLE.md`'s "about 150 words per minute" and the schema's assumed
+2.5 are both accurate, and the word-count proxy is now slightly conservative rather than
+optimistic. And every sample misses the "1 to 5 minutes" floor, not just the shortest: 0:25,
+0:54, 0:56.
+
+**An argument ADR-028 did not have.** The style file states three length rules. The per-step one
+is a cap ("at most 60 words") and is undershot by 44%. The intro and wrap-up one is a band ("15
+to 40 words each") and is obeyed by all nine such steps in the three samples - 26, 31, 24, 17,
+20, 17, with nothing outside it. Same model, same prompt, same run: the rule written as a range
+is hit, the rule written as a ceiling is not. That is direct evidence for the target band
+Milestone 3 step 6 is going to add, from the one experiment that had both shapes in it.
+
+**Kokoro pads every clip with exactly 359.958 ms of silence**, identical to six decimal places
+across all twelve clips in the three samples. The Director's 400 ms gap lands on top of it, so
+the real interval between the last word of one step and the first of the next is **760 ms**, not
+the 400 that `video.gapMs` names. Nothing is wrong with the pacing, but anyone tuning that
+setting will be surprised by a factor of two, and clip levels are uniform enough to rule out the
+alternative explanation: every clip measures -25.5 to -25.7 dB mean, -3.0 to -9.1 dB peak.
+
+**Three things to look at, all visible only once there was something to watch.**
+
+*Static cards are between 30% and 57% of the runtime.* The title card is opaque and holds for
+8.6 to 11.5 seconds while the intro plays, and the outro card for 6.1 to 10.7. On
+`email-value-object` that is 14.8 of 25.6 seconds - **more than half the video shows no code**.
+This, not the 25-second length, is what makes the short sample read as thin.
+
+*The voice says "critical" where the card says "high".* `order-outbox` narrates "one critical
+event consistency problem" and "First, the critical issue" over findings the Verifier rated
+`high` and `medium`, and its outro card reads "2 issues to fix - 1 high, 1 medium".
+`inventory-consumer` says "two critical, one minor" against a card reading "2 high, 1 low". The
+Narrator is echoing the word from the Reviewer's `summary` prose, which opens "Critical ..." in
+all three samples, instead of from the `severity` field the card is counting. `email-value-object`
+is consistent only because its one finding genuinely is `critical`.
+
+*Proportional subtitle timing produces orphan cues.* `cuesForStep` divides a step's window
+between cue groups by character count, which is correct arithmetic and puts a trailing
+half-group on screen for a flash: "layer." shows for **415 ms** on `order-outbox`, which
+has three cues under 1.1 seconds in all. `email-value-object` has none.
+
+**Title cards on `--diff` runs stay generic for now.** All three open with a byte-identical
+"Code review" card - same md5. It looks deliberate rather than accidental, so the card is not
+the problem; the eleven seconds it holds is. Deriving the title from the review's own summary
+would make it per-change and meaningful, but it is worth doing together with whether the intro
+should show the diff at all rather than a full-screen card, which is Milestone 5's intro and
+outro work.

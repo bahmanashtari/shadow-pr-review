@@ -1,8 +1,10 @@
 # Plan: Milestone 2, step 6 (end to end)
 
-Status: proposed, and written at the end of the session that built steps 1 to 5 - so the next
-session can start by approving it rather than by reconstructing where things were left. Read
-CLAUDE.md, docs/ROADMAP.md and docs/DECISIONS.md (ADR-027 to ADR-033) first.
+Status: done. Approved at the start of the following session, which took all three
+recommendations in section 3 unchanged: a script rather than a test (Q1), measure the narration
+length but leave the prompt to Milestone 3 (Q2), and decide the title card after watching (Q3).
+What the run found is ADR-034; the answer to Q3 is in its last paragraph. Read CLAUDE.md,
+docs/ROADMAP.md and docs/DECISIONS.md (ADR-027 to ADR-034) first.
 
 Every stage now works. This step is the one that proves they work *together*, on every golden
 sample, without anyone steering - and it is the first step whose real output is a judgement

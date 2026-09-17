@@ -68,6 +68,7 @@ shadow-pr-review/
     publish/                     # GitHub comments, artifact/storage upload
     lib/                         # exec.ts (execa wrapper), hash.ts, run-folder.ts, errors.ts, paths.ts
   golden/                        # evaluation samples (see golden/README.md)
+  scripts/                       # gen-types.ts, preview-page.ts, end-to-end.ts - dev aids, not stages
   test/                          # vitest; mirrors src/
   docker/                        # Dockerfile for the tool, compose for local Kokoro
   .github/workflows/
@@ -76,7 +77,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestone 1, and Milestone 2 steps 1 to 5):
+Available now (all of Milestone 1 and all of Milestone 2):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
@@ -110,6 +111,8 @@ pnpm spr stage direct --run runs/<id>               # re-schedule script + manif
 pnpm spr stage record --run runs/<id>               # re-record video.webm; runs in real time
 pnpm spr stage compose --run runs/<id>              # re-mux and re-encode final.mp4; needs ffmpeg
 pnpm tsx scripts/preview-page.ts runs/<id>          # build the diff page and print its path, to look at it
+pnpm tsx scripts/end-to-end.ts                      # every golden sample, bare `spr run`, then a table
+pnpm tsx scripts/end-to-end.ts sample-03-email-value-object   # just one of them
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
@@ -135,13 +138,25 @@ When the Narrator cannot produce narration that passes the checks, the stage fai
 `spr validate script.json`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
 re-run `spr stage narrate` (ADR-024).
 
-A bare `spr run` now walks the whole pipeline and produces `final.mp4`, then exits 2 at
-`publish`, which is the only stage left unbuilt. It records in real time, so it takes about as
-long as the video it makes:
+A bare `spr run` walks the whole pipeline and produces `final.mp4`, then exits 2 at `publish`,
+which is the only stage left unbuilt. It records in real time, so it takes about as long as the
+video it makes:
 
 ```
 pnpm spr run --diff change.patch                    # ingest ... compose, then exits 2 at publish
 ```
+
+That path is not unit-tested, because recording is real time: `pnpm test` stops at `direct`
+(ADR-034). `scripts/end-to-end.ts` is what exercises it - it spawns the real CLI with no
+`--until` for every golden sample and prints a table of durations, drift, findings, steps and
+file sizes to compare against the last run. Run it before a release and after touching a stage
+boundary. It needs the whole toolchain up at once (a model, the Kokoro container, ffmpeg,
+Chromium) and takes roughly as long as the videos it makes - 2:25 for all three on a warm cache.
+
+**Do not read the Composer's "sound and picture N ms apart" line as a sync guarantee.** It
+compares the final file's two streams, and `-shortest` has already forced those into agreement,
+so it cannot see a recording that came out short: it passed a `final.mp4` whose narration was
+cut off 429 ms early, reporting 8 ms. Milestone 3 step 8 fixes it (ADR-034).
 
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
@@ -156,6 +171,8 @@ as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
 audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, record.json,
 subtitles.srt, final.mp4, trace.jsonl, cost.json`.
+Compose also leaves its ffmpeg scratch in `audio/`: `full.wav` (the clips and gaps joined),
+`gap.wav` and `list.txt`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
 `eval.json` plus one run folder per model per sample under `runs/eval/`.
 

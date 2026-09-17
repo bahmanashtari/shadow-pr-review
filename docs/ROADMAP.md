@@ -38,7 +38,14 @@ of it against the golden set.
 | 3 | Recorder page: diff2html inlined into one self-contained file, row tagging, `window.spr` API, dark theme, title and outro cards. Plan: `docs/plans/m2-step3-recorder-page.md` | done |
 | 4 | Recorder: Playwright executes the timeline, records `video.webm`, reports t0 in `record.json` (ADR-031, ADR-032). Plan: `docs/plans/m2-step4-recorder.md` | done |
 | 5 | Composer: ffmpeg concat with gaps, trim t0, merge, H.264/AAC `+faststart`, SRT (sidecar or burned), duration check (ADR-033). Plan: `docs/plans/m2-step5-composer.md` | done |
-| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples. The bare `spr run` path has no unit coverage since step 4 made recording real-time, and this is where it is exercised again. Plan: `docs/plans/m2-step6-end-to-end.md` | next |
+| 6 | End to end: `spr run --diff` produces `final.mp4` for all three golden samples, via `scripts/end-to-end.ts`. The bare `spr run` path had no unit coverage since step 4 made recording real-time, and this is where it is exercised again (ADR-034). Plan: `docs/plans/m2-step6-end-to-end.md` | done |
+
+Milestone 2 is complete: `spr run --diff <patch>` walks ingest to compose unattended and
+produces a watchable `final.mp4`, and all three golden samples do so in 2:25 of wall clock with
+a warm cache. `pnpm tsx scripts/end-to-end.ts` is the deliberate re-run. What the first complete
+run found is ADR-034, including one real defect it hands to Milestone 3: the Composer's sync
+check cannot detect a truncated recording, because `-shortest` equalises the two streams it
+compares.
 
 Needs Docker for step 1, Playwright's headless shell from step 4, and ffmpeg from step 5.
 Steps 1 to 4 deliberately need neither ffmpeg nor ffprobe (ADR-027, ADR-031): Playwright brings
@@ -48,6 +55,12 @@ is installed.
 
 ## Milestone 3: quality and robustness
 
+Steps 8 to 10 came out of the first complete run (ADR-034) and are numbered after the original
+seven rather than inserted among them, so nothing that already points at a step number moves.
+**Step 8 is marked next ahead of step 1** because it is a defect rather than an improvement: the
+pipeline can currently ship a video with the end of the narration cut off and report the best
+sync figure the project has recorded. Reorder if you would rather have the Verifier agent first.
+
 | Step | Scope | Status |
 |---|---|---|
 | 1 | Verifier agent (keep / downgrade / drop), optional larger model for high and critical findings (cost flag) | planned |
@@ -55,8 +68,11 @@ is installed.
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
-| 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028). **Re-measure before acting**: the numbers in ADR-028 predate ADR-029, and deduplicating the analyzer findings moved finding steps from 26-33 words to 39 against the fixtures' 44-60, closing more than half the gap without touching the prompt | planned |
+| 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028). **Re-measured in ADR-034**: finding steps now mean 33.7 words against the fixtures' 44.6, so the gap narrowed by half and did not close, and the decision stands. ADR-034 also supersedes ADR-028's speaking rate (2.5 w/s is right, not 2.35) and adds the argument that the one length rule written as a band is the one the model obeys | planned |
 | 7 | Score redundancy in `spr eval`: nothing in `src/eval/score.ts` can see two kept findings making the same claim, because every metric scores findings one at a time - `sample-01` scored 1.000/1.000 both with and without a duplicate (ADR-029). Wants its own axis, in the shape ADR-025 gave restraint | planned |
+| 8 | **Next. The Composer's sync check is vacuous, and a short recording goes unnoticed.** `assertInSync` compares the final file's two streams, which `-shortest` has already forced into agreement, so it can only ever measure frame granularity - it passed a `final.mp4` whose narration was cut off 429 ms early at "8 ms apart". Compare the final audio against `timeline.total_duration_ms` instead, and check `record.json`'s `recorded_duration_ms` against the webm's real duration, which was 678 ms shorter on the run that failed. Both run folders are still on disk (ADR-034). Plan: `docs/plans/m3-step8-sync-check.md` | next |
+| 9 | **The narration says "critical" where the outro card says "high".** The Narrator takes the word from the Reviewer's `summary` prose, which opens "Critical ..." on all three samples, rather than from the `severity` field the card counts. Two of three videos contradict themselves out loud (ADR-034). A prompt change, so it needs `spr eval` behind it (ADR-025) and belongs with step 6 | planned |
+| 10 | **Orphan subtitle cues.** `cuesForStep` divides a step's window between cue groups by character count, which is right arithmetic and flashes a trailing half-group on screen for 415 ms ("layer."). Wants a minimum cue duration, borrowing time from the group before it, or a split that balances groups rather than filling them (ADR-034) | planned |
 
 ## Milestone 4: GitHub integration
 
