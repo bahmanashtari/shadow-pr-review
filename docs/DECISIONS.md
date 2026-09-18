@@ -1433,3 +1433,67 @@ before adding one.
 `sample-02`'s intro now mirrors its card word for word. Precision, recall and calibration were
 unmoved at 1.000, nothing was dropped, and all three samples narrated - which is the whole of
 what this change was allowed to move.
+
+## ADR-039: The length target band, and what two eval runs bought (accepted, September 2026)
+
+**Context.** ADR-028 decided the Narrator needed a per-step length target rather than only a
+cap, and pinned the cause to one sentence in `HOW_TO_ANSWER`: *"Those are hard limits, not
+targets."* The model was told what it may not exceed and explicitly told that number was not a
+goal, and it settled at 26 to 33 words against a cap of 60. ADR-034 re-measured after ADR-029
+and supplied the argument ADR-028 lacked: of the style file's three length rules, the one
+written as a **cap** was undershot by 44%, while the one written as a **band** - "15 to 40 words
+each" for the intro and wrap-up - was hit by all nine such steps across three samples.
+
+**The decision: a band for finding steps, with the exception stated.**
+
+`HOW_TO_ANSWER` loses the offending sentence and says instead that a finding usually takes 40 to
+60 words, because that is what saying all three beats costs - what is there, what goes wrong
+because of it, what to do. 60 remains a hard limit. **40 deliberately is not**, and it is not
+checked either: a plain floor would make two hand-written fixtures illegal - `sample-02`'s
+`empty-down` at 24 words and `sample-03`'s finding at 35, both on genuinely minor findings - and
+a target the standard fails is a target, not a diagnosis. That is exactly the mistake ADR-028
+caught in "1 to 5 minutes", and repeating it one line further down would be worse for having
+been warned. So the prompt names the exception ("a genuinely small point can be said in fewer,
+and padding one to reach a number is worse than a short step") and names the failure it is
+actually guarding against ("a finding with a real consequence that comes out at 25 words has
+skipped the consequence").
+
+`docs/NARRATION_STYLE.md` carries the same wording, because it is read into the prompt verbatim,
+and its whole-video line is restated as the format's structural range - about 25 seconds for a
+single-finding change to about five minutes for a full review of ten - rather than a target.
+**A short video for a small change is correct, not a failure.**
+
+**What it moved.**
+
+| run | finding-step words | mean | % of the standard |
+|---|---|---|---|
+| ADR-034 baseline | 39, 39 \| 36, 32, 30 \| 26 | 33.7 | 75.6% |
+| after ADR-038 | 51, 48 \| 35, 35, 34 \| 29 | 38.7 | 86.8% |
+| **after the band** | 50, 45 \| 44, 43, 38 \| 36 | **42.7** | **95.7%** |
+| fixtures | 60, 53, 44 \| 50, 49, 42, 24 \| 35 | 44.6 | - |
+
+Precision, recall and calibration stayed at 1.000, nothing was dropped, and all three samples
+narrated. The gap ADR-028 opened is effectively closed.
+
+**The distribution matters more than the mean.** Four of six model steps now sit inside 40 to
+60, against six of eight for the fixtures. The model is not clustering at the floor - it is
+producing short steps for small findings and long ones for consequential findings, which is the
+shape the exception exists to permit. A hard floor would have produced six of six and been
+worse.
+
+**And the two runs were worth it.** Plan m3-step9 split this from ADR-038 into two commits with
+an eval run after each, on the argument that an unmeasurable change and a measured one in the
+same measurement cannot be told apart. The numbers vindicate that: **ADR-038 alone moved the
+mean from 33.7 to 38.7** - more than half the total movement - because its severity paragraph
+added text to `HOW_TO_ANSWER` and gave the model an extra thing to say in each step. Had the two
+shipped together, all nine words would have been credited to the band, and the band's real
+contribution of four would have been invisible. A second `spr eval` run costs about three
+minutes; the wrong causal story costs however long it takes to find out.
+
+**A confirmation of ADR-028's structural claim.** `sample-03` is the only sample whose model
+review has the same number of findings as its fixture, and its script now runs 31.2 seconds
+against the fixture's 32.0. The other two are short against their fixtures by one finding each -
+`sample-01` has 2 where the fixture has 3, `sample-02` has 3 against 4 - and their remaining
+gap is that difference, not verbosity. Video length follows how many findings there are, far
+more than how much is said about each, which is what makes the old whole-video target the wrong
+instrument rather than a missed one.

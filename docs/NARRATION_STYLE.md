@@ -11,9 +11,17 @@ Rules for the Narrator agent. The script is heard, not read.
 
 ## Length
 
-- About 150 words per minute. Each step at most 60 words (~25 seconds).
+- About 150 words per minute, which is close to what the voice measures at (ADR-034).
 - Intro and wrap-up: 15 to 40 words each.
-- Whole video: 1 to 5 minutes.
+- A finding usually takes 40 to 60 words, because that is what saying all three beats costs.
+  60 is a hard limit; 40 is not. A genuinely small point can be shorter and often should be -
+  padding a minor finding to reach a number is worse than a short step. A finding with a real
+  consequence that comes out at 25 words has skipped the consequence.
+- Whole video: the format runs from about 25 seconds for a single-finding change to about five
+  minutes for a full review of ten. **A short video for a small change is correct, not a
+  failure.** Length follows how many findings there are, far more than how much is said about
+  each: this line used to say "1 to 5 minutes", which no run reached and which two of the
+  hand-written golden scripts also fail (ADR-028, ADR-034).
 
 ## Structure
 

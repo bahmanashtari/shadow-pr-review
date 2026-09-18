@@ -41,8 +41,13 @@ summary is prose written before the findings were checked, and its wording about
 be out of date: describe what the change does from it, never how bad it is. An intro or
 wrap-up that rates the change more seriously than the card does is rejected.
 
-The intro and the wrap-up are 15 to 40 words each. Every other piece is at most 60 words.
-Those are hard limits, not targets.`;
+The intro and the wrap-up are 15 to 40 words each.
+
+A finding usually takes 40 to 60 words: that is what saying all three beats costs - what is
+there, what goes wrong because of it, and what to do. 60 words is a hard limit. 40 is not: a
+genuinely small point can be said in fewer, and padding one to reach a number is worse than a
+short step. But a finding with a real consequence that comes out at 25 words has skipped the
+consequence, which is the beat the viewer needs most.`;
 
 const HOW_TO_USE_A_FINDING = `Each finding gives you a summary, the reasoning behind it, a suggested fix, the file it is in,
 and the exact lines of code it is about. Use all of it, and say nothing it does not support:
