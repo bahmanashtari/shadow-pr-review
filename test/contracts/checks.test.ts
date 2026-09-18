@@ -100,6 +100,59 @@ describe("checkScript", () => {
     expect(problems).toContain("finding F01 has no narration step");
   });
 
+  describe("severity words in the frame steps", () => {
+    /** The sample's one finding, re-rated, as the Verifier would leave it. */
+    function ratedLow(): ReturnType<typeof loadGolden> {
+      const golden = loadGolden("sample-03-email-value-object");
+      const first = golden.review.findings[0];
+      if (first === undefined) throw new Error("sample-03 should have exactly one finding");
+      golden.review.findings[0] = { ...first, severity: "low" };
+      return golden;
+    }
+
+    /* The defect this rule exists for: the outro card counts the `severity` field while the
+     * narration used to echo the Reviewer's prose summary, so `sample-03` ended up with a card
+     * reading "1 low" over a voice saying "critical" three times (ADR-034, ADR-037). */
+    it("refuses a severity word no kept finding carries", () => {
+      const { review, script } = ratedLow();
+      step(script, 0).text =
+        "This change has a critical security issue where emails leak into error messages, " +
+        "and it needs fixing before anyone merges it.";
+
+      const problems = checkScript(script, review);
+      expect(problems.join("\n")).toContain('/steps/0 (S00): says "critical"');
+      expect(problems.join("\n")).toContain("no kept finding is critical");
+    });
+
+    it("accepts a severity word the review does carry", () => {
+      const { review, script } = ratedLow();
+      step(script, 0).text =
+        "This change has one low severity problem worth fixing, where an email address " +
+        "reaches an error message that may be logged somewhere.";
+
+      expect(checkScript(script, review)).toEqual([]);
+    });
+
+    it("leaves the finding steps alone", () => {
+      // A finding step is handed its own severity and uses it correctly; forbidding the word
+      // there would stop it saying "this one is the high-severity one".
+      const { review, script } = ratedLow();
+      step(script, 1).text = "This is the critical one: the error message includes the address.";
+
+      expect(checkScript(script, review)).toEqual([]);
+    });
+
+    it("matches whole words only", () => {
+      // "critically" and "highlight" are not severity claims.
+      const { review, script } = ratedLow();
+      step(script, 0).text =
+        "This change leaks an email address into an error message, which matters more than " +
+        "it looks, so please highlight it to whoever owns this service before merging.";
+
+      expect(checkScript(script, review)).toEqual([]);
+    });
+  });
+
   it("rejects long steps, markdown and file names in spoken text", () => {
     const { review, script } = loadGolden("sample-03-email-value-object");
     step(script, 0).text = Array.from({ length: 61 }, () => "word").join(" ");

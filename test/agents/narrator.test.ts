@@ -257,6 +257,15 @@ describe("assembleScript", () => {
 });
 
 describe("describeReview", () => {
+  it("tells the model exactly what the closing card will say", () => {
+    // The voice and the card used to read different sources - the card counts the severity
+    // field, the intro echoed the Reviewer's prose - so they could disagree on screen
+    // (ADR-034, ADR-037). Handing over `summarizeFindings`'s own string is what ties them.
+    expect(describeReview(review())).toContain(
+      "The closing card will read: 2 issues to fix - 1 high, 1 medium",
+    );
+  });
+
   it("gives the model the review's words and the lines, and nothing else", () => {
     const text = describeReview(review());
 

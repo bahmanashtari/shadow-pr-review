@@ -35,6 +35,12 @@ the wrong order points at the wrong code.
 
 Echo each finding's id back with its text so the pairing can be checked.
 
+Every finding is given to you with its severity. Those words - critical, high, medium, low -
+and the closing card's line are the only authority on how serious anything is. The change
+summary is prose written before the findings were checked, and its wording about severity may
+be out of date: describe what the change does from it, never how bad it is. An intro or
+wrap-up that rates the change more seriously than the card does is rejected.
+
 The intro and the wrap-up are 15 to 40 words each. Every other piece is at most 60 words.
 Those are hard limits, not targets.`;
 

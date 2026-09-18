@@ -1364,3 +1364,72 @@ opened is not purely a prompt-length problem.
 **Cost.** Three samples took 195.4 seconds with review and narrate warm in the cache and every
 Verifier call cold - roughly half a minute per finding on `qwen3:30b` with thinking on. The
 per-finding cache means that is paid once per finding rather than once per run.
+
+## ADR-038: The voice and the card now read one source (accepted, September 2026)
+
+**Context.** ADR-034 watched three finished videos and found two of them contradicting
+themselves: `sample-01` narrated "one critical event consistency problem" over an outro card
+reading "1 high, 1 medium", and `sample-02` said "two critical, one minor" over a card reading
+"2 high, 1 low". ADR-037 then made it sharper rather than better - with `sample-03` correctly
+downgraded to `low`, its card read "1 low" while the narration said "critical" three times.
+
+**The mechanism, located exactly.** Two different sources for the same fact:
+
+- The outro card is `summarizeFindings(review)`, which counts each kept finding's `severity`
+  **field**.
+- The Narrator's user message opened `The change: ${review.summary}` - the Reviewer's **prose**,
+  which begins "Critical ..." on all three golden samples.
+
+The intro and the wrap-up echoed the prose. The finding steps never did: `describeFinding` hands
+them `${finding.severity}` and they used it correctly throughout. So the fault was one line of
+input reaching exactly two of the steps, and the Verifier could not fix it because it judges
+findings and does not touch the summary.
+
+**The decision, in two halves.**
+
+*The code hands over the card's own words.* `describeReview` now includes
+`summarizeFindings(review)` verbatim - the very string the Recorder puts on screen - so the
+voice and the picture read one computed source rather than two. The prose summary stays,
+because it is the only thing that says what the change *does* ("adds a reserved quantity column
+and handles order events"), which an intro needs and a severity tally cannot give.
+
+*And `checkScript` refuses the rest.* An intro or wrap-up may speak one of the four rubric
+words only when a kept finding carries it. This is an enforced invariant rather than a scored
+one, and that choice is the interesting part.
+
+**Why a check and not a metric.** `spr eval` cannot see this. `measureScript` records steps,
+words and estimated seconds; nothing in the scorer reads a single word of narration, so a script
+calling a `low` finding critical scores exactly like one that does not. That is ADR-036's
+situation again - and here it has a better answer than another axis. The invariant is checkable
+from `review.json` alone, it joins the word cap and the no-file-names rule that the Narrate
+stage already feeds back as repairs (ADR-024), and **an enforced rule cannot silently regress
+the way a metric can**. A number would have told us later; a check makes it impossible.
+
+**The rule is deliberately literal, and its false positive is accepted.** It matches whole words
+only, checks only the intro and wrap-up, and asks only that the word be present somewhere in the
+review rather than that the counts agree - "we found two serious problems" is good narration and
+reciting the tally is what the card is for. The cost is the ordinary-English sense: "it is
+critical that this is fixed" is refused on a review with no critical finding. That is real, it
+is bounded by the repair loop and by only two steps per script, and the alternative - matching
+the word only in a severity-shaped context - is a parser guessing at meaning. If it ever proves
+annoying, the answer is to drop a word from the list rather than make the check clever.
+
+**Finding steps are left alone**, because constraining them would forbid a step saying "this one
+is the high-severity one", which is exactly what that step should be able to say.
+
+**The fixtures already obeyed it.** All three hand-written expected scripts pass the new rule
+unchanged, including `sample-03`'s, which never says "critical" against its `low` finding. The
+rule was derived from the standard rather than imposed on it, which is the check worth having
+before adding one.
+
+**What it produced.** Every intro and wrap-up now agrees with its card:
+
+| Sample | severities | before | after |
+|---|---|---|---|
+| order-outbox | high, medium | "one critical event consistency problem" | "a high-severity event consistency problem and a medium-severity domain boundary violation" |
+| inventory-consumer | high, low | "two critical, one minor" | "two high severity, one low" |
+| email-value-object | low | "a critical security issue" (x3) | "one low-severity problem" |
+
+`sample-02`'s intro now mirrors its card word for word. Precision, recall and calibration were
+unmoved at 1.000, nothing was dropped, and all three samples narrated - which is the whole of
+what this change was allowed to move.

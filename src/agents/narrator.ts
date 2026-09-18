@@ -21,6 +21,7 @@ import type { Tracer } from "../harness/tracing.js";
 import { ContractError, StageError } from "../lib/errors.js";
 import type { LlmProvider } from "../providers/llm/types.js";
 import { buildNarratorPrompt } from "./prompts/narrator.js";
+import { summarizeFindings } from "../director/outro.js";
 
 /** File this stage writes. */
 export const SCRIPT_FILE = "script.json";
@@ -190,9 +191,22 @@ function describeFinding(finding: Finding): string {
   ].join("\n");
 }
 
-/** The user message: the change's summary and every finding to narrate, in order. */
+/**
+ * The user message: what the change does, what the outro card will say, and every finding.
+ *
+ * The card line is `summarizeFindings` - the very string the Recorder puts on screen - rather
+ * than a second count computed here. The two used to disagree: the card counts each finding's
+ * `severity` field while this message opened with the Reviewer's prose summary, which begins
+ * "Critical ..." on every golden sample, and the intro and wrap-up echoed the prose. Handing
+ * over the card's own words makes the voice and the picture read one source (ADR-038).
+ *
+ * The prose summary stays, because it is the only thing here that says what the change *does* -
+ * "adds a reserved quantity column and handles order events" - which an intro needs and a
+ * severity tally cannot give. `checkScript` is what stops its severity words being repeated.
+ */
 export function describeReview(review: ReviewResult): string {
-  const head = `The change: ${review.summary}`;
+  const head =
+    `The change: ${review.summary}\n` + `The closing card will read: ${summarizeFindings(review)}`;
   if (review.findings.length === 0) {
     return (
       `${head}\n\nNothing was found worth reporting. Write only the intro and the wrap-up: ` +

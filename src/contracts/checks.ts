@@ -116,6 +116,38 @@ export interface ScriptCheckOptions {
 /** What NARRATION_STYLE.md allows an intro or a wrap-up to run to. */
 const FRAME_WORDS = { min: 15, max: 40 } as const;
 
+/**
+ * The severity words the outro card counts, and which the narration may therefore only speak
+ * when the review supports them.
+ */
+const SEVERITY_WORDS: readonly Severity[] = ["critical", "high", "medium", "low"];
+
+/**
+ * Severity words an intro or wrap-up speaks that no kept finding carries.
+ *
+ * The voice and the outro card read different sources: the card counts each finding's
+ * `severity` field, while the Narrator's user message opens with the Reviewer's prose summary,
+ * which on every golden sample begins "Critical ...". So `sample-03` ended up with a card
+ * reading "1 issue to fix - 1 low" over a narration saying "critical" three times (ADR-034,
+ * ADR-037). This is the rule that stops that reaching a viewer.
+ *
+ * Deliberately literal, and its false positive is accepted (plan m3-step9, Q2): "it is critical
+ * that this is fixed" is refused on a review with no critical finding. The repair loop rewords
+ * it, only the two frame steps are checked, and the alternative - matching the word only in a
+ * severity-shaped context - is a parser guessing at meaning. If it ever proves annoying, drop a
+ * word from the list rather than make the check clever.
+ *
+ * Only the intro and wrap-up are checked. A finding step is given its finding's severity
+ * directly and uses it correctly, and constraining it would forbid "this one is the
+ * high-severity one", which is exactly what that step should be able to say.
+ */
+function unsupportedSeverityWords(text: string, present: ReadonlySet<Severity>): Severity[] {
+  const lower = text.toLowerCase();
+  return SEVERITY_WORDS.filter(
+    (word) => !present.has(word) && new RegExp(`\\b${word}\\b`).test(lower),
+  );
+}
+
 /** Checks a script.json on its own and against the review it narrates. */
 export function checkScript(
   script: NarrationScript,
@@ -135,6 +167,7 @@ export function checkScript(
 
   const findings = new Map(review.findings.map((f) => [f.id, f]));
   const narrated = new Set<string>();
+  const severitiesPresent = new Set(review.findings.map((f) => f.severity));
 
   steps.forEach((s, i) => {
     const at = `/steps/${i} (${s.id})`;
@@ -176,6 +209,15 @@ export function checkScript(
         `${at}: ${words} words, but an intro or wrap-up must be ` +
           `${FRAME_WORDS.min} to ${FRAME_WORDS.max}`,
       );
+    }
+    if (s.kind !== "finding") {
+      for (const word of unsupportedSeverityWords(s.text, severitiesPresent)) {
+        problems.push(
+          `${at}: says "${word}", but no kept finding is ${word}. The outro card counts the ` +
+            `severity field, so the narration has to agree with it. Use a word the review ` +
+            `supports, or describe the consequence instead of rating it.`,
+        );
+      }
     }
     if (MARKDOWN_PATTERN.test(s.text))
       problems.push(`${at}: text contains markdown or code characters`);

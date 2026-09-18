@@ -128,7 +128,11 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
 - Deterministic post-checks, fed back to the model as repairs (max 2, then the stage fails):
   word count per step <= `narration.maxWordsPerStep`, an intro or wrap-up of 15 to 40 words,
   no markdown characters, no file names, paths or URLs, one step per kept finding in the
-  review's order, and `focus` matching that finding.
+  review's order, `focus` matching that finding, and **no severity word in an intro or wrap-up
+  that no kept finding carries** (ADR-038). The last of those exists because the outro card
+  counts the `severity` field while the narration used to echo the Reviewer's prose summary, so
+  the two could disagree on screen. `describeReview` also hands the model
+  `summarizeFindings(review)` - the card's own string - so both read one source.
 - On failure the stage writes `script.rejected.json` and names both ways on: edit that draft
   into `script.json`, or change a budget, the style file or the model and re-run
   `spr stage narrate`. A stage boundary is a file, so a person can take over at that point.
