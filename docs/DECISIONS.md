@@ -1497,3 +1497,59 @@ against the fixture's 32.0. The other two are short against their fixtures by on
 gap is that difference, not verbosity. Video length follows how many findings there are, far
 more than how much is said about each, which is what makes the old whole-video target the wrong
 instrument rather than a missed one.
+
+## ADR-040: Cue count comes from the text, not from where wrapping stops (accepted, September 2026)
+
+**Context.** The last of the three things ADR-034 found by watching the first complete run. The
+severity contradiction is closed (ADR-038) and the static cards are Milestone 5's; this is the
+subtitles.
+
+`cuesForStep` wrapped a step's text greedily to 42 characters, grouped the lines in pairs, and
+divided the step's window between the groups in proportion to how much text each carried. Every
+part of that is correct except the first: greedy filling leaves a remainder, and when the line
+count is odd the remainder becomes a trailing cue on its own. Proportional timing then gives
+that cue a proportional share of nothing.
+
+| duration | text | where |
+|---|---|---|
+| **415 ms** | `layer.` | sample-01 S02 |
+| 941 ms | `implementation.` | sample-01 S03 |
+| 1025 ms | `before merging.` | sample-01 S00 |
+| 1036 ms | `updates atomic.` | sample-02 S02 |
+
+Each is a trailing group carrying 6 to 15 characters where its siblings carry 69 to 85.
+
+**The decision: decide how many cues the text needs, then spread the words across them.**
+`ceil(chars / (MAX_LINE_CHARS * MAX_LINES))` sets the count, `splitEvenly` fills each cue to its
+share of what is *left* rather than to a share computed once, and a group that would still need
+three lines widens the count by one and splits again. No group is a remainder, so the
+proportional timing has nothing lopsided to be proportional to.
+
+| | greedy | balanced |
+|---|---|---|
+| cues under 1200 ms, over three videos | **4** | **0** |
+| shortest cue | 415 ms | 2890 ms |
+| longest cue | 5870 ms | 5189 ms |
+| total cues | 32 | 32 |
+| cues over two lines | 0 | 0 |
+
+**Not a minimum-duration clamp**, which was the obvious alternative and the wrong one. Borrowing
+time from the previous cue would have shown `layer.` for 800 ms instead of 415, and it would
+still have been one word alone on the screen. The fix that makes the orphan legible is not the
+same as the fix that stops producing orphans.
+
+**The floor lives in the tests, not in `cuesForStep`.** A clamp in production code would be
+unreachable once the cause is fixed: a step's window is the measured duration of *that very
+text* (ADR-027), so a cue holding fifty characters cannot be handed 400 ms, because fifty
+characters take about two seconds to say. Unreachable defensive code is a claim nobody can
+check. The property is instead asserted over every golden script - no cue under 1200 ms, none
+over two lines - where it can be seen to hold and where it fails loudly if the splitting
+regresses.
+
+**And checking that the test could fail turned up the worst case in the project.** A regression
+test that passes on the old code as well as the new one tests nothing, so the greedy algorithm
+was re-run against the fixtures' own scripts. It produces two orphans on `sample-02` - including
+a cue reading `it.` shown for **238 ms**, worse than anything in the model output ADR-034
+measured. The defect was in the hand-written standard too, which is worth writing down twice
+over: the fixtures are what this tool aims at, and they had been read many times without anyone
+noticing, because a subtitle file is read as text and this only exists as a flash on screen.

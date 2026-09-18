@@ -52,20 +52,69 @@ export function wrapLines(text: string, maxChars = MAX_LINE_CHARS): string[] {
   return lines;
 }
 
+/** How much text one cue can hold: two lines of forty-two characters. */
+const CUE_CHARS = MAX_LINE_CHARS * MAX_LINES;
+
+/**
+ * Splits words into exactly `count` cues, filling each to its share of what is left.
+ *
+ * Recomputing the target from the *remaining* text rather than dividing once means a long word
+ * that overshoots one cue is absorbed by the rest instead of pushing the whole remainder into
+ * the last one.
+ */
+function splitEvenly(words: readonly string[], count: number): string[][] {
+  const groups: string[][] = [];
+  let current: string[] = [];
+  let remaining = words.join(" ").length;
+
+  for (const word of words) {
+    const held = current.join(" ").length;
+    const target = remaining / (count - groups.length);
+    // The last cue takes whatever is left: `count` cues must come back, no more and no fewer.
+    const full = current.length > 0 && held + 1 + word.length > target;
+    if (full && groups.length < count - 1) {
+      groups.push(current);
+      remaining -= held + 1;
+      current = [word];
+    } else {
+      current.push(word);
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
 /**
  * Splits one step's words into cues of at most two lines, and divides its window between them
  * in proportion to how much text each one carries.
+ *
+ * **The cue count comes from the text's length, not from where greedy wrapping happens to
+ * stop.** Filling lines to the margin and then pairing them leaves whatever does not divide by
+ * two in a trailing cue of its own, and proportional timing then gives that cue a proportional
+ * share of nothing: `layer.` held the screen for 415 ms on `sample-01` (ADR-034, ADR-040). So
+ * the count is decided first and the words are spread across it, which leaves no remainder to
+ * be lopsided about. A group needing three lines widens the count by one and the split runs
+ * again, so the two-line ceiling still holds.
  *
  * The last cue is made to end exactly on the window's end rather than wherever the rounding
  * lands. Cues that stop a few milliseconds early would be invisible; a final cue that overran
  * its window would collide with the next step's first one.
  */
 export function cuesForStep(text: string, startMs: number, endMs: number): Cue[] {
-  const lines = wrapLines(text);
-  if (lines.length === 0) return [];
+  const words = text
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w !== "");
+  if (words.length === 0) return [];
 
-  const groups: string[][] = [];
-  for (let i = 0; i < lines.length; i += MAX_LINES) groups.push(lines.slice(i, i + MAX_LINES));
+  let count = Math.max(1, Math.ceil(text.trim().length / CUE_CHARS));
+  let groups = splitEvenly(words, count);
+  // A cue that still needs three lines gets another cue to share with. Bounded by the word
+  // count: one word per cue always wraps to a single line, whatever `wrapLines` does with it.
+  while (groups.some((g) => wrapLines(g.join(" ")).length > MAX_LINES) && count < words.length) {
+    count += 1;
+    groups = splitEvenly(words, count);
+  }
 
   const weights = groups.map((g) => g.join(" ").length);
   const total = weights.reduce((sum, w) => sum + w, 0);
@@ -76,7 +125,8 @@ export function cuesForStep(text: string, startMs: number, endMs: number): Cue[]
   groups.forEach((group, i) => {
     const last = i === groups.length - 1;
     const end = last ? endMs : at + Math.round((span * (weights[i] ?? 0)) / (total || 1));
-    cues.push({ start_ms: at, end_ms: end, lines: group });
+    // `splitEvenly` hands back words; wrapping is still what decides where a line breaks.
+    cues.push({ start_ms: at, end_ms: end, lines: wrapLines(group.join(" ")) });
     at = end;
   });
   return cues;
