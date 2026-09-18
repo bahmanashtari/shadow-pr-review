@@ -1,9 +1,8 @@
 # Plan: Milestone 3, steps 9 and 6 (what the narration says, and how much of it)
 
-Status: approved, with all three recommendations in section 3 taken unchanged - two commits
-with the eval run behind step 6 only (Q1), a deliberately literal severity-word check whose
-false positive is accepted (Q2), and a 40 to 60 band with a stated exception rather than an
-enforced floor (Q3). Read CLAUDE.md, docs/ROADMAP.md, docs/NARRATION_STYLE.md, and ADR-024,
+Status: done, in two commits - "Milestone 3 step 9" (ADR-038) and "Milestone 3 step 6" (ADR-039),
+with all three recommendations in section 3 taken unchanged. Note that ADR-042 later removed the
+intro and wrap-up this plan's severity rule was scoped to; the rule now applies per finding. Read CLAUDE.md, docs/ROADMAP.md, docs/NARRATION_STYLE.md, and ADR-024,
 ADR-025, ADR-028, ADR-034 and ADR-037 first.
 
 Two Narrator changes the roadmap has always said belong together. They are together because

@@ -1,7 +1,7 @@
 # Plan: Milestone 3, step 10 (orphan subtitle cues)
 
-Status: approved, both recommendations taken unchanged - fix the cause with a balanced split
-(Q1), and assert the minimum duration in tests rather than clamping in code (Q2). Read CLAUDE.md, docs/ROADMAP.md and ADR-033 and ADR-034 first. Small and
+Status: done. Implemented in "Milestone 3 step 10: cue count comes from the text" (ADR-040), with
+both recommendations taken unchanged. Read CLAUDE.md, docs/ROADMAP.md and ADR-033 and ADR-034 first. Small and
 self-contained: pure arithmetic in one module, no model, no services beyond ffmpeg, and the fix
 has already been prototyped against the three recorded videos (section 3).
 

@@ -1,10 +1,7 @@
 # Plan: Milestone 3, step 8 (a sync check that can fail)
 
-Status: approved, with all four recommendations in section 3 taken unchanged - the Composer
-probes the webm rather than the Recorder (Q1), `record.json` gains no field (Q2), a short
-recording fails and hands over (Q3), and the tolerance is 40 ms (Q4). Written at the end of the
-session that ran Milestone 2 end to end, so the diagnosis in section 1 is that session's
-measurement rather than a reconstruction. Read CLAUDE.md, docs/ROADMAP.md and ADR-031 to
+Status: done. Implemented in "Milestone 3 step 8: a sync check that can fail" (ADR-035), with all
+four recommendations in section 3 taken unchanged. Read CLAUDE.md, docs/ROADMAP.md and ADR-031 to
 ADR-034 first.
 
 ## 1. The defect, which is already diagnosed

@@ -55,8 +55,8 @@ shadow-pr-review/
       checks.ts                  # cross-field and cross-file checks
     ingest/                      # parse-diff.ts, filter.ts, risk.ts, sources.ts, hunk-index.ts, ingest.ts
     analyzers/                   # rules.ts, analyze.ts - deterministic findings (ADR-022)
-    agents/                      # reviewer.ts, narrator.ts, diff-view.ts, prompts/, tools/; verifier.ts is M3
-    verify/                      # grounding.ts, verify.ts - review.raw.json -> review.json, no model (ADR-023)
+    agents/                      # reviewer.ts, verifier.ts, narrator.ts, diff-view.ts, prompts/, tools/
+    verify/                      # grounding.ts, verify.ts - review.raw.json -> review.json; deterministic layer plus optional agent (ADR-023, ADR-037)
     eval/                        # score.ts (pure), report.ts, run.ts - scores the golden set (ADR-025)
     harness/                     # loop.ts, tools.ts, budget.ts, retry.ts, cache.ts, tracing.ts
     providers/llm/               # types.ts, anthropic.ts, ollama.ts
@@ -77,7 +77,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestone 1 and all of Milestone 2):
+Available now (all of Milestones 1 and 2; Milestone 3 so far has added no new commands):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
