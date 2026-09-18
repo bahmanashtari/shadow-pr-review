@@ -11,9 +11,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { buildPage, PAGE_FILE } from "../src/recorder/page.js";
-import { summarizeFindings } from "../src/director/outro.js";
-import { readScript } from "../src/agents/narrator.js";
-import { readReview } from "../src/verify/verify.js";
 
 const runDir = process.argv[2];
 if (runDir === undefined) {
@@ -23,10 +20,7 @@ if (runDir === undefined) {
 
 const resolved = path.resolve(runDir);
 const diff = readFileSync(path.join(resolved, "diff.patch"), "utf8");
-const script = readScript(resolved);
-const review = readReview(resolved);
-
-const html = buildPage(diff, { title: script.title, outro: summarizeFindings(review) });
+const html = buildPage(diff);
 const out = path.join(resolved, PAGE_FILE);
 writeFileSync(out, html, "utf8");
 

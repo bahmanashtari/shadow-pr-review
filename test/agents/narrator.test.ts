@@ -7,7 +7,6 @@ import {
   describeReview,
   narratorOutputSchema,
   runNarrate,
-  scriptTitle,
   summarizeNarrate,
   writeScript,
   type NarratorAnswer,
@@ -35,14 +34,6 @@ afterAll(() => {
 
 const HANDLER = "services/order-service/src/application/commands/place-order.handler.ts";
 const CONSUMER = "services/inventory-service/src/interface/events/order-placed.consumer.ts";
-
-/** Well within the 15-to-40 word frame the narration rules set. */
-const INTRO =
-  "Hi. This change adds a command handler to the order service, and I found a couple of " +
-  "things worth talking through before it goes in.";
-const WRAP_UP =
-  "That is everything. I would fix the first point before merging, and the rest can wait " +
-  "for a follow up. Thanks for the change.";
 
 function review(over: Partial<ReviewResult> = {}): ReviewResult {
   return {
@@ -89,18 +80,16 @@ function review(over: Partial<ReviewResult> = {}): ReviewResult {
 
 function answer(over: Partial<NarratorAnswer> = {}): NarratorAnswer {
   return {
-    intro: INTRO,
     steps: [
       {
         finding_id: "F01",
-        text: "First, the important one. The event goes out before the save is final.",
+        text: "A high-severity one. The event goes out before the save is final.",
       },
       {
         finding_id: "F03",
-        text: "Next, the consumer. A repeated message counts the same order twice.",
+        text: "A medium one. A repeated message counts the same order twice.",
       },
     ],
-    wrap_up: WRAP_UP,
     ...over,
   };
 }
@@ -125,12 +114,10 @@ async function narrate(
 /** The parts of the Narrator's schema the tests assert on. */
 interface AnswerSchema {
   properties: {
-    intro: { maxLength?: number };
-    wrap_up: { maxLength?: number };
     steps: {
       minItems: number;
       maxItems: number;
-      items?: { properties: { finding_id: { enum: string[] } } };
+      items: { properties: { finding_id: { enum: string[] }; text: { maxLength?: number } } };
     };
   };
 }
@@ -141,53 +128,25 @@ describe("narratorOutputSchema", () => {
 
     expect(steps.minItems).toBe(2);
     expect(steps.maxItems).toBe(2);
-    expect(steps.items?.properties.finding_id.enum).toEqual(["F01", "F03"]);
+    expect(steps.items.properties.finding_id.enum).toEqual(["F01", "F03"]);
   });
 
-  it("takes the text limits from the script contract, so they stay in one place", () => {
+  it("takes the text limit from the script contract, so it stays in one place", () => {
     const schema = narratorOutputSchema(review()) as unknown as AnswerSchema;
 
-    expect(schema.properties.intro.maxLength).toBe(450);
-    expect(schema.properties.wrap_up.maxLength).toBe(450);
-  });
-
-  it("asks for no steps at all when nothing was found", () => {
-    const empty = narratorOutputSchema(review({ findings: [] })) as unknown as AnswerSchema;
-
-    expect(empty.properties.steps.maxItems).toBe(0);
-    // An empty `enum` is not a legal schema, so there is no item constraint to state.
-    expect(empty.properties.steps.items).toBeUndefined();
-  });
-});
-
-describe("scriptTitle", () => {
-  it("uses the change's own title", () => {
-    expect(scriptTitle(review())).toBe("Review: Add PlaceOrder command handler");
-  });
-
-  it("falls back when the source has no title", () => {
-    const source = { ...TEST_SOURCE, title: null };
-    expect(scriptTitle(review({ source }))).toBe("Code review");
-    expect(scriptTitle(review({ source: { ...source, title: "  " } }))).toBe("Code review");
-  });
-
-  it("truncates to the 100 characters the title card allows", () => {
-    const source = { ...TEST_SOURCE, title: "x".repeat(200) };
-    const title = scriptTitle(review({ source }));
-    expect(title).toHaveLength(100);
-    expect(title.endsWith("...")).toBe(true);
+    expect(schema.properties.steps.items.properties.text.maxLength).toBe(450);
   });
 });
 
 describe("assembleScript", () => {
-  it("builds the parts the model was never asked for", () => {
+  it("builds one step per finding and nothing else", () => {
+    // No intro and no wrap-up: a video explains the issues that were found (ADR-042).
     const script = assembleScript(answer(), review(), defaultConfig());
 
     expect(script.schema_version).toBe("1.0");
     expect(script.language).toBe("en-US");
-    expect(script.steps.map((s) => s.id)).toEqual(["S00", "S01", "S02", "S03"]);
-    expect(script.steps.map((s) => s.kind)).toEqual(["intro", "finding", "finding", "wrap_up"]);
-    expect(script.steps.map((s) => s.finding_id)).toEqual([null, "F01", "F03", null]);
+    expect(script.steps.map((s) => s.id)).toEqual(["S00", "S01"]);
+    expect(script.steps.map((s) => s.finding_id)).toEqual(["F01", "F03"]);
     expect(script.steps.every((s) => s.subtitle === null)).toBe(true);
     expect(validateContract("script", script).ok).toBe(true);
     expect(checkScript(script, review())).toEqual([]);
@@ -196,20 +155,20 @@ describe("assembleScript", () => {
   it("copies focus from the finding, ids and all, so the screen follows the words", () => {
     const script = assembleScript(answer(), review(), defaultConfig());
 
-    expect(script.steps[1]?.focus).toEqual({
+    expect(script.steps[0]?.focus).toEqual({
       file: HANDLER,
       side: "new",
       line_start: 19,
       line_end: 27,
     });
-    expect(script.steps[2]?.focus).toEqual({
+    expect(script.steps[1]?.focus).toEqual({
       file: CONSUMER,
       side: "new",
       line_start: 14,
       line_end: 18,
     });
     // Ids come from the review, so a gap there is carried into the script (ADR-023).
-    expect(script.steps[2]?.finding_id).toBe("F03");
+    expect(script.steps[1]?.finding_id).toBe("F03");
   });
 
   it("estimates each step from its word count", () => {
@@ -219,17 +178,8 @@ describe("assembleScript", () => {
       review(),
       defaultConfig(),
     );
-    expect(script.steps[1]?.estimated_seconds).toBe(2);
-    expect(script.steps[2]?.estimated_seconds).toBe(0.8);
-  });
-
-  it("makes a two-step script when nothing was found", () => {
-    const empty = review({ findings: [] });
-    const script = assembleScript(answer({ steps: [] }), empty, defaultConfig());
-
-    expect(script.steps.map((s) => s.kind)).toEqual(["intro", "wrap_up"]);
-    expect(validateContract("script", script).ok).toBe(true);
-    expect(checkScript(script, empty)).toEqual([]);
+    expect(script.steps[0]?.estimated_seconds).toBe(2);
+    expect(script.steps[1]?.estimated_seconds).toBe(0.8);
   });
 
   it("reports a reordered answer rather than narrating the wrong code", () => {
@@ -251,19 +201,16 @@ describe("assembleScript", () => {
       ],
     });
     const problems = checkScript(assembleScript(doubled, review(), defaultConfig()), review());
-    expect(problems).toContain("/steps/2 (S02): finding F01 is narrated twice");
+    expect(problems).toContain("/steps/1 (S01): finding F01 is narrated twice");
     expect(problems).toContain("finding F03 has no narration step");
   });
 });
 
 describe("describeReview", () => {
-  it("tells the model exactly what the closing card will say", () => {
-    // The voice and the card used to read different sources - the card counts the severity
-    // field, the intro echoed the Reviewer's prose - so they could disagree on screen
-    // (ADR-034, ADR-037). Handing over `summarizeFindings`'s own string is what ties them.
-    expect(describeReview(review())).toContain(
-      "The closing card will read: 2 issues to fix - 1 high, 1 medium",
-    );
+  it("marks the change summary as context, not as something to repeat", () => {
+    // It is the Reviewer's prose, written before verification, and its severity wording can be
+    // stale - which is what put "critical" over a `low` finding (ADR-038).
+    expect(describeReview(review())).toContain("The change, for context only:");
   });
 
   it("gives the model the review's words and the lines, and nothing else", () => {
@@ -278,10 +225,10 @@ describe("describeReview", () => {
     expect(text).not.toContain("@@");
   });
 
-  it("asks for an intro and a wrap-up only when nothing was found", () => {
-    const text = describeReview(review({ findings: [] }));
-    expect(text).toContain("Nothing was found worth reporting");
-    expect(text).not.toContain("F01");
+  it("names every finding it hands over, in the review's order", () => {
+    const text = describeReview(review());
+    expect(text).toContain("Narrate these 2 findings, in this order:");
+    expect(text.indexOf("F01")).toBeLessThan(text.indexOf("F03"));
   });
 });
 
@@ -289,7 +236,10 @@ describe("buildNarratorPrompt", () => {
   it("is built from the narration rules, and carries no findings", () => {
     const prompt = buildNarratorPrompt();
     expect(prompt).toContain("Never read file paths");
-    expect(prompt).toContain("15 to 40 words");
+    expect(prompt).toContain("40 to 60 words");
+    // No intro and no wrap-up, and the severity belongs to the finding (ADR-042).
+    expect(prompt).toContain("There is no introduction and no closing summary");
+    expect(prompt).toContain("using its own severity word");
     expect(prompt).not.toContain(HANDLER);
   });
 });
@@ -301,7 +251,7 @@ describe("runNarrate", () => {
     expect(attempts).toBe(0);
     expect(calls).toBe(1);
     expect(checkScript(script, review())).toEqual([]);
-    expect(script.title).toBe("Review: Add PlaceOrder command handler");
+    expect(script.steps.map((s) => s.finding_id)).toEqual(["F01", "F03"]);
   });
 
   it("sends a step that runs long back to the model, and accepts the repair", async () => {
@@ -343,23 +293,25 @@ describe("runNarrate", () => {
     expect(checkScript(script, review())).toEqual([]);
   });
 
-  it("sends a rambling intro back to the model", async () => {
-    const rambling = answer({ intro: `Hi. ${"and another thing ".repeat(15)}` });
-    const { script, attempts } = await narrate([rambling, answer()]);
-
-    expect(attempts).toBe(1);
-    expect(checkScript(script, review())).toEqual([]);
-  });
-
   it("fails after the configured repairs, naming what is wrong", async () => {
-    const bad = answer({ intro: "Too short." });
+    const bad = answer({
+      steps: [
+        { finding_id: "F01", text: "A critical one. The event goes out before the save." },
+        { finding_id: "F03", text: "A medium one. A repeated message counts it twice." },
+      ],
+    });
     await expect(narrate([bad, bad, bad])).rejects.toThrow(StageError);
-    await expect(narrate([bad, bad, bad])).rejects.toThrow(/2 words, but an intro or wrap-up/);
+    await expect(narrate([bad, bad, bad])).rejects.toThrow(/but finding F01 is high/);
   });
 
   it("leaves the rejected draft behind, and says how to finish it by hand", async () => {
     const runDir = tempDir();
-    const bad = answer({ intro: "Too short." });
+    const bad = answer({
+      steps: [
+        { finding_id: "F01", text: "A critical one. The event goes out before the save." },
+        { finding_id: "F03", text: "A medium one. A repeated message counts it twice." },
+      ],
+    });
 
     await expect(narrate([bad, bad, bad], { runDir })).rejects.toThrow(
       /script\.rejected\.json[\s\S]*spr validate script\.json/,
@@ -368,10 +320,10 @@ describe("runNarrate", () => {
     const file = path.join(runDir, "script.rejected.json");
     expect(existsSync(file)).toBe(true);
     const draft = JSON.parse(readFileSync(file, "utf8")) as NarrationScript;
-    // A draft a person can repair in place: only the intro is wrong.
+    // A draft a person can repair in place: only the first step's severity word is wrong.
     expect(validateContract("script", draft).ok).toBe(true);
-    expect(draft.steps.map((s) => s.finding_id)).toEqual([null, "F01", "F03", null]);
-    expect(draft.steps[0]?.text).toBe("Too short.");
+    expect(draft.steps.map((s) => s.finding_id)).toEqual(["F01", "F03"]);
+    expect(draft.steps[0]?.text).toContain("A critical one.");
   });
 
   it("keeps no draft when the answer never matched the schema, and says so", async () => {
@@ -396,12 +348,13 @@ describe("runNarrate", () => {
     await expect(narrate([answer()], { budget })).rejects.toThrow(/produced no narration/);
   });
 
-  it("narrates a clean change with an intro and a wrap-up only", async () => {
+  it("refuses a clean change, because there is no video to make", async () => {
+    // ADR-042: a video exists to explain issues that were found. `spr run` stops after Verify
+    // rather than reaching here, so this is the message for anyone calling the stage directly.
     const empty = review({ findings: [], summary: "A small, clean change." });
-    const { script } = await narrate([answer({ steps: [] })], { review: empty });
-
-    expect(script.steps.map((s) => s.kind)).toEqual(["intro", "wrap_up"]);
-    expect(checkScript(script, empty)).toEqual([]);
+    await expect(narrate([answer({ steps: [] })], { review: empty })).rejects.toThrow(
+      /nothing to narrate and no video to make/,
+    );
   });
 });
 
@@ -420,7 +373,7 @@ describe("summarizeNarrate", () => {
   it("counts the steps and the seconds", () => {
     const script = assembleScript(answer(), review(), defaultConfig());
     expect(summarizeNarrate({ script, attempts: 0 })).toMatch(
-      /^script: 4 steps, about \d+ seconds$/,
+      /^script: 2 steps, about \d+ seconds$/,
     );
   });
 
@@ -440,8 +393,8 @@ describe("golden set", () => {
     expect(problems).toEqual([]);
   });
 
-  it.each(GOLDEN_SAMPLES)("%s: the title is the one the code would build", (sample) => {
+  it.each(GOLDEN_SAMPLES)("%s: one step per kept finding, in order", (sample) => {
     const { review: expected, script } = loadGolden(sample);
-    expect(script.title).toBe(scriptTitle(expected));
+    expect(script.steps.map((s) => s.finding_id)).toEqual(expected.findings.map((f) => f.id));
   });
 });

@@ -65,14 +65,6 @@ function leadInOf(window: StepWindow, previousEnd: number): number {
   return Math.max(0, previousEnd, window.start_ms - LEAD_IN_MS);
 }
 
-/** Where on screen a finding step looks. `checkScript` guarantees a finding step has one. */
-function focusOf(step: Step): NonNullable<Step["focus"]> {
-  if (step.focus === null) {
-    throw new StageError("direct", `Step ${step.id} narrates a finding but has no focus.`);
-  }
-  return step.focus;
-}
-
 /** What {@link actionsFor} needs to know that is not on the step itself. */
 interface StepContext {
   window: StepWindow;
@@ -80,28 +72,13 @@ interface StepContext {
   previousEnd: number;
   /** File the page is already showing, so it is not re-opened. */
   openFile: string | undefined;
-  /** The title card's words. */
-  title: string;
-  /** The outro card's words. */
-  outro: string;
 }
 
 /** The actions for one step, in the order they fire. */
 function actionsFor(step: Step, context: StepContext): Action[] {
-  const { window, previousEnd, openFile, title } = context;
+  const { window, previousEnd, openFile } = context;
 
-  if (step.kind === "intro") {
-    return [
-      // The title travels in the timeline, so the Recorder never has to read script.json.
-      { at_ms: window.start_ms, step_id: step.id, type: "show_title", text: title },
-      { at_ms: window.end_ms, step_id: step.id, type: "hide_title" },
-    ];
-  }
-  if (step.kind === "wrap_up") {
-    return [{ at_ms: window.start_ms, step_id: step.id, type: "show_outro", text: context.outro }];
-  }
-
-  const focus = focusOf(step);
+  const focus = step.focus;
   const at = leadInOf(window, previousEnd);
   const where = {
     file: focus.file,
@@ -124,24 +101,14 @@ function actionsFor(step: Step, context: StepContext): Action[] {
 /**
  * Builds the timeline for a spoken script.
  *
- * @param script the narration, which supplies the order, the kinds and the focus.
+ * @param script the narration, which supplies the order and the focus.
  * @param manifest the measured clips, which supply every duration (ADR-027).
  * @param config `video.gapMs` and the frame size.
- * @param options the outro card's words, when the stage has worked them out.
  */
-export interface BuildTimelineOptions {
-  /**
-   * The outro card's words. A string rather than a review, so this stays a pure function of
-   * the script and the measured audio: the stage above works out what to say (plan m2-step3).
-   */
-  outroText?: string;
-}
-
 export function buildTimeline(
   script: NarrationScript,
   manifest: AudioManifest,
   config: SprConfig,
-  options: BuildTimelineOptions = {},
 ): Timeline {
   const gapMs = config.video.gapMs;
   const durations = new Map(manifest.clips.map((clip) => [clip.step_id, clip.duration_ms]));
@@ -158,8 +125,6 @@ export function buildTimeline(
       window,
       previousEnd: windows[i - 1]?.end_ms ?? 0,
       openFile,
-      title: script.title,
-      outro: options.outroText ?? "",
     })) {
       if (action.type === "open_file") openFile = action.file;
       actions.push(action);
@@ -182,8 +147,8 @@ export function buildTimeline(
       theme: config.video.theme,
     },
     gap_ms: gapMs,
-    // One gap of tail. Cutting the recording on the last syllable reads as a glitch, and the
-    // outro card deserves the same beat that separates every other step.
+    // One gap of tail. Cutting the recording on the last syllable reads as a glitch, so the
+    // last finding's code stays on screen for the same beat that separates every other step.
     total_duration_ms: lastEnd + gapMs,
     step_windows: windows,
     actions,

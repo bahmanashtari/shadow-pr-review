@@ -1645,3 +1645,90 @@ again.
 changed - so every review was a cache miss - and because longer rationales are more output
 tokens. The steady-state cost is one cold review per prompt change, which is what it has always
 been.
+
+## ADR-042: A video is its findings, and nothing else (accepted, September 2026)
+
+**Context.** Bahman watched the finished videos and decided what the format is for:
+
+> A video exists to help the person reviewing a pull request understand an issue that was
+> found, and to give them clear reasoning and industry-standard suggestions for fixing it.
+
+An experienced developer may not watch a video at all when the issue is trivial. The tool still
+makes it, and it earns its place by being informative about the issue - not by being complete,
+and not by framing itself. ADR-041 made the review carry the substance; this is the format that
+spends the time on it.
+
+**The decision, all of it Bahman's.**
+
+- **No intro and no wrap-up.** One step per kept finding, in the review's order. The severity of
+  a finding is disclosed *at that finding*, when the narration starts talking about it, because
+  severity is a property of the issue and is useful next to the code it describes.
+- **No outro card.** The reason it existed - recorded in m2-step3's Q6 and in the code, that a
+  viewer could pause on it and screenshot it into the pull request - was put to him and
+  rejected. It is withdrawn, not deferred; Milestone 5's roadmap entry says so.
+- **No video when nothing was found.** A clean review stops the run after Verify, exits 0, and
+  says why. Nothing is narrated, spoken, recorded or composed, so a clean change costs only its
+  review. This also resolved an objection raised against removing the frame steps - that a
+  clean change would leave the script with nothing to say - more cleanly than the alternative
+  proposed, which was a special one-line summary step for exactly that case.
+
+**The contract, trimmed rather than loosened.** `Step.kind` is gone instead of becoming a
+one-valued enum: every step is a finding step, so `finding_id` and `focus` are no longer
+nullable. `NarrationScript.title` is gone, which answers ADR-034's open question about what a
+`--diff` run should call its title card by removing the card. `steps` runs 1 to 10, the ceiling
+being `review.maxFindings`. The timeline loses `show_title`, `hide_title`, `show_outro` and the
+`text` field only they used. `src/director/outro.ts` is deleted, and with it `summarizeFindings`,
+`scriptTitle` and `escapeHtml` - the last because nothing user-controlled is written into the
+page's markup any more. Dead contract surface a future session might "polish" is worse than a
+clean removal.
+
+**The severity rule moved rather than disappearing.** ADR-038 scoped it to the intro and
+wrap-up, which no longer exist. A step may now speak its own finding's severity word and no
+other - which is both what the format asks for and a tighter version of the same invariant. The
+change summary reaches the Narrator marked "for context only", since it is the prose that put
+"critical" over a `low` finding in the first place.
+
+**The hand-written fixtures were rewritten**, because they are the standard and they now
+described the old format. Each finding step opens on its severity and stands alone without an
+intro to lean on; all three pass the new checks, and their `estimated_seconds` were recomputed.
+
+**What it produced.**
+
+| sample | before: length, share on cards, seconds per finding | after |
+|---|---|---|
+| order-outbox | 0:56, 39%, 17.2 s | 0:44, 0%, **22.0 s** |
+| inventory-consumer | 0:54, 30%, 12.7 s | 0:58, 0%, **19.3 s** |
+| email-value-object | 0:26, 57%, 11.2 s | 0:26, 0%, **26.0 s** |
+
+Every second is on code, and each finding gets 1.3 to 2.3 times the screen time it had. Every
+step opens with its own severity - "High severity event timing issue", "Medium-severity
+consistency issue", "A low-severity PII leakage problem" - and carries a downstream consequence
+and a named fix. Precision, recall and calibration were unmoved at 1.000, 0.750 and 1.000.
+
+**One thing only watching found, as ADR-034 predicted.** With no title card in front of it, the
+first finding's lead-in clamps to zero, so the Recorder now runs every `at_ms: 0` action during
+the warm-up and waits for `window.spr.settled()` before taking t0. The first end-to-end run did
+that with the page's normal smooth scroll, and three videos looked right. Comparing each opening
+frame with the frame 120 ms later said otherwise: `sample-02` and `sample-03` held above 33 dB
+PSNR, which is the highlight fading in, but `sample-01` fell to **16.8 dB** and then stayed
+flat - a positional jump in the first few frames. Its first finding needed a real scroll from the
+top of the file, and a smooth scroll that had not begun when the stillness check first looked
+read as settled and finished after t0. The pre-roll now runs with `{ instant: true }`, so the
+scroll jumps: nobody watches the pre-roll, and animating it bought nothing but this. After the
+fix all three openings hold at 32 to 36 dB, and t0 is back to about 165 ms.
+
+**And a test helper that had been writing into the real cache.** Mid-change, the fake provider
+kept answering the Narrator with the old intro/wrap-up shape even though its code no longer
+could, and every narrate call in the trace was a cache hit under a key that could not have
+existed before the change. The key was correct. What had happened is that `withFakeProvider` in
+`test/cli.test.ts` set the provider but not `SPR_CACHE_DIR`, so test runs made *during* the
+change - with the new prompt and schema, before the fake was updated - wrote old-shape answers
+into the developer's own `.cache/spr` under the new key. Its sibling `withFakeProviders` already
+redirected the cache for exactly this reason. Both now do, and 88 poisoned entries were purged.
+It looked like a cache-invalidation bug and was a test that did not clean up after itself.
+
+**Supersedes** the outro card in plan m2-step3 (Q6); the last paragraph of ADR-034, on title
+cards for `--diff` runs; the frame-step scope of ADR-038's severity rule; and the intro and
+wrap-up band in ADR-039 and `docs/NARRATION_STYLE.md`. A truncated diff used to be disclosed "in
+the intro" (ARCHITECTURE section 3's trigger table); that disclosure moves to the pull-request
+comment, which Milestone 4 step 2 will write.

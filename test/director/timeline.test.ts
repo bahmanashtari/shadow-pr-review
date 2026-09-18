@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildTimeline } from "../../src/director/timeline.js";
 import { runDirect, summarizeDirect } from "../../src/director/direct.js";
-import { summarizeFindings } from "../../src/director/outro.js";
 import { checkTimeline } from "../../src/contracts/checks.js";
 import type { AudioManifest } from "../../src/contracts/generated/audio-manifest.js";
 import type { SprConfig } from "../../src/contracts/generated/config.js";
@@ -16,10 +15,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { defaultConfig, GOLDEN_SAMPLES, loadGolden } from "../helpers.js";
 
-/** The sample whose hand-written review the outro tests borrow findings from. */
-const SAMPLE = GOLDEN_SAMPLES[0] ?? "sample-01-order-outbox";
-
 const HANDLER = "services/orders/src/application/commands/place-order.handler.ts";
+const CONSUMER = "services/inventory/src/interface/messaging/order-placed.consumer.ts";
 const MIGRATION = "services/orders/src/infrastructure/migrations/1700-Add.ts";
 
 /** The shipped defaults with the `video` section adjusted. */
@@ -29,17 +26,13 @@ function configWithVideo(overrides: Partial<SprConfig["video"]>): SprConfig {
 }
 
 /** A step, with only the fields a test cares about spelled out. */
-function step(id: string, kind: Step["kind"], file?: string, lines = [10, 12]): Step {
+function step(id: string, file = HANDLER, lines = [10, 12], findingId = "F01"): Step {
   return {
     id,
-    kind,
-    finding_id: kind === "finding" ? "F01" : null,
+    finding_id: findingId,
     text: "Some narration for this step.",
     subtitle: null,
-    focus:
-      file === undefined
-        ? null
-        : { file, side: "new", line_start: lines[0] ?? 10, line_end: lines[1] ?? 12 },
+    focus: { file, side: "new", line_start: lines[0] ?? 10, line_end: lines[1] ?? 12 },
   };
 }
 
@@ -49,7 +42,7 @@ function scriptAndManifest(
   durations: number[],
 ): { script: NarrationScript; manifest: AudioManifest } {
   return {
-    script: { schema_version: "1.0", title: "Review: a change", language: "en-US", steps },
+    script: { schema_version: "1.0", language: "en-US", steps },
     manifest: {
       schema_version: "1.0",
       provider: "fake",
@@ -69,7 +62,7 @@ function scriptAndManifest(
 /** The common shape: intro, one finding, wrap-up. */
 function simple(durations = [4000, 10_000, 3000], config = defaultConfig()): Timeline {
   const { script, manifest } = scriptAndManifest(
-    [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
+    [step("S00", HANDLER), step("S01", CONSUMER), step("S02", HANDLER)],
     durations,
   );
   return buildTimeline(script, manifest, config);
@@ -105,10 +98,7 @@ describe("buildTimeline windows", () => {
   });
 
   it("refuses a script whose steps have no clip", () => {
-    const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "wrap_up")],
-      [1000, 1000],
-    );
+    const { script, manifest } = scriptAndManifest([step("S00"), step("S01")], [1000, 1000]);
     const short = { ...manifest, clips: manifest.clips.slice(0, 1) };
     const error = (() => {
       try {
@@ -126,22 +116,28 @@ describe("buildTimeline windows", () => {
 });
 
 describe("buildTimeline actions", () => {
-  it("frames the video with a title card and an outro", () => {
-    const timeline = simple();
-    expect(at(timeline, "show_title")).toEqual([0]);
-    expect(at(timeline, "hide_title")).toEqual([4000]);
-    expect(at(timeline, "show_outro")).toEqual([14_800]);
+  it("emits nothing but code actions: there are no cards left to show", () => {
+    // ADR-042 removed the intro and outro entirely, and the action types with them.
+    const types = new Set(simple().actions.map((a) => a.type));
+    expect([...types].sort()).toEqual(["clear_highlight", "highlight", "open_file", "scroll_to"]);
   });
 
-  it("carries the title in the timeline, so the Recorder need not read the script", () => {
-    const title = simple().actions.find((a) => a.type === "show_title");
-    expect(title?.text).toBe("Review: a change");
+  it("starts the first step at zero, with nothing to lead in from", () => {
+    // With no intro card in front of it the first step's lead-in clamps to 0, which is why the
+    // Recorder positions the page before t0 rather than at it (ADR-042).
+    const first = simple().actions.filter((a) => a.step_id === "S00");
+    // Everything but the clear, which fires when the step's words end.
+    const opening = first.filter((a) => a.type !== "clear_highlight");
+    expect(opening.map((a) => a.at_ms)).toEqual([0, 0, 0]);
   });
 
   it("opens, scrolls, highlights and clears for a finding", () => {
     const timeline = simple();
     const forStep = timeline.actions.filter((a) => a.step_id === "S01").map((a) => a.type);
     expect(forStep).toEqual(["open_file", "scroll_to", "highlight", "clear_highlight"]);
+    // And the first step, which has no previous step to lead in from, still gets all four.
+    const first = timeline.actions.filter((a) => a.step_id === "S00").map((a) => a.type);
+    expect(first).toEqual(["open_file", "scroll_to", "highlight", "clear_highlight"]);
   });
 
   it("points scroll_to and highlight at the step's focus", () => {
@@ -171,8 +167,9 @@ describe("buildTimeline actions", () => {
 describe("the lead-in", () => {
   it("fires 300 ms before the words, in the silence between steps", () => {
     const timeline = simple([4000, 10_000, 3000]);
-    // S01 speaks at 4400, so the page is ready at 4100 - inside the 400 ms gap.
-    expect(at(timeline, "scroll_to")).toEqual([4100]);
+    // S00 is the first step and clamps to 0. S01 speaks at 4400, so the page is ready at 4100 -
+    // inside the 400 ms gap - and S02 at 14_800 - 300.
+    expect(at(timeline, "scroll_to")).toEqual([0, 4100, 14_500]);
   });
 
   it("never precedes the previous step's last word, however small the gap", () => {
@@ -183,18 +180,16 @@ describe("the lead-in", () => {
     for (const gapMs of [0, 100, 299]) {
       const timeline = simple([4000, 10_000, 3000], configWithVideo({ gapMs }));
       const previousEnd = timeline.step_windows[0]?.end_ms ?? 0;
-      const scrollAt = at(timeline, "scroll_to")[0] ?? -1;
+      // The first step's own lead-in is 0; the one that matters is the second step's.
+      const scrollAt = at(timeline, "scroll_to")[1] ?? -1;
 
       expect(scrollAt).toBeGreaterThanOrEqual(previousEnd);
       expect(scrollAt).toBe(previousEnd);
     }
   });
 
-  it("never goes negative when a finding is the very first step", () => {
-    const { script, manifest } = scriptAndManifest(
-      [step("S00", "finding", HANDLER), step("S01", "wrap_up")],
-      [5000, 3000],
-    );
+  it("never goes negative, since every video now opens on a finding", () => {
+    const { script, manifest } = scriptAndManifest([step("S00", HANDLER)], [5000]);
     const timeline = buildTimeline(script, manifest, defaultConfig());
     expect(at(timeline, "scroll_to")).toEqual([0]);
     for (const action of timeline.actions) expect(action.at_ms).toBeGreaterThanOrEqual(0);
@@ -204,13 +199,8 @@ describe("the lead-in", () => {
 describe("open_file", () => {
   it("is skipped while consecutive steps stay in one file", () => {
     const { script, manifest } = scriptAndManifest(
-      [
-        step("S00", "intro"),
-        step("S01", "finding", HANDLER, [10, 12]),
-        step("S02", "finding", HANDLER, [30, 31]),
-        step("S03", "wrap_up"),
-      ],
-      [3000, 8000, 8000, 3000],
+      [step("S00", HANDLER, [10, 12]), step("S01", HANDLER, [30, 31])],
+      [8000, 8000],
     );
     const timeline = buildTimeline(script, manifest, defaultConfig());
 
@@ -222,11 +212,11 @@ describe("open_file", () => {
   it("is re-emitted when a later step comes back to a file", () => {
     const { script, manifest } = scriptAndManifest(
       [
-        step("S00", "intro"),
-        step("S01", "finding", HANDLER),
-        step("S02", "finding", MIGRATION),
-        step("S03", "finding", HANDLER),
-        step("S04", "wrap_up"),
+        step("S00"),
+        step("S01", HANDLER),
+        step("S02", MIGRATION),
+        step("S03", HANDLER),
+        step("S04"),
       ],
       [3000, 8000, 8000, 8000, 3000],
     );
@@ -247,15 +237,17 @@ describe("buildTimeline shape", () => {
     expect(timeline.video).toEqual({ width: 1920, height: 1080, theme: "dark" });
   });
 
-  it("handles a clean change, which is intro and wrap-up only", () => {
-    const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "wrap_up")],
-      [6000, 5000],
-    );
+  it("handles a single-finding change, which is a whole video", () => {
+    const { script, manifest } = scriptAndManifest([step("S00")], [6000]);
     const timeline = buildTimeline(script, manifest, defaultConfig());
 
     expect(checkTimeline(timeline, manifest)).toEqual([]);
-    expect(timeline.actions.map((a) => a.type)).toEqual(["show_title", "hide_title", "show_outro"]);
+    expect(timeline.actions.map((a) => a.type)).toEqual([
+      "open_file",
+      "scroll_to",
+      "highlight",
+      "clear_highlight",
+    ]);
   });
 
   it("is deterministic", () => {
@@ -266,7 +258,7 @@ describe("buildTimeline shape", () => {
 describe("runDirect", () => {
   it("produces a timeline that passes its schema and every cross-file check", () => {
     const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
+      [step("S00"), step("S01", HANDLER), step("S02")],
       [4000, 10_000, 3000],
     );
     const { timeline } = runDirect({ script, manifest, config: defaultConfig() });
@@ -280,7 +272,7 @@ describe("runDirect", () => {
   it("names the mismatch when the manifest does not voice this script", () => {
     // The useful error is "these two files disagree", not a timeline with silently wrong windows.
     const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
+      [step("S00"), step("S01", HANDLER), step("S02")],
       [4000, 10_000, 3000],
     );
     const stale = { ...manifest, clips: [...manifest.clips].reverse() };
@@ -291,14 +283,11 @@ describe("runDirect", () => {
 
   it("summarizes as steps, actions and a video length", () => {
     const outcome = runDirect({
-      ...scriptAndManifest(
-        [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
-        [4000, 10_000, 3000],
-      ),
+      ...scriptAndManifest([step("S00"), step("S01", HANDLER), step("S02")], [4000, 10_000, 3000]),
       config: defaultConfig(),
     });
-    // 2 for the title card, 4 for the finding, 1 for the outro.
-    expect(summarizeDirect(outcome)).toBe("timeline: 3 steps, 7 actions, 0:18 of video");
+    // Four per finding: open, scroll, highlight, clear - and the second step reuses the file.
+    expect(summarizeDirect(outcome)).toBe("timeline: 3 steps, 10 actions, 0:18 of video");
   });
 });
 
@@ -321,65 +310,5 @@ describe("every golden script", () => {
     }).not.toThrow();
     expect(checkTimeline(timeline, manifest)).toEqual([]);
     expect(timeline.step_windows).toHaveLength(script.steps.length);
-  });
-});
-
-describe("summarizeFindings", () => {
-  /** A review carrying just the severities a test cares about. */
-  function reviewWith(severities: string[]) {
-    const { review } = loadGolden(SAMPLE);
-    const template = review.findings[0];
-    if (template === undefined) throw new Error("the golden review has no findings");
-    return {
-      ...review,
-      findings: severities.map((severity, i) => ({
-        ...template,
-        id: `F${String(i + 1).padStart(2, "0")}`,
-        severity: severity as typeof template.severity,
-      })),
-    };
-  }
-
-  it.each([
-    [["high"], "1 issue to fix - 1 high"],
-    [["high", "medium"], "2 issues to fix - 1 high, 1 medium"],
-    [["low", "low", "critical"], "3 issues to fix - 1 critical, 2 low"],
-  ])("%s -> %s", (severities, expected) => {
-    expect(summarizeFindings(reviewWith(severities))).toBe(expected);
-  });
-
-  it("orders the breakdown by severity, not by the order findings arrive", () => {
-    expect(summarizeFindings(reviewWith(["low", "critical", "medium", "high"]))).toBe(
-      "4 issues to fix - 1 critical, 1 high, 1 medium, 1 low",
-    );
-  });
-
-  it("says a clean change is clean, rather than reporting zero of something", () => {
-    const { review } = loadGolden(SAMPLE);
-    expect(summarizeFindings({ ...review, findings: [] })).toBe("No issues found");
-  });
-});
-
-describe("the outro card's words", () => {
-  it("travel in the show_outro action, so the page needs no other file", () => {
-    const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "finding", HANDLER), step("S02", "wrap_up")],
-      [4000, 10_000, 3000],
-    );
-    const { review } = loadGolden(SAMPLE);
-    const { timeline } = runDirect({ script, manifest, review, config: defaultConfig() });
-
-    const outro = timeline.actions.find((a) => a.type === "show_outro");
-    expect(outro?.text).toBe(summarizeFindings(review));
-  });
-
-  it("are empty rather than missing when no review is given", () => {
-    // The schedule itself does not need a review; only the card's line does.
-    const { script, manifest } = scriptAndManifest(
-      [step("S00", "intro"), step("S01", "wrap_up")],
-      [4000, 3000],
-    );
-    const { timeline } = runDirect({ script, manifest, config: defaultConfig() });
-    expect(timeline.actions.find((a) => a.type === "show_outro")?.text).toBe("");
   });
 });

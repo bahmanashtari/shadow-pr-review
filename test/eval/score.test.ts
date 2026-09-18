@@ -470,9 +470,10 @@ describe("measureScript", () => {
     const result = measureScript(script, script);
 
     expect(result.narrated).toBe(true);
-    expect(result.steps).toBe(5);
+    // One step per finding, no intro or wrap-up (ADR-042).
+    expect(result.steps).toBe(3);
     expect(result.max_step_words).toBe(60);
-    expect(result.expected_steps).toBe(5);
+    expect(result.expected_steps).toBe(3);
   });
 
   it("records a failed Narrate stage as a result rather than losing the sample", () => {

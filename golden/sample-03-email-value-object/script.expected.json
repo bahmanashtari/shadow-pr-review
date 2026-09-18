@@ -1,22 +1,11 @@
 {
   "schema_version": "1.0",
-  "title": "Review: Add Email value object",
   "language": "en-US",
   "steps": [
     {
       "id": "S00",
-      "kind": "intro",
-      "finding_id": null,
-      "text": "Hi. This push adds an email value object to the customer service, with tests. It's a clean change. I only have one small note.",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 9
-    },
-    {
-      "id": "S01",
-      "kind": "finding",
       "finding_id": "F01",
-      "text": "When validation fails, the error message includes the address the user typed. Errors like this often end up in logs, so that's personal data leaking out. A generic message, like invalid email address, is enough.",
+      "text": "A low-severity privacy problem. When validation fails, the error message includes the address the user typed. Errors like this often end up in logs, so that is personal data leaking into somewhere it was never meant to reach. A generic message, like invalid email address, is enough.",
       "subtitle": null,
       "focus": {
         "file": "services/customer-service/src/domain/value-objects/email.ts",
@@ -24,16 +13,7 @@
         "line_start": 11,
         "line_end": 11
       },
-      "estimated_seconds": 14
-    },
-    {
-      "id": "S02",
-      "kind": "wrap_up",
-      "finding_id": null,
-      "text": "Otherwise, this looks good. The value object is immutable, it normalizes input, and the tests cover the main cases. Nice work.",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 9
+      "estimated_seconds": 18.8
     }
   ]
 }

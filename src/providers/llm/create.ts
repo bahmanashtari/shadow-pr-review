@@ -17,25 +17,16 @@ const EMPTY_ANSWER = {
 };
 
 /**
- * Placeholder narration. The lengths and the wording are not arbitrary: they satisfy the
+ * Placeholder narration. The length and the wording are not arbitrary: they satisfy the
  * narration rules `checkScript` enforces, so a fake run reaches `script.json` like a real one.
+ * It names no severity, because the rule is that a step may speak only its own finding's
+ * (ADR-042) and the fake has no idea which finding it is being asked about.
  */
-const STUB_NARRATION = {
-  intro:
-    "This is an automated run with no model, so there is no real narration here. The " +
-    "findings below were produced by the deterministic checks alone.",
-  step:
-    "This finding has no narration because the fake provider is selected. Choose a real " +
-    "model to hear it explained.",
-  wrapUp:
-    "That is the end of this placeholder walkthrough. Select a real model to hear the " +
-    "findings explained properly in plain words.",
-};
+const STUB_NARRATION =
+  "This finding has no narration because the fake provider is selected. Choose a real model " +
+  "to hear it explained, with what the problem is, what it leads to, and how to put it right.";
 
-/**
- * The finding ids the Narrator's schema pins its answer to. A clean change narrates nothing,
- * and that schema carries no `items` at all, so an absent one means an empty answer.
- */
+/** The finding ids the Narrator's schema pins its answer to, one step per finding. */
 function narratedIds(schema: Record<string, unknown>): string[] {
   const properties = schema.properties as Record<string, unknown>;
   const steps = properties.steps as Record<string, unknown> | undefined;
@@ -66,9 +57,7 @@ function fakeAnswer(schema: Record<string, unknown> | undefined): string {
   if (schema?.title === "Verdict") return JSON.stringify(KEEP_VERDICT);
   if (schema?.title !== "NarratorAnswer") return JSON.stringify(EMPTY_ANSWER);
   return JSON.stringify({
-    intro: STUB_NARRATION.intro,
-    steps: narratedIds(schema).map((finding_id) => ({ finding_id, text: STUB_NARRATION.step })),
-    wrap_up: STUB_NARRATION.wrapUp,
+    steps: narratedIds(schema).map((finding_id) => ({ finding_id, text: STUB_NARRATION })),
   });
 }
 

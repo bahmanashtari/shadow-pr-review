@@ -1,22 +1,11 @@
 {
   "schema_version": "1.0",
-  "title": "Review: Add PlaceOrder command handler",
   "language": "en-US",
   "steps": [
     {
       "id": "S00",
-      "kind": "intro",
-      "finding_id": null,
-      "text": "Hi. This is a review of the change that adds the place order handler to the order service. I found three things worth your attention: one high priority, one medium, and one low. Let's walk through them.",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 15
-    },
-    {
-      "id": "S01",
-      "kind": "finding",
       "finding_id": "F01",
-      "text": "First, the most important one. The order placed event is sent inside the database transaction, before it commits. If the commit fails, other services hear about an order that was never saved. And nothing waits for the send, so broker errors are lost. Consider a transactional outbox: save the event in the same transaction, and publish it after the commit.",
+      "text": "A high-severity event consistency problem. The order placed event is sent inside the database transaction, before it commits, so if the commit fails other services hear about an order that was never saved. Broker errors are lost too, since nothing waits for the send. Use a transactional outbox: save the event in the same transaction, and publish after the commit.",
       "subtitle": null,
       "focus": {
         "file": "services/order-service/src/application/commands/place-order.handler.ts",
@@ -24,13 +13,12 @@
         "line_start": 19,
         "line_end": 27
       },
-      "estimated_seconds": 25
+      "estimated_seconds": 24.0
     },
     {
-      "id": "S02",
-      "kind": "finding",
+      "id": "S01",
       "finding_id": "F02",
-      "text": "Next, a layering issue. This handler lives in the application layer, but it uses the TypeORM data source and entity directly. That ties the use case to the database library and makes it harder to test. It's cleaner to depend on an order repository interface from the domain, and implement it in infrastructure.",
+      "text": "A medium-severity layering issue. This handler lives in the application layer, but it uses the TypeORM data source and entity directly. That ties the use case to the database library and makes it harder to test. Depend on an order repository interface from the domain instead, and implement it in infrastructure.",
       "subtitle": null,
       "focus": {
         "file": "services/order-service/src/application/commands/place-order.handler.ts",
@@ -38,13 +26,12 @@
         "line_start": 19,
         "line_end": 20
       },
-      "estimated_seconds": 21
+      "estimated_seconds": 20.4
     },
     {
-      "id": "S03",
-      "kind": "finding",
+      "id": "S02",
       "finding_id": "F03",
-      "text": "A smaller point about the event itself. The payload is an inline object with a plain string topic. Other services depend on this shape, so it deserves a shared, versioned contract. Adding an event ID and a timestamp would also help consumers handle duplicates.",
+      "text": "A low-severity point about the event itself. The payload is an inline object with a plain string topic. Other services depend on this shape, so it deserves a shared, versioned contract. Adding an event ID and a timestamp would also help consumers handle duplicates.",
       "subtitle": null,
       "focus": {
         "file": "services/order-service/src/application/commands/place-order.handler.ts",
@@ -52,16 +39,7 @@
         "line_start": 22,
         "line_end": 26
       },
-      "estimated_seconds": 18
-    },
-    {
-      "id": "S04",
-      "kind": "wrap_up",
-      "finding_id": null,
-      "text": "That's it for this change. I'd fix the event publishing before merging. The other two points can be quick follow-ups. Thanks for the pull request.",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 10
+      "estimated_seconds": 17.6
     }
   ]
 }

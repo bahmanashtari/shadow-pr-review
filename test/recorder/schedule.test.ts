@@ -123,7 +123,7 @@ describe("highlightRowCount", () => {
   });
 
   it("is undefined for actions that light nothing", () => {
-    expect(highlightRowCount(action(0, "show_title"))).toBeUndefined();
+    expect(highlightRowCount(action(0, "open_file"))).toBeUndefined();
     expect(highlightRowCount(action(0, "clear_highlight"))).toBeUndefined();
     // A highlight without a range cannot be checked, and must not be guessed at.
     expect(highlightRowCount(action(0, "highlight"))).toBeUndefined();

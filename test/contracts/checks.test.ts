@@ -73,34 +73,33 @@ describe("checkReview", () => {
 });
 
 describe("checkScript", () => {
-  it("requires intro first and wrap-up last", () => {
+  it("refuses a script that narrates nothing", () => {
+    // A clean review produces no script and no video at all (ADR-042), so an empty one here
+    // means something upstream built it anyway.
     const { review, script } = loadGolden("sample-01-order-outbox");
-    script.steps.reverse();
-    const problems = checkScript(script, review);
-    expect(problems).toContain("first step must be kind 'intro'");
-    expect(problems).toContain("last step must be kind 'wrap_up'");
+    script.steps = [];
+    expect(checkScript(script, review)).toContain("a script must narrate at least one finding");
   });
 
   it("requires focus to match the finding location", () => {
     const { review, script } = loadGolden("sample-01-order-outbox");
-    const s = step(script, 1);
-    if (s.focus) s.focus.line_end = 99;
+    step(script, 0).focus.line_end = 99;
     expect(checkScript(script, review)).toEqual([
-      "/steps/1 (S01): focus must equal the location of finding F01",
+      "/steps/0 (S00): focus must equal the location of finding F01",
     ]);
   });
 
   it("rejects unknown and missing findings", () => {
     const { review, script } = loadGolden("sample-03-email-value-object");
-    step(script, 1).finding_id = "F02"; // F02 was dropped by the verifier
+    step(script, 0).finding_id = "F02"; // F02 was dropped by the verifier
     const problems = checkScript(script, review);
     expect(problems).toContain(
-      "/steps/1 (S01): finding_id F02 is not a kept finding in review.json",
+      "/steps/0 (S00): finding_id F02 is not a kept finding in review.json",
     );
     expect(problems).toContain("finding F01 has no narration step");
   });
 
-  describe("severity words in the frame steps", () => {
+  describe("severity words", () => {
     /** The sample's one finding, re-rated, as the Verifier would leave it. */
     function ratedLow(): ReturnType<typeof loadGolden> {
       const golden = loadGolden("sample-03-email-value-object");
@@ -121,7 +120,7 @@ describe("checkScript", () => {
 
       const problems = checkScript(script, review);
       expect(problems.join("\n")).toContain('/steps/0 (S00): says "critical"');
-      expect(problems.join("\n")).toContain("no kept finding is critical");
+      expect(problems.join("\n")).toContain("but finding F01 is low");
     });
 
     it("accepts a severity word the review does carry", () => {
@@ -133,13 +132,18 @@ describe("checkScript", () => {
       expect(checkScript(script, review)).toEqual([]);
     });
 
-    it("leaves the finding steps alone", () => {
-      // A finding step is handed its own severity and uses it correctly; forbidding the word
-      // there would stop it saying "this one is the high-severity one".
-      const { review, script } = ratedLow();
-      step(script, 1).text = "This is the critical one: the error message includes the address.";
+    it("allows only the step's own finding's severity", () => {
+      // Severity is disclosed at the finding it belongs to (ADR-042), so the step may say its
+      // own - and only its own. A second finding's word in this step would be a claim about
+      // something the viewer is not looking at.
+      const { review, script } = loadGolden("sample-02-inventory-consumer");
+      const first = review.findings[0];
+      if (first === undefined) throw new Error("sample-02 should have findings");
+      step(script, 0).text = `A ${first.severity} one, and a low one elsewhere in the change.`;
 
-      expect(checkScript(script, review)).toEqual([]);
+      const problems = checkScript(script, review);
+      expect(problems.join("\n")).toContain('says "low"');
+      expect(problems.join("\n")).not.toContain(`says "${first.severity}"`);
     });
 
     it("matches whole words only", () => {
@@ -154,7 +158,7 @@ describe("checkScript", () => {
   });
 
   it("rejects long steps, markdown and file names in spoken text", () => {
-    const { review, script } = loadGolden("sample-03-email-value-object");
+    const { review, script } = loadGolden("sample-02-inventory-consumer");
     step(script, 0).text = Array.from({ length: 61 }, () => "word").join(" ");
     step(script, 1).text = "The `create` method in email.ts leaks the address.";
     step(script, 2).text = "See https://example.com for details.";
@@ -168,24 +172,15 @@ describe("checkScript", () => {
   it("honors a custom word limit", () => {
     const { review, script } = loadGolden("sample-03-email-value-object");
     expect(checkScript(script, review, { maxWordsPerStep: 20 })).toContain(
-      "/steps/1 (S01): 35 words, maximum is 20",
+      "/steps/0 (S00): 47 words, maximum is 20",
     );
   });
 
-  it("holds an intro and a wrap-up to the length the narration rules set", () => {
+  it("sets no floor on a step's length", () => {
+    // The 40-word target is prompt guidance, never a check: two hand-written fixtures sit
+    // below it, and a check would buy padding on a small finding (ADR-039).
     const { review, script } = loadGolden("sample-03-email-value-object");
-    step(script, 0).text = "Hello there.";
-    step(script, 2).text = Array.from({ length: 41 }, () => "word").join(" ");
-    const problems = checkScript(script, review);
-    expect(problems).toContain("/steps/0 (S00): 2 words, but an intro or wrap-up must be 15 to 40");
-    expect(problems).toContain(
-      "/steps/2 (S02): 41 words, but an intro or wrap-up must be 15 to 40",
-    );
-  });
-
-  it("does not hold a finding step to that length", () => {
-    const { review, script } = loadGolden("sample-03-email-value-object");
-    step(script, 1).text = "The error message leaks the address.";
+    step(script, 0).text = "A low one. The error message leaks the address.";
     expect(checkScript(script, review)).toEqual([]);
   });
 
@@ -223,8 +218,8 @@ const timeline: Timeline = {
     { step_id: "S01", start_ms: 2400, end_ms: 5400 },
   ],
   actions: [
-    { at_ms: 0, step_id: "S00", type: "show_title", text: "Review" },
-    { at_ms: 2000, step_id: "S00", type: "hide_title" },
+    { at_ms: 0, step_id: "S00", type: "open_file", file: "a.ts" },
+    { at_ms: 2000, step_id: "S00", type: "clear_highlight" },
     { at_ms: 2100, step_id: "S01", type: "open_file", file: "a.ts" },
     {
       at_ms: 2100,
@@ -250,9 +245,9 @@ const timeline: Timeline = {
 
 describe("checkAudioManifest", () => {
   it("requires one clip per step, in order", () => {
-    const { script } = loadGolden("sample-03-email-value-object");
+    const { script } = loadGolden("sample-02-inventory-consumer");
     expect(checkAudioManifest(manifest, script)).toEqual([
-      "clips (S00, S01) must match script steps (S00, S01, S02) in order",
+      "clips (S00, S01) must match script steps (S00, S01, S02, S03) in order",
     ]);
   });
 });

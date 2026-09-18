@@ -120,19 +120,23 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   finding is rendered as its summary, rationale, suggestion, file and evidence lines: enough
   to describe the code in plain words without reading it out.
 - Rules: `docs/NARRATION_STYLE.md`, read fresh into the system prompt the way the rubric is.
+- **The script is one step per kept finding, and nothing else** (ADR-042). A video exists to
+  help a pull-request reviewer understand an issue that was found, so there is no intro, no
+  wrap-up and no title: it opens on the first finding and ends on the last. Each step opens by
+  saying how serious *that* finding is, because nothing else on screen says it.
+- **A review with no kept findings produces no script and no video.** `spr run` stops after
+  Verify, exits 0, and says why; nothing is narrated, spoken, recorded or composed.
 - The model writes only the words (ADR-024). The code writes everything else: step ids,
-  `kind`, `finding_id`, `focus` copied from the finding, `subtitle`, `estimated_seconds`, and
-  the title (`Review: <source title>`). The script's shape is fixed by `checkScript`, so there
-  is nothing there for a model to decide. `review.maxFindings` (10) plus an intro and a
-  wrap-up is exactly the schema's 12-step ceiling, so no finding is ever left out for space.
+  `finding_id`, `focus` copied from the finding, `subtitle` and `estimated_seconds`. The
+  script's shape is fixed by `checkScript`, so there is nothing there for a model to decide.
+  `steps` is capped at `review.maxFindings` (10), the most findings that can reach here.
 - Deterministic post-checks, fed back to the model as repairs (max 2, then the stage fails):
-  word count per step <= `narration.maxWordsPerStep`, an intro or wrap-up of 15 to 40 words,
-  no markdown characters, no file names, paths or URLs, one step per kept finding in the
-  review's order, `focus` matching that finding, and **no severity word in an intro or wrap-up
-  that no kept finding carries** (ADR-038). The last of those exists because the outro card
-  counts the `severity` field while the narration used to echo the Reviewer's prose summary, so
-  the two could disagree on screen. `describeReview` also hands the model
-  `summarizeFindings(review)` - the card's own string - so both read one source.
+  word count per step <= `narration.maxWordsPerStep`, no markdown characters, no file names,
+  paths or URLs, one step per kept finding in the review's order, `focus` matching that
+  finding, and **no severity word other than the step's own finding's** (ADR-038, ADR-042).
+  The change summary reaches the model marked "for context only": it is the Reviewer's prose,
+  written before verification, and its severity wording is what once put "critical" over a
+  `low` finding.
 - On failure the stage writes `script.rejected.json` and names both ways on: edit that draft
   into `script.json`, or change a budget, the style file or the model and re-run
   `spr stage narrate`. A stage boundary is a file, so a person can take over at that point.
@@ -158,26 +162,23 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   that fails part-way resumes for free rather than starting over.
 
 ### 6. Director (pure)
-- Input: `script.json` and `audio/manifest.json` for the schedule itself, plus `review.json`
-  for one string - the outro card's finding summary, whose severities are not carried on a
-  script step. `buildTimeline` stays a pure function of the first two and receives that summary
-  as text. It does **not** read `ingest.json`: a step's `focus` was copied from a finding the
+- Input: `script.json` and `audio/manifest.json`, and nothing else - `buildTimeline` is a pure
+  function of the two. It does **not** read `ingest.json`: a step's `focus` was copied from a finding the
   Verifier already grounded against the diff, so re-checking those lines here would re-prove an
   upstream proof.
 - For each step: window = [start, start + duration]; next start = end + gap (default 400 ms).
   Every duration is the measured clip length (ADR-027); `estimated_seconds` is never read.
-- Intro: `show_title` at its window start, carrying the script's title so the Recorder needs
-  no other file; `hide_title` at end.
-- Finding: `open_file` and `scroll_to` at the lead-in, `highlight` at start, `clear_highlight`
-  at end.
+- Every step: `open_file` and `scroll_to` at the lead-in, `highlight` at start,
+  `clear_highlight` at end. There are no card actions (ADR-042).
 - **The lead-in** is `start - 300 ms`, clamped to 0 *and* to the previous step's `end_ms`.
   The second clamp matters because `video.gapMs` may be as low as 0: without it, any gap under
   300 ms puts the lead-in inside the previous step's window and the page scrolls away from the
   code while that step is still being spoken.
-- Wrap-up: `show_outro`.
+- The first step's lead-in clamps to 0 - there is nothing before it to lead in from - which is
+  why the Recorder positions the page before t0 (section 7).
 - Consecutive steps in the same file skip `open_file`.
 - `total_duration_ms` is the last window's end plus one gap, so the recording does not cut on
-  the last syllable and the outro card gets a beat.
+  the last syllable and the last finding's code holds for a beat.
 - `render_mode` is `diff2html` (ADR-005). There is no config switch for it until the GitHub
   page mode exists to switch to.
 
@@ -191,13 +192,17 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   and every selector afterwards reads those rather than diff2html's own class names, which move
   between versions. There is no single `data-side`: a context line exists on both sides at
   numbers that differ once lines are added, so it carries both attributes.
-- `window.spr.run(action)` is the only entry point, taking the action objects
+- `window.spr.run(action, options?)` is the only entry point, taking the action objects
   `timeline.schema.json` defines. Every method is a no-op when its target is missing, never a
   throw: a page that dies mid-recording produces a video of a stack trace. `window.spr.ready`
   turns true once the diff is drawn and tagged, and is what the Recorder waits on.
-- The title card is up before recording starts, so the video does not open on a flash of diff.
-  The outro card carries the review's finding summary, because a `wrap_up` step has
-  `focus: null` and there is nothing on the diff worth looking at while it plays.
+- **The first finding is on screen before t0.** With no title card in front of it, every
+  action at `at_ms: 0` runs during the warm-up, before the clock starts, and the Recorder waits
+  for `window.spr.settled()` - scrolling at rest - before taking t0. Those actions run with
+  `{ instant: true }`, so the scroll jumps rather than animates: nobody watches the pre-roll,
+  and a smooth scroll that had not begun when the stillness check first looked finished after
+  t0 on `sample-01` and opened the video with the tail of it (ADR-042). The Composer trims
+  everything before t0, so the video opens on the first finding's code, highlighted.
 - Executes actions by sleeping until `at_ms` relative to t0 on a monotonic clock, then waits
   until `total_duration_ms` before closing the context. Every wait is computed from one origin,
   never chained: chaining accumulates each scheduler overshoot across the video, and an action
@@ -269,7 +274,7 @@ out, so a prompt or model change can be argued about with numbers instead of rea
 | `push` to a branch without a PR | Optional: review `before..after`, post commit comment. |
 | `push` to the default branch | Skip by default. |
 | Label `skip-video-review` or `[skip review]` in title | Skip. |
-| Diff over size cap | Review top-risk files only, and say so in the intro. |
+| Diff over size cap | Review top-risk files only, and say so in the PR comment - there is no intro to say it in (ADR-042). |
 
 `concurrency` with `cancel-in-progress` ensures only the latest push on a PR is rendered.
 

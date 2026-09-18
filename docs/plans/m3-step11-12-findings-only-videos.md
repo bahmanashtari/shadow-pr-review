@@ -1,6 +1,9 @@
 # Plan: Milestone 3, steps 11 and 12 (findings-only videos)
 
-Status: approved. Read CLAUDE.md, docs/ROADMAP.md, docs/NARRATION_STYLE.md, ARCHITECTURE section
+Status: done. Step 11 is ADR-041 and step 12 is ADR-042. Two things happened that the plan did
+not foresee, both recorded there: step 11's eval exposed a golden-set label mapping that had been
+overstating recall since ADR-026, and step 12's end-to-end watch found the first finding opening
+on the tail of a smooth scroll, fixed by making the pre-roll jump. Read CLAUDE.md, docs/ROADMAP.md, docs/NARRATION_STYLE.md, ARCHITECTURE section
 2 and 4, and ADR-024, ADR-028, ADR-034 and ADR-039 first.
 
 ## 1. The decision

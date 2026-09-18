@@ -93,7 +93,14 @@ describe("runTts", () => {
 
   it("measures every duration from the written file, never from the estimate", async () => {
     const runDir = tempDir();
-    const script = goldenScript();
+    // Estimates nothing could produce, so a duration that echoed them would show. The fake
+    // engine times speech with the same words-per-second rule the fixtures' estimates use, so
+    // on the real estimates the two can agree by construction and prove nothing (ADR-042's
+    // fixture rewrite is what exposed that).
+    const script = {
+      ...goldenScript(),
+      steps: goldenScript().steps.map((s) => ({ ...s, estimated_seconds: 999 })),
+    };
     const { manifest } = await runTts({
       script,
       provider: new FakeTtsProvider(),
@@ -105,10 +112,7 @@ describe("runTts", () => {
       const onDisk = readWavInfo(readFileSync(path.join(runDir, clip.path)));
       expect(clip.duration_ms).toBe(onDisk.durationMs);
     }
-    // The fixture's own estimates are a word-count guess; nothing here may equal them by
-    // construction. Measured totals run shorter, which is the whole reason this stage exists.
-    const estimated = script.steps.reduce((sum, s) => sum + (s.estimated_seconds ?? 0) * 1000, 0);
-    expect(manifest.clips.reduce((sum, c) => sum + c.duration_ms, 0)).not.toBe(estimated);
+    for (const clip of manifest.clips) expect(clip.duration_ms).not.toBe(999_000);
   });
 
   it("records what the engine actually returned, not what it was asked for", async () => {

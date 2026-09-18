@@ -333,16 +333,17 @@ describe("createProvider", () => {
       expect(checkScript(script, review)).toEqual([]);
     });
 
-    it("narrates nothing for a review with no findings, whose schema carries no items", async () => {
+    it("narrates one placeholder per finding, which passes the script checks", async () => {
+      // A clean review never reaches the Narrator (ADR-042), so the fake only ever sees findings.
+      // Its placeholder names no severity, because a step may speak only its own finding's.
       const review = assertContract(
         "review",
         readGoldenJson(GOLDEN_SAMPLES[0] ?? "", "review.expected.json"),
       );
-      const empty = { ...review, findings: [] };
-      const answer = (await answerFor(narratorOutputSchema(empty))) as NarratorAnswer;
+      const answer = (await answerFor(narratorOutputSchema(review))) as NarratorAnswer;
 
-      expect(answer.steps).toEqual([]);
-      expect(checkScript(assembleScript(answer, empty, defaultConfig()), empty)).toEqual([]);
+      expect(answer.steps.map((s) => s.finding_id)).toEqual(review.findings.map((f) => f.id));
+      expect(checkScript(assembleScript(answer, review, defaultConfig()), review)).toEqual([]);
     });
   });
 });

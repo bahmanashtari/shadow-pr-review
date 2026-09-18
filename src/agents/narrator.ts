@@ -21,7 +21,6 @@ import type { Tracer } from "../harness/tracing.js";
 import { ContractError, StageError } from "../lib/errors.js";
 import type { LlmProvider } from "../providers/llm/types.js";
 import { buildNarratorPrompt } from "./prompts/narrator.js";
-import { summarizeFindings } from "../director/outro.js";
 
 /** File this stage writes. */
 export const SCRIPT_FILE = "script.json";
@@ -32,14 +31,9 @@ export const REJECTED_SCRIPT_FILE = "script.rejected.json";
 /** Spoken words per second, the rate `script.schema.json` estimates with. */
 const WORDS_PER_SECOND = 2.5;
 
-/** The longest a title card may be, from `script.schema.json`. */
-const MAX_TITLE = 100;
-
 /** What the model is asked for: the words, paired with the finding each one is about. */
 export interface NarratorAnswer {
-  intro: string;
   steps: { finding_id: string; text: string }[];
-  wrap_up: string;
 }
 
 /** Input for {@link runNarrate}. */
@@ -80,35 +74,21 @@ export function narratorOutputSchema(review: ReviewResult): Record<string, unkno
     title: "NarratorAnswer",
     type: "object",
     additionalProperties: false,
-    required: ["intro", "steps", "wrap_up"],
+    required: ["steps"],
     properties: {
-      intro: text,
-      wrap_up: text,
       steps: {
         type: "array",
         minItems: ids.length,
         maxItems: ids.length,
-        // A clean change narrates nothing, and an empty `enum` is not a legal schema.
-        ...(ids.length === 0
-          ? {}
-          : {
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["finding_id", "text"],
-                properties: { finding_id: { enum: ids }, text },
-              },
-            }),
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["finding_id", "text"],
+          properties: { finding_id: { enum: ids }, text },
+        },
       },
     },
   };
-}
-
-/** The title card: the change's own title, or a plain fallback when the source has none. */
-export function scriptTitle(review: ReviewResult): string {
-  const given = review.source.title?.trim();
-  const title = given === undefined || given === "" ? "Code review" : `Review: ${given}`;
-  return title.length <= MAX_TITLE ? title : `${title.slice(0, MAX_TITLE - 3)}...`;
 }
 
 /** Word count over the schema's speaking rate, to one decimal. */
@@ -118,11 +98,6 @@ function estimateSeconds(text: string): number {
 
 /** A step before the code numbers it and times it, which it can only do once they are in order. */
 type Unnumbered = Omit<Step, "id" | "estimated_seconds">;
-
-/** An intro or wrap-up step, which points at no finding and highlights nothing. */
-function frameStep(kind: "intro" | "wrap_up", text: string): Unnumbered {
-  return { kind, finding_id: null, text, subtitle: null, focus: null };
-}
 
 /** Where on screen a finding's step looks. */
 function focusOf(finding: Finding): Step["focus"] {
@@ -151,7 +126,6 @@ export function assembleScript(
     if (finding === undefined) return [];
     return [
       {
-        kind: "finding" as const,
         finding_id: finding.id,
         text: step.text,
         subtitle: null,
@@ -160,11 +134,7 @@ export function assembleScript(
     ];
   });
 
-  const steps = [
-    frameStep("intro", answer.intro),
-    ...narrated,
-    frameStep("wrap_up", answer.wrap_up),
-  ].map((step, i) => ({
+  const steps = narrated.map((step, i) => ({
     ...step,
     id: `S${String(i).padStart(2, "0")}`,
     estimated_seconds: estimateSeconds(step.text),
@@ -172,7 +142,6 @@ export function assembleScript(
 
   return {
     schema_version: "1.0",
-    title: scriptTitle(review),
     language: config.narration.language,
     steps,
   };
@@ -192,29 +161,16 @@ function describeFinding(finding: Finding): string {
 }
 
 /**
- * The user message: what the change does, what the outro card will say, and every finding.
+ * The user message: every finding to narrate, in order, and the change's summary for context.
  *
- * The card line is `summarizeFindings` - the very string the Recorder puts on screen - rather
- * than a second count computed here. The two used to disagree: the card counts each finding's
- * `severity` field while this message opened with the Reviewer's prose summary, which begins
- * "Critical ..." on every golden sample, and the intro and wrap-up echoed the prose. Handing
- * over the card's own words makes the voice and the picture read one source (ADR-038).
- *
- * The prose summary stays, because it is the only thing here that says what the change *does* -
- * "adds a reserved quantity column and handles order events" - which an intro needs and a
- * severity tally cannot give. `checkScript` is what stops its severity words being repeated.
+ * The summary is marked as context deliberately. It is the Reviewer's prose, written before the
+ * findings were verified, and its wording about severity can be stale - it is what put
+ * "critical" in a narration over a `low` finding (ADR-038). Each finding carries its own
+ * severity, and that is what the narration speaks.
  */
 export function describeReview(review: ReviewResult): string {
-  const head =
-    `The change: ${review.summary}\n` + `The closing card will read: ${summarizeFindings(review)}`;
-  if (review.findings.length === 0) {
-    return (
-      `${head}\n\nNothing was found worth reporting. Write only the intro and the wrap-up: ` +
-      `say the change looks good, and name one or two things it does well.`
-    );
-  }
   return [
-    head,
+    `The change, for context only: ${review.summary}`,
     `Narrate these ${review.findings.length} findings, in this order:`,
     ...review.findings.map(describeFinding),
   ].join("\n\n");
@@ -223,6 +179,17 @@ export function describeReview(review: ReviewResult): string {
 /** Runs the Narrator and returns a valid `script.json`. */
 export async function runNarrate(options: RunNarrateOptions): Promise<NarrateOutcome> {
   const { review, config } = options;
+
+  // A clean review has nothing to narrate and produces no video (ADR-042). `spr run` stops
+  // after Verify rather than reaching here, so this is for anyone calling the stage directly -
+  // and it says what happened, instead of failing the script contract's `minItems`.
+  if (review.findings.length === 0) {
+    throw new StageError(
+      "narrate",
+      "This review kept no findings, so there is nothing to narrate and no video to make. " +
+        "A video exists to explain issues that were found; a clean change has none.",
+    );
+  }
   const checkOptions = { maxWordsPerStep: config.narration.maxWordsPerStep };
 
   // The last draft the model got as far as, kept so a failure leaves something to edit.

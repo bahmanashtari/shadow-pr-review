@@ -31,19 +31,11 @@ export interface Timeline {
   actions: {
     at_ms: number;
     step_id: string;
-    type:
-      | "show_title"
-      | "hide_title"
-      | "open_file"
-      | "scroll_to"
-      | "highlight"
-      | "clear_highlight"
-      | "show_outro";
+    type: "open_file" | "scroll_to" | "highlight" | "clear_highlight";
     file?: string;
     side?: "new" | "old";
     line_start?: number;
     line_end?: number;
-    text?: string;
     animation_ms?: number;
   }[];
 }

@@ -102,22 +102,32 @@
     return document.getElementById(id);
   }
 
-  /** Shows or hides one of the full-screen cards. */
-  function card(id, visible, text) {
-    var element = byId(id);
-    if (!element) return;
-    if (typeof text === "string" && text !== "") {
-      var body = element.querySelector(".spr-card-text");
-      if (body) body.textContent = text;
-    }
-    element.classList.toggle("spr-visible", visible);
-  }
-
   var HIGHLIGHT = "spr-hl";
+
+  /* Scroll settling, for the pre-roll positioning the Recorder does before t0 (ADR-042).
+   * `scrollTo` animates, and there is no portable event for "a smooth scroll finished", so
+   * this reports stillness instead: the same offset seen on three consecutive polls. Three
+   * rather than two because a single dropped frame mid-animation would otherwise read as
+   * settled. */
+  var STILL_POLLS = 3;
+  var lastOffset = null;
+  var stillFor = 0;
 
   window.spr = {
     /** Step 4 waits on this before it starts its clock. */
     ready: false,
+
+    /**
+     * Whether scrolling has come to rest. The Recorder waits on this after positioning the
+     * page for the first step, so the video does not open mid-animation.
+     */
+    settled: function () {
+      var offset = Math.round(window.scrollY);
+      if (offset === lastOffset) stillFor += 1;
+      else stillFor = 0;
+      lastOffset = offset;
+      return stillFor >= STILL_POLLS;
+    },
 
     /** Exposed so the tests can tag real diff2html output without drawing it in a browser. */
     tagRows: tagRows,
@@ -135,27 +145,27 @@
       window.spr.ready = true;
     },
 
-    showTitle: function (text) {
-      card("spr-title", true, text);
-    },
-    hideTitle: function () {
-      card("spr-title", false);
-    },
-    showOutro: function (text) {
-      card("spr-outro", true, text);
-    },
-
     /** Brings a file's section into view. Files are all on one page, so this is a scroll. */
     openFile: function (file) {
       var wrapper = document.querySelector('.d2h-file-wrapper[data-file="' + cssValue(file) + '"]');
       if (wrapper) wrapper.scrollIntoView({ behavior: "auto", block: "start" });
     },
 
-    scrollTo: function (file, side, start, end) {
+    /**
+     * Centres a range. Animated, because a viewer watching the page move from one finding to
+     * the next is following it - except when `instant` is set, which the Recorder uses for the
+     * pre-roll before t0 (ADR-042). Nobody watches the pre-roll, and an animation there only
+     * risks the video opening with the tail of it: sample-01 did, a smooth scroll that had not
+     * started when the stillness check first looked.
+     */
+    scrollTo: function (file, side, start, end, instant) {
       var rows = rowsIn(file, side, start, end);
       if (rows.length === 0) return;
       // The middle of the range, so a long finding is centred rather than clipped at its top.
-      rows[Math.floor(rows.length / 2)].scrollIntoView({ behavior: "smooth", block: "center" });
+      rows[Math.floor(rows.length / 2)].scrollIntoView({
+        behavior: instant ? "auto" : "smooth",
+        block: "center",
+      });
     },
 
     highlight: function (file, side, start, end) {
@@ -177,25 +187,27 @@
     /**
      * The only function the Recorder calls. Dispatches one timeline action.
      * An action type this page does not know is ignored: a timeline from a newer schema should
-     * degrade, not stop the recording.
+     * degrade, not stop the recording. `options.instant` makes a scroll jump rather than
+     * animate, for the positioning the Recorder does before t0.
      */
-    run: function (action) {
+    run: function (action, options) {
+      var instant = Boolean(options && options.instant);
       if (!action || typeof action.type !== "string") return;
       switch (action.type) {
-        case "show_title":
-          return window.spr.showTitle(action.text);
-        case "hide_title":
-          return window.spr.hideTitle();
         case "open_file":
           return window.spr.openFile(action.file);
         case "scroll_to":
-          return window.spr.scrollTo(action.file, action.side, action.line_start, action.line_end);
+          return window.spr.scrollTo(
+            action.file,
+            action.side,
+            action.line_start,
+            action.line_end,
+            instant,
+          );
         case "highlight":
           return window.spr.highlight(action.file, action.side, action.line_start, action.line_end);
         case "clear_highlight":
           return window.spr.clear();
-        case "show_outro":
-          return window.spr.showOutro(action.text);
         default:
           return undefined;
       }

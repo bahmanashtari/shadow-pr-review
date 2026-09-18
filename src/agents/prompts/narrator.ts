@@ -28,20 +28,21 @@ export function buildNarratorPrompt(): string {
   ].join("\n\n");
 }
 
-const HOW_TO_ANSWER = `Write an intro, one piece of narration for each finding you are given, in the order you are
-given them, and a wrap-up. Every finding gets exactly one, and you may not add, merge, drop or
-reorder any of them: the screen scrolls to each finding as you speak about it, so narration in
-the wrong order points at the wrong code.
+const HOW_TO_ANSWER = `Write one piece of narration for each finding you are given, in the order you are given them.
+Every finding gets exactly one, and you may not add, merge, drop or reorder any of them: the
+screen scrolls to each finding as you speak about it, so narration in the wrong order points at
+the wrong code.
+
+There is no introduction and no closing summary. The video exists to explain the issues that
+were found, and it opens on the first one. Do not begin by saying what the change does, how many
+problems there are, or how serious they are overall - and do not end by thanking anyone or
+telling them to fix things before merging. Every second belongs to an issue.
 
 Echo each finding's id back with its text so the pairing can be checked.
 
-Every finding is given to you with its severity. Those words - critical, high, medium, low -
-and the closing card's line are the only authority on how serious anything is. The change
-summary is prose written before the findings were checked, and its wording about severity may
-be out of date: describe what the change does from it, never how bad it is. An intro or
-wrap-up that rates the change more seriously than the card does is rejected.
-
-The intro and the wrap-up are 15 to 40 words each.
+Open each piece by saying how serious that finding is, using its own severity word - critical,
+high, medium or low - because nothing else on screen says it. Use only that finding's severity:
+calling a low finding critical is rejected, and so is rating the change as a whole.
 
 A finding usually takes 40 to 60 words: that is what saying all three beats costs - what is
 there, what goes wrong because of it, and what to do. 60 words is a hard limit. 40 is not: a

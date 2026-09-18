@@ -31,8 +31,17 @@ declare global {
     spr?: {
       /** True once the diff is drawn and every row is tagged. */
       ready: boolean;
-      /** The single entry point: dispatches one timeline action. */
-      run(action: Timeline["actions"][number]): void;
+      /**
+       * True once scrolling has come to rest. Polled by the Recorder after it positions the
+       * page for the first step, so the video does not open mid-animation. Stateful: each call
+       * is one observation, and it reports stillness across consecutive calls.
+       */
+      settled(): boolean;
+      /**
+       * The single entry point: dispatches one timeline action. `instant` makes a scroll jump
+       * instead of animating, for the pre-roll the Recorder positions before t0.
+       */
+      run(action: Timeline["actions"][number], options?: { instant?: boolean }): void;
     };
   }
 }

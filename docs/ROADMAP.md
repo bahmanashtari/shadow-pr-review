@@ -62,10 +62,15 @@ the pipeline could ship a video with the end of the narration cut off and report
 figure the project had recorded (ADR-035). Step 1 followed, in two commits: the calibration axis
 that made it measurable, then the agent itself (ADR-036, ADR-037).
 
-**Step 9 is marked next**, because step 1 sharpened it: correcting `sample-03`'s severity left
-its outro card reading "1 low" while the narration still says "critical" three times, so one of
-three videos now contradicts itself more visibly than before. It is a prompt change and wants
-step 6's target band in the same commit and the same `spr eval` run.
+Steps 9, 6 and 10 then closed the rest of what the end-to-end run found (ADR-038 to ADR-040).
+Steps 11 and 12 are Bahman's product decision after watching the finished videos: a video exists
+to help a pull-request reviewer understand a found issue, so the Reviewer now says what breaks
+downstream and how to fix it (ADR-041), and the video is findings only - no intro, no outro, no
+card, and no video at all when nothing was found (ADR-042).
+
+**Nothing is marked next.** Steps 2, 3, 4, 5 and 7 remain, none blocking another. Step 4 is the
+one ADR-041 made more pressing: the Reviewer has never found `sample-02`'s redelivery bug, and
+recall now reads an honest 0.750 because of it.
 
 | Step | Scope | Status |
 |---|---|---|
@@ -79,7 +84,7 @@ step 6's target band in the same commit and the same `spr eval` run.
 | 8 | **The Composer's sync check was vacuous, and a short recording went unnoticed.** `assertInSync` compares the final file's two streams, which `-shortest` has already forced into agreement, so it can only ever measure frame granularity - it passed a `final.mp4` whose narration was cut off 429 ms early at "8 ms apart". Compare the final audio against `timeline.total_duration_ms` instead, and check `record.json`'s `recorded_duration_ms` against the webm's real duration, which was 678 ms shorter on the run that failed. Done: three checks, each against a reference the encode cannot move, and the run that failed now fails (ADR-035). Plan: `docs/plans/m3-step8-sync-check.md` | done |
 | 9 | **The narration said "critical" where the outro card said "low".** The Narrator takes the word from the Reviewer's `summary` prose, which opens "Critical ..." on all three samples, rather than from the `severity` field the card counts (ADR-034). **Step 1 made this sharper, not better**: with `sample-03` correctly downgraded to `low`, its card now reads "1 low" while the narration still says critical three times, because `review.summary` still opens "Critical security issue". That line is now the last place a severity word is asserted without being grounded in the `severity` field, so the cause was fully localised (ADR-037). Fixed by handing the Narrator the card's own line and refusing an unsupported severity word in `checkScript` - an enforced invariant rather than a metric, because `spr eval` cannot read narration (ADR-038). Plan: `docs/plans/m3-step9-narration-severity-and-length.md` | done |
 | 11 | **The Reviewer says the consequence, not just the mechanism.** `rationale` and `suggestion` allow 1200 characters and were using about a fifth, with the prompt never saying what either should contain. Target bands plus the two beats ADR-028 identified took model rationales from a mean of 251 characters to 466. The run also uncovered that `sample-02`'s label mapping let an atomicity finding count as having found a redelivery bug the tool has never found, so recall had been reading 1.000 while blind to it; labels corrected, and the enrichment's real effect was calibration 0.833 to 1.000 (ADR-041). Plan: `docs/plans/m3-step11-12-findings-only-videos.md` | done |
-| 12 | **Findings-only videos**: no intro step, no outro step, no outro card, and no video at all when nothing was found. The script contract loses `kind` and `title`, the timeline loses the card actions, and the run stops cleanly after Verify on a clean review. Bahman's decision; see the plan's section 1. Plan: `docs/plans/m3-step11-12-findings-only-videos.md` | next |
+| 12 | **Findings-only videos**: no intro step, no outro step, no outro card, and no video at all when nothing was found. The script contract lost `kind` and `title`, the timeline lost the card actions, and a clean review stops the run after Verify with exit 0. Every second is now on code, and each finding gets 1.3 to 2.3 times the screen time it had. The first finding is positioned before t0, with a jump rather than a smooth scroll, after watching `sample-01` open on the tail of one (ADR-042). Plan: `docs/plans/m3-step11-12-findings-only-videos.md` | done |
 | 10 | **Orphan subtitle cues.** `cuesForStep` filled lines greedily and paired them, so an odd line count left a trailing cue holding the remainder - "layer." for 415 ms, and 238 ms for "it." on a hand-written fixture. Fixed by taking the cue count from the text's length and splitting the words evenly: 4 cues under 1200 ms became 0, with the same 32 cues over three videos (ADR-040). Plan: `docs/plans/m3-step10-orphan-cues.md` | done |
 
 ## Milestone 4: GitHub integration
@@ -94,8 +99,13 @@ step 6's target band in the same commit and the same `spr eval` run.
 
 ## Milestone 5: polish
 
-Subtitles styling, intro and outro cards, voice and theme options, docs for service teams,
+Subtitles styling, voice and theme options, docs for service teams,
 composite or reusable workflow.
+
+Intro and outro cards used to be listed here, and are **withdrawn, not deferred**: Bahman decided
+a video is findings only, and considered and rejected the reason the outro card existed - that
+a viewer could pause on it and screenshot it into the pull request (ADR-042). Do not re-add
+them as polish.
 
 ## How to work on a step
 

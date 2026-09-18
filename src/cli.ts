@@ -36,7 +36,6 @@ import { createProvider } from "./providers/llm/create.js";
 import { createTtsProvider } from "./providers/tts/create.js";
 import { readManifest, runTts, summarizeTts, writeManifest } from "./tts/speak.js";
 import { readTimeline, runDirect, summarizeDirect, writeTimeline } from "./director/direct.js";
-import { summarizeFindings } from "./director/outro.js";
 import { runRecord, summarizeRecord, writeRecord } from "./recorder/record.js";
 import { runCompose, summarizeCompose } from "./composer/compose.js";
 import { readRecord } from "./recorder/record.js";
@@ -177,7 +176,16 @@ async function runPipeline(opts: RunOptions): Promise<void> {
     await review(runDir, built.ingest, config, tracer);
 
     if (opts.until === "review") return;
-    await verify(runDir, built.ingest, config, tracer);
+    const verified = await verify(runDir, built.ingest, config, tracer);
+
+    // A clean review is the end of the run, not a stage that failed (ADR-042). A video exists
+    // to explain issues that were found, so with none there is nothing to narrate, speak,
+    // record or compose - and none of that is paid for. Exit code 0: this is a correct
+    // outcome, and Publish will post the review without a video.
+    if (verified === 0) {
+      console.log("no findings survived verification: nothing to narrate, so no video was made");
+      return;
+    }
 
     if (opts.until === "verify") return;
     await narrate(runDir, config, tracer);
@@ -227,12 +235,9 @@ async function compose(runDir: string, config: SprConfig): Promise<void> {
  * timeline's, so there is nothing here for the configuration to say.
  */
 async function recordVideo(runDir: string): Promise<void> {
-  const review = readReview(runDir);
   const outcome = await runRecord({
     timeline: readTimeline(runDir),
     diffText: readFileSync(path.join(runDir, "diff.patch"), "utf8"),
-    title: readScript(runDir).title,
-    outro: summarizeFindings(review),
     runDir,
   });
   writeRecord(runDir, outcome.result);
@@ -248,8 +253,6 @@ function direct(runDir: string, config: SprConfig): void {
   const outcome = runDirect({
     script: readScript(runDir),
     manifest: readManifest(runDir),
-    // Only for the outro card's summary line; the schedule itself needs script and manifest.
-    review: readReview(runDir),
     config,
   });
   writeTimeline(runDir, outcome.timeline);
@@ -331,7 +334,7 @@ async function verify(
   ingest: IngestResult,
   config: SprConfig,
   tracer?: Tracer,
-): Promise<void> {
+): Promise<number> {
   const judge =
     tracer === undefined
       ? {}
@@ -350,6 +353,7 @@ async function verify(
   const outcome = await runVerify({ ingest, review: readRawReview(runDir), config, ...judge });
   writeVerifiedReview(runDir, outcome.review);
   console.log(summarizeVerify(outcome));
+  return outcome.kept;
 }
 
 /** `spr stage ingest`: re-filters `diff.raw.patch` with the current configuration. */

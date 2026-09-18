@@ -31,7 +31,7 @@ interface Spr {
   newPathOf(displayed: string): string;
   highlight(file: string, side: string, start: number, end: number): void;
   clear(): void;
-  run(action: unknown): void;
+  run(action: unknown, options?: { instant?: boolean }): void;
 }
 
 /** A window holding a rendered diff, with the page's own script evaluated into it. */
@@ -207,5 +207,47 @@ describe("highlight", () => {
       line_end: 22,
     });
     expect(dom.document.querySelectorAll("tr.spr-hl").length).toBe(1);
+  });
+});
+
+describe("scrolling", () => {
+  const SAMPLE = "sample-01-order-outbox";
+  const HANDLER = "services/order-service/src/application/commands/place-order.handler.ts";
+  const scrollTo = {
+    at_ms: 0,
+    step_id: "S00",
+    type: "scroll_to",
+    file: HANDLER,
+    side: "new",
+    line_start: 22,
+    line_end: 26,
+  };
+
+  /** Renders the sample, tags it, and records every `scrollIntoView` the page asks for. */
+  function watched(): { spr: Spr; asked: unknown[] } {
+    const { document, spr } = render(readGoldenDiff(SAMPLE));
+    spr.tagRows(document);
+    const asked: unknown[] = [];
+    const proto = (document.defaultView as unknown as { Element: { prototype: object } }).Element
+      .prototype as { scrollIntoView: (options: unknown) => void };
+    proto.scrollIntoView = (options: unknown) => {
+      asked.push(options);
+    };
+    return { spr, asked };
+  }
+
+  it("animates a scroll a viewer is watching", () => {
+    const { spr, asked } = watched();
+    spr.run(scrollTo);
+    expect(asked).toEqual([{ behavior: "smooth", block: "center" }]);
+  });
+
+  it("jumps when asked to, for the pre-roll before t0", () => {
+    // ADR-042: a smooth scroll that has not begun when the stillness check first looks reads
+    // as settled, and then finishes after t0 - which is how sample-01 opened with the tail of
+    // one. Nobody watches the pre-roll, so it jumps.
+    const { spr, asked } = watched();
+    spr.run(scrollTo, { instant: true });
+    expect(asked).toEqual([{ behavior: "auto", block: "center" }]);
   });
 });

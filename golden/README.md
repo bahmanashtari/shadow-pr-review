@@ -43,8 +43,9 @@ persistence code with your real patterns; the labels stay the same.
   are micro-averaged over items, not averaged over samples.
 - **`max_findings`**, where a sample sets it, is a restraint budget scored separately from
   precision: every finding can be defensible and there can still be too many of them.
-- **Narration**: the deterministic rules (step length, no markdown, no file names, intro first,
-  wrap-up last) are enforced inside the Narrate stage, which fails rather than writing a script
+- **Narration**: the deterministic rules (step length, no markdown, no file names, one step per
+  finding in order, no severity word but the step's own finding's) are enforced inside the
+  Narrate stage, which fails rather than writing a script
   that breaks them, so the eval does not re-check them. It measures what they do not constrain -
   steps, words and duration against `script.expected.json` - and records a sample that never
   reached a script. Compare wording and tone by reading, not by scoring.

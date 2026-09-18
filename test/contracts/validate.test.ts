@@ -59,10 +59,13 @@ describe("validateContract", () => {
     expect(result.ok ? [] : result.errors).toContain("/findings: must NOT have more than 15 items");
   });
 
-  it("rejects a script with a single step", () => {
-    const { script } = loadGolden("sample-03-email-value-object");
-    script.steps = script.steps.slice(0, 1);
-    expect(validateContract("script", script).ok).toBe(false);
+  it("accepts a single-step script and rejects an empty one", () => {
+    // One finding is a whole video now (ADR-042); none means no video at all.
+    const { script } = loadGolden("sample-02-inventory-consumer");
+    expect(validateContract("script", { ...script, steps: script.steps.slice(0, 1) }).ok).toBe(
+      true,
+    );
+    expect(validateContract("script", { ...script, steps: [] }).ok).toBe(false);
   });
 
   it("assertContract throws a ContractError listing the problems", () => {

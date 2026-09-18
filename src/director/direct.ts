@@ -14,13 +14,11 @@ import path from "node:path";
 import { checkAudioManifest, checkTimeline } from "../contracts/checks.js";
 import type { AudioManifest } from "../contracts/generated/audio-manifest.js";
 import type { SprConfig } from "../contracts/generated/config.js";
-import type { ReviewResult } from "../contracts/generated/review.js";
 import type { NarrationScript } from "../contracts/generated/script.js";
 import type { Timeline } from "../contracts/generated/timeline.js";
 import { assertContract, validateContract } from "../contracts/validate.js";
 import { ContractError, StageError } from "../lib/errors.js";
 import { formatDuration, MANIFEST_FILE } from "../tts/speak.js";
-import { summarizeFindings } from "./outro.js";
 import { buildTimeline } from "./timeline.js";
 
 /** File this stage writes. */
@@ -30,12 +28,6 @@ export const TIMELINE_FILE = "timeline.json";
 export interface RunDirectOptions {
   script: NarrationScript;
   manifest: AudioManifest;
-  /**
-   * The verified review, read only to work out what the outro card says (plan m2-step3, Q6).
-   * Severity is not carried on a script step, so the count-and-breakdown line cannot be
-   * derived from the narration alone. Omitting it leaves the card blank rather than failing.
-   */
-  review?: ReviewResult;
   config: SprConfig;
 }
 
@@ -46,14 +38,12 @@ export interface DirectOutcome {
 
 /** Turns a spoken script into the schedule the Recorder executes. */
 export function runDirect(options: RunDirectOptions): DirectOutcome {
-  const { script, manifest, review, config } = options;
+  const { script, manifest, config } = options;
 
   const mismatched = checkAudioManifest(manifest, script);
   if (mismatched.length > 0) throw new ContractError(MANIFEST_FILE, mismatched);
 
-  const timeline = buildTimeline(script, manifest, config, {
-    ...(review === undefined ? {} : { outroText: summarizeFindings(review) }),
-  });
+  const timeline = buildTimeline(script, manifest, config);
 
   assertContract("timeline", timeline);
   const problems = checkTimeline(timeline, manifest);

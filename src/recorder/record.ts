@@ -34,10 +34,6 @@ export interface RunRecordOptions {
   timeline: Timeline;
   /** The contents of `diff.patch`, which the page renders. */
   diffText: string;
-  /** The title card's words, from `script.json`. */
-  title: string;
-  /** The outro card's words, from the review's finding summary. */
-  outro: string;
   runDir: string;
   /** Called after each action, for the tests that check the live page. */
   onAction?: (action: ScheduledAction, page: Page) => Promise<void>;
@@ -58,11 +54,11 @@ export interface RecordOutcome {
  * more use than nothing.
  */
 export async function runRecord(options: RunRecordOptions): Promise<RecordOutcome> {
-  const { timeline, diffText, title, outro, runDir, onAction } = options;
+  const { timeline, diffText, runDir, onAction } = options;
   const { width, height } = timeline.video;
 
   const pageFile = path.join(runDir, PAGE_FILE);
-  writeFileSync(pageFile, buildPage(diffText, { title, outro }), "utf8");
+  writeFileSync(pageFile, buildPage(diffText), "utf8");
   mkdirSync(runDir, { recursive: true });
 
   const browser = await launch();
@@ -131,11 +127,29 @@ async function drive(browser: Browser, options: DriveOptions): Promise<Taken> {
       timeout: READY_TIMEOUT_MS,
     });
 
+    // The first step's code is put on screen before the clock starts (ADR-042). Every step's
+    // lead-in is clamped to zero, so with no intro card in front of it the first step's
+    // scroll and highlight both fire at millisecond zero - and a smooth scroll that has not
+    // settled means the video opens on the wrong lines while the narration is already
+    // talking. Doing it during the warm-up costs nothing: the Composer trims everything
+    // before t0 off the front anyway.
+    for (const action of actionsOf(timeline)) {
+      if (action.at_ms > 0) break;
+      // Jumped, not animated: nobody sees the pre-roll, and an animation that has not begun
+      // when the stillness check first looks reads as settled and finishes after t0.
+      await page.evaluate((a) => {
+        window.spr?.run(a, { instant: true });
+      }, action);
+    }
+    await page.waitForFunction(() => window.spr?.settled() === true, undefined, {
+      timeout: READY_TIMEOUT_MS,
+    });
+
     // Everything from here is measured against this one origin, never chained: chaining the
     // gaps would accumulate every scheduler overshoot across the length of the video.
     const t0 = performance.now();
 
-    for (const action of actionsOf(timeline)) {
+    for (const action of actionsOf(timeline).filter((a) => a.at_ms > 0)) {
       const wait = waitFor(action, performance.now() - t0);
       if (wait > 0) await sleep(wait);
       await page.evaluate((a) => {

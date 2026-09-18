@@ -8,15 +8,26 @@ import { validateContract } from "../src/contracts/validate.js";
 
 const run = (...args: string[]): Promise<void> => main(["node", "spr", ...args]);
 
-/** Runs something with the fake LLM provider, so the Review stage needs no model. */
+/**
+ * Runs something with the fake LLM provider, so the Review stage needs no model.
+ *
+ * The cache goes to a temporary folder for the same reason {@link withFakeProviders} sends the
+ * clips to one: without it a test writes model answers into the developer's own `.cache/spr`,
+ * keyed on the real prompt and the real schema. A later run then gets served whatever the fake
+ * happened to answer at the time - which is exactly how a stale answer survived a prompt change
+ * during this step and looked like a cache-invalidation bug.
+ */
 async function withFakeProvider(body: () => Promise<void>): Promise<void> {
-  const previous = process.env.SPR_LLM_PROVIDER;
+  const previous = { provider: process.env.SPR_LLM_PROVIDER, cache: process.env.SPR_CACHE_DIR };
   process.env.SPR_LLM_PROVIDER = "fake";
+  process.env.SPR_CACHE_DIR ??= tempDir();
   try {
     await body();
   } finally {
-    if (previous === undefined) delete process.env.SPR_LLM_PROVIDER;
-    else process.env.SPR_LLM_PROVIDER = previous;
+    if (previous.provider === undefined) delete process.env.SPR_LLM_PROVIDER;
+    else process.env.SPR_LLM_PROVIDER = previous.provider;
+    if (previous.cache === undefined) delete process.env.SPR_CACHE_DIR;
+    else process.env.SPR_CACHE_DIR = previous.cache;
   }
 }
 
@@ -147,7 +158,7 @@ describe("spr CLI", () => {
     expect(process.exitCode).toBeUndefined();
     expect(existsSync(path.join(runDir, "script.json"))).toBe(true);
     // Two findings survive verify, so the script is intro + two + wrap-up.
-    expect(out.join("\n")).toContain("script: 4 steps");
+    expect(out.join("\n")).toContain("script: 2 steps");
     // One cost.json covers every stage of the run, not just the last one that called a model.
     expect(existsSync(path.join(runDir, "cost.json"))).toBe(true);
   });
@@ -176,7 +187,7 @@ describe("spr CLI", () => {
     );
 
     expect(process.exitCode).toBeUndefined();
-    expect(out.join("\n")).toMatch(/timeline: 4 steps, \d+ actions, \d+:\d{2} of video/);
+    expect(out.join("\n")).toMatch(/timeline: 2 steps, \d+ actions, \d+:\d{2} of video/);
 
     const timeline: unknown = JSON.parse(readFileSync(path.join(runDir, "timeline.json"), "utf8"));
     const result = validateContract("timeline", timeline);
@@ -207,7 +218,7 @@ describe("spr CLI", () => {
 
     expect(process.exitCode).toBeUndefined();
     expect(out.join("\n")).toContain("re-running direct");
-    expect(out.join("\n")).toContain("timeline: 4 steps");
+    expect(out.join("\n")).toContain("timeline: 2 steps");
   });
 
   it("stage direct says which file is missing when tts has not run", async () => {
@@ -228,11 +239,11 @@ describe("spr CLI", () => {
     );
 
     expect(process.exitCode).toBeUndefined();
-    // Two findings survive verify, so the script is intro + two + wrap-up.
-    for (const id of ["S00", "S01", "S02", "S03"]) {
+    // Two findings survive verify, and a script is one step per finding (ADR-042).
+    for (const id of ["S00", "S01"]) {
       expect(existsSync(path.join(runDir, "audio", `${id}.wav`))).toBe(true);
     }
-    expect(out.join("\n")).toMatch(/audio: 4 clips, \d+:\d{2} of speech/);
+    expect(out.join("\n")).toMatch(/audio: 2 clips, \d+:\d{2} of speech/);
 
     const manifest: unknown = JSON.parse(
       readFileSync(path.join(runDir, "audio", "manifest.json"), "utf8"),
@@ -253,7 +264,7 @@ describe("spr CLI", () => {
 
     expect(process.exitCode).toBeUndefined();
     expect(out.join("\n")).toContain("re-running tts");
-    expect(out.join("\n")).toContain("(4 cached)");
+    expect(out.join("\n")).toContain("(2 cached)");
   });
 
   it("stage tts says which file is missing when there is no script yet", async () => {
@@ -267,6 +278,29 @@ describe("spr CLI", () => {
     expect(err.join("\n")).toMatch(/\[tts\] Cannot read .*script\.json/);
   });
 
+  it("stops after verify with no video when nothing was found, and exits cleanly", async () => {
+    // ADR-042: a video exists to explain issues that were found. sample-03's only finding
+    // comes from the model, so under the fake provider its review is genuinely clean - and a
+    // clean review is a correct outcome, not a failure, so there is no exit code to set.
+    const runDir = tempDir();
+    await withFakeProviders(tempDir(), () =>
+      run(
+        "run",
+        "--diff",
+        fromRoot("golden", "sample-03-email-value-object", "diff.patch"),
+        "--out",
+        runDir,
+      ),
+    );
+
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain("no findings survived verification");
+    expect(existsSync(path.join(runDir, "review.json"))).toBe(true);
+    for (const file of ["script.json", "timeline.json", "video.webm", "final.mp4"]) {
+      expect(existsSync(path.join(runDir, file)), file).toBe(false);
+    }
+  });
+
   it("stage narrate re-runs the Narrator over an existing run folder", async () => {
     const runDir = tempDir();
     await withFakeProvider(() =>
@@ -278,13 +312,12 @@ describe("spr CLI", () => {
 
     expect(process.exitCode).toBeUndefined();
     expect(out.join("\n")).toContain("re-running narrate");
-    expect(out.join("\n")).toContain("script: 4 steps");
+    expect(out.join("\n")).toContain("script: 2 steps");
     const script = JSON.parse(readFileSync(path.join(runDir, "script.json"), "utf8")) as {
-      steps: { id: string; kind: string; finding_id: string | null }[];
+      steps: { id: string; finding_id: string }[];
     };
-    expect(script.steps.map((s) => s.id)).toEqual(["S00", "S01", "S02", "S03"]);
-    expect(script.steps.map((s) => s.kind)).toEqual(["intro", "finding", "finding", "wrap_up"]);
-    expect(script.steps.map((s) => s.finding_id)).toEqual([null, "F01", "F02", null]);
+    expect(script.steps.map((s) => s.id)).toEqual(["S00", "S01"]);
+    expect(script.steps.map((s) => s.finding_id)).toEqual(["F01", "F02"]);
   });
 
   it("stage verify re-runs the checks on an existing run folder, with no model", async () => {

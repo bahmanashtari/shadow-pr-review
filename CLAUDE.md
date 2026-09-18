@@ -147,7 +147,9 @@ re-run `spr stage narrate` (ADR-024).
 
 A bare `spr run` walks the whole pipeline and produces `final.mp4`, then exits 2 at `publish`,
 which is the only stage left unbuilt. It records in real time, so it takes about as long as the
-video it makes:
+video it makes. **A review with no kept findings stops after Verify and exits 0 with no video**:
+a video exists to explain issues that were found, and one step per finding - no intro, no
+outro, no card - is the whole format (ADR-042).
 
 ```
 pnpm spr run --diff change.patch                    # ingest ... compose, then exits 2 at publish
@@ -158,7 +160,7 @@ That path is not unit-tested, because recording is real time: `pnpm test` stops 
 `--until` for every golden sample and prints a table of durations, drift, findings, steps and
 file sizes to compare against the last run. Run it before a release and after touching a stage
 boundary. It needs the whole toolchain up at once (a model, the Kokoro container, ffmpeg,
-Chromium) and takes roughly as long as the videos it makes - 2:25 for all three on a warm cache.
+Chromium) and takes roughly as long as the videos it makes - 2:18 for all three on a warm cache.
 
 The Composer reports `narration complete, picture N ms short of it`. The first half is a
 checked claim: the final file's sound is compared against the clips and gaps the schedule was

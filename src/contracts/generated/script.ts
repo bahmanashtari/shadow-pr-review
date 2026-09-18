@@ -5,25 +5,22 @@
  */
 
 /**
- * Contract for script.json. Produced by the Narrator agent from verified findings. Code-level validators must additionally enforce: first step is intro, last step is wrap_up, every finding step references a finding id present in review.json, and focus matches that finding's location.
+ * Contract for script.json. Produced by the Narrator agent from verified findings. One step per kept finding and nothing else: a video exists to explain issues that were found, so there is no intro, no wrap-up and no title (ADR-042), and a review with no findings produces no script and no video at all. Code-level validators must additionally enforce: every step references a finding id present in review.json, in the review's order, focus matches that finding's location, and the narration speaks no severity but its own finding's.
  */
 export interface NarrationScript {
   schema_version: "1.0";
-  /**
-   * Shown on the title card.
-   */
-  title: string;
   language?: string;
   /**
-   * @minItems 2
-   * @maxItems 12
+   * One per kept finding, in the review's order. The ceiling is review.maxFindings, because that is the most findings that can reach here.
+   *
+   * @minItems 1
+   * @maxItems 10
    */
   steps: Step[];
 }
 export interface Step {
   id: string;
-  kind: "intro" | "finding" | "wrap_up";
-  finding_id: string | null;
+  finding_id: string;
   /**
    * Spoken text. Plain sentences only: no markdown, no code blocks, no file extensions read aloud. Target at most ~60 words (~25 seconds).
    */
@@ -32,7 +29,10 @@ export interface Step {
    * Optional on-screen text if it should differ from the spoken text. Defaults to text.
    */
   subtitle?: string | null;
-  focus: null | {
+  /**
+   * Where on screen this step looks. Never null: every step is about a finding, and a finding has a location.
+   */
+  focus: {
     file: string;
     side: "new" | "old";
     line_start: number;

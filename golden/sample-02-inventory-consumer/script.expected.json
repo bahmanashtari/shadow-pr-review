@@ -1,22 +1,11 @@
 {
   "schema_version": "1.0",
-  "title": "Review: Decrement stock when an order is placed",
   "language": "en-US",
   "steps": [
     {
       "id": "S00",
-      "kind": "intro",
-      "finding_id": null,
-      "text": "Hi. This change teaches the inventory service to react to new orders, and adds a column for reserved stock. There are two issues I'd fix before merging, and two smaller ones.",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 12
-    },
-    {
-      "id": "S01",
-      "kind": "finding",
       "finding_id": "F01",
-      "text": "Let's start with the migration. It adds a column that can't be null, but gives it no default. On Postgres, that fails as soon as the table has any rows. It will work on an empty dev database and then break in production. Adding a default of zero fixes it.",
+      "text": "A high-severity migration problem. It adds a column that can't be null, but gives it no default. On Postgres that fails as soon as the table has any rows, so it will work on an empty dev database and then break the deploy in production. Add a default of zero, or backfill and then enforce the constraint.",
       "subtitle": null,
       "focus": {
         "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
@@ -24,13 +13,12 @@
         "line_start": 5,
         "line_end": 7
       },
-      "estimated_seconds": 19
+      "estimated_seconds": 22.8
     },
     {
-      "id": "S02",
-      "kind": "finding",
+      "id": "S01",
       "finding_id": "F02",
-      "text": "Now the consumer. Messages can be delivered more than once, but this handler decrements stock every time it runs. So a single retry means the order is counted twice. Keep a record of processed events, in the same transaction as the stock update, and skip anything you've already handled.",
+      "text": "A high-severity idempotency problem. Messages can be delivered more than once, but this handler decrements stock every time it runs, so a single retry counts the order twice and oversells. Keep a record of processed events, written in the same transaction as the stock update, and skip anything already handled.",
       "subtitle": null,
       "focus": {
         "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
@@ -38,13 +26,12 @@
         "line_start": 14,
         "line_end": 18
       },
-      "estimated_seconds": 21
+      "estimated_seconds": 20.0
     },
     {
-      "id": "S03",
-      "kind": "finding",
+      "id": "S02",
       "finding_id": "F03",
-      "text": "Still in the consumer, each item is updated on its own. If the third item fails, the first two stay decremented. It's safer to update the whole order in one transaction, and publish a failure event if any item can't be reserved.",
+      "text": "A medium-severity atomicity problem in the same consumer. Each item is updated on its own, so if the third item fails the first two stay decremented and the stock counts are wrong. Update the whole order in one transaction, and publish a failure event if any item can't be reserved.",
       "subtitle": null,
       "focus": {
         "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
@@ -52,13 +39,12 @@
         "line_start": 16,
         "line_end": 18
       },
-      "estimated_seconds": 17
+      "estimated_seconds": 20.0
     },
     {
-      "id": "S04",
-      "kind": "finding",
+      "id": "S03",
       "finding_id": "F04",
-      "text": "Last, a small one. The down method is empty, so this migration can't be rolled back. Dropping the new column there would fix that.",
+      "text": "A low-severity one. The down method is empty, so this migration can't be rolled back if the deploy has to be reverted. Dropping the new column there would fix it.",
       "subtitle": null,
       "focus": {
         "file": "services/inventory-service/src/infrastructure/persistence/migrations/1726400000000-AddReservedQuantity.ts",
@@ -66,16 +52,7 @@
         "line_start": 10,
         "line_end": 10
       },
-      "estimated_seconds": 10
-    },
-    {
-      "id": "S05",
-      "kind": "wrap_up",
-      "finding_id": null,
-      "text": "To sum up: make the consumer idempotent and give the new column a default before merging. The other two are quick wins. Thanks!",
-      "subtitle": null,
-      "focus": null,
-      "estimated_seconds": 9
+      "estimated_seconds": 12.0
     }
   ]
 }

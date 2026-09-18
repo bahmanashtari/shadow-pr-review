@@ -29,22 +29,12 @@ const BUNDLE_CSS = "bundles/css/diff2html.min.css";
 
 /** Markers the template carries, each replaced exactly once. */
 const MARKERS = {
-  title: "__SPR_TITLE__",
-  outro: "__SPR_OUTRO__",
   css: "__SPR_CSS__",
   js: "__SPR_JS__",
   bundleCss: "__SPR_DIFF2HTML_CSS__",
   bundleJs: "__SPR_DIFF2HTML_JS__",
   diff: "__SPR_DIFF_JSON__",
 } as const;
-
-/** Options for {@link buildPage}. */
-export interface BuildPageOptions {
-  /** The title card's words, normally the script's title. */
-  title: string;
-  /** The outro card's words, normally the review's finding summary. */
-  outro: string;
-}
 
 /** Resolves a file inside the installed diff2html package. */
 function diff2htmlFile(relative: string): string {
@@ -68,15 +58,6 @@ function read(file: string): string {
   } catch (cause) {
     throw new StageError("record", `Cannot read a file the page needs: ${file}`, { cause });
   }
-}
-
-/** HTML-escapes text going into an element or an attribute. */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -112,7 +93,7 @@ function assertInlinable(what: string, code: string, closer: string): void {
  * @param diffText the contents of `diff.patch`.
  * @returns a complete HTML document.
  */
-export function buildPage(diffText: string, options: BuildPageOptions): string {
+export function buildPage(diffText: string): string {
   const template = read(path.join(PAGE_DIR, "index.html"));
   const css = read(path.join(PAGE_DIR, "spr.css"));
   const js = read(path.join(PAGE_DIR, "spr.js"));
@@ -125,8 +106,6 @@ export function buildPage(diffText: string, options: BuildPageOptions): string {
   assertInlinable("The page stylesheet", css, "</style");
 
   return template
-    .replaceAll(MARKERS.title, escapeHtml(options.title))
-    .replaceAll(MARKERS.outro, escapeHtml(options.outro))
     .replace(MARKERS.bundleCss, () => bundleCss)
     .replace(MARKERS.css, () => css)
     .replace(MARKERS.bundleJs, () => bundleJs)

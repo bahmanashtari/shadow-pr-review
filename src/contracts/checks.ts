@@ -113,9 +113,6 @@ export interface ScriptCheckOptions {
   maxWordsPerStep?: number;
 }
 
-/** What NARRATION_STYLE.md allows an intro or a wrap-up to run to. */
-const FRAME_WORDS = { min: 15, max: 40 } as const;
-
 /**
  * The severity words the outro card counts, and which the narration may therefore only speak
  * when the review supports them.
@@ -158,8 +155,7 @@ export function checkScript(
   const problems: string[] = [];
   const steps = script.steps;
 
-  if (steps[0]?.kind !== "intro") problems.push("first step must be kind 'intro'");
-  if (steps.at(-1)?.kind !== "wrap_up") problems.push("last step must be kind 'wrap_up'");
+  if (steps.length === 0) problems.push("a script must narrate at least one finding");
 
   for (const id of duplicates(steps.map((s) => s.id))) {
     problems.push(`step id ${id} is used more than once`);
@@ -167,58 +163,41 @@ export function checkScript(
 
   const findings = new Map(review.findings.map((f) => [f.id, f]));
   const narrated = new Set<string>();
-  const severitiesPresent = new Set(review.findings.map((f) => f.severity));
 
   steps.forEach((s, i) => {
     const at = `/steps/${i} (${s.id})`;
     const expectedId = `S${String(i).padStart(2, "0")}`;
     if (s.id !== expectedId) problems.push(`${at}: expected id ${expectedId}`);
 
-    if (s.kind !== "finding") {
-      if (s.finding_id !== null) problems.push(`${at}: ${s.kind} step must have finding_id null`);
-      if (s.focus !== null) problems.push(`${at}: ${s.kind} step must have focus null`);
-      if (i > 0 && i < steps.length - 1)
-        problems.push(`${at}: ${s.kind} step must be first or last`);
+    const finding = findings.get(s.finding_id);
+    if (!finding) {
+      problems.push(`${at}: finding_id ${s.finding_id} is not a kept finding in review.json`);
     } else {
-      const finding = s.finding_id === null ? undefined : findings.get(s.finding_id);
-      if (!finding) {
+      if (narrated.has(finding.id)) problems.push(`${at}: finding ${finding.id} is narrated twice`);
+      narrated.add(finding.id);
+      const f = s.focus;
+      if (
+        f.file !== finding.file ||
+        f.side !== finding.side ||
+        f.line_start !== finding.line_start ||
+        f.line_end !== finding.line_end
+      ) {
+        problems.push(`${at}: focus must equal the location of finding ${finding.id}`);
+      }
+      // Severity is disclosed at the finding it belongs to (ADR-042), so a step may speak its
+      // own finding's severity and no other. Narrating a `low` finding as critical is what
+      // ADR-038 caught in an intro; with no intro left, the step itself is where it can happen.
+      for (const word of unsupportedSeverityWords(s.text, new Set([finding.severity]))) {
         problems.push(
-          `${at}: finding_id ${String(s.finding_id)} is not a kept finding in review.json`,
+          `${at}: says "${word}", but finding ${finding.id} is ${finding.severity}. A step may ` +
+            `only speak its own finding's severity - describe the consequence rather than ` +
+            `re-rating it.`,
         );
-      } else {
-        if (narrated.has(finding.id))
-          problems.push(`${at}: finding ${finding.id} is narrated twice`);
-        narrated.add(finding.id);
-        const f = s.focus;
-        if (
-          !f ||
-          f.file !== finding.file ||
-          f.side !== finding.side ||
-          f.line_start !== finding.line_start ||
-          f.line_end !== finding.line_end
-        ) {
-          problems.push(`${at}: focus must equal the location of finding ${finding.id}`);
-        }
       }
     }
 
     const words = countWords(s.text);
     if (words > maxWords) problems.push(`${at}: ${words} words, maximum is ${maxWords}`);
-    if (s.kind !== "finding" && (words < FRAME_WORDS.min || words > FRAME_WORDS.max)) {
-      problems.push(
-        `${at}: ${words} words, but an intro or wrap-up must be ` +
-          `${FRAME_WORDS.min} to ${FRAME_WORDS.max}`,
-      );
-    }
-    if (s.kind !== "finding") {
-      for (const word of unsupportedSeverityWords(s.text, severitiesPresent)) {
-        problems.push(
-          `${at}: says "${word}", but no kept finding is ${word}. The outro card counts the ` +
-            `severity field, so the narration has to agree with it. Use a word the review ` +
-            `supports, or describe the consequence instead of rating it.`,
-        );
-      }
-    }
     if (MARKDOWN_PATTERN.test(s.text))
       problems.push(`${at}: text contains markdown or code characters`);
     if (FILE_REFERENCE_PATTERN.test(s.text))

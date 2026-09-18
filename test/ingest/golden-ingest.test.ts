@@ -100,18 +100,12 @@ describe.each(GOLDEN_SAMPLES)("%s", (sample) => {
             ]
           : [],
       ),
-      ...script.steps.flatMap((s) =>
-        s.focus
-          ? [
-              {
-                where: `step ${s.id} focus`,
-                file: s.focus.file,
-                line_start: s.focus.line_start,
-                line_end: s.focus.line_end,
-              },
-            ]
-          : [],
-      ),
+      ...script.steps.map((s) => ({
+        where: `step ${s.id} focus`,
+        file: s.focus.file,
+        line_start: s.focus.line_start,
+        line_end: s.focus.line_end,
+      })),
     ];
 
     expect(ranges.length).toBeGreaterThan(0);

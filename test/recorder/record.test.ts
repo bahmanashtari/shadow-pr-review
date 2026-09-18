@@ -84,8 +84,6 @@ withBrowser("runRecord", () => {
       const { result } = await runRecord({
         timeline,
         diffText: readGoldenDiff(SAMPLE),
-        title: "Review: a change",
-        outro: "2 issues to fix - 1 high, 1 medium",
         runDir,
         onAction: async (action, page) => {
           const expected = highlightRowCount(action);

@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildPage, escapeHtml, toScriptString } from "../../src/recorder/page.js";
+import { buildPage, toScriptString } from "../../src/recorder/page.js";
 import { loadSchema } from "../../src/contracts/schemas.js";
 import { fromRoot } from "../../src/lib/paths.js";
 import { GOLDEN_SAMPLES, readGoldenDiff } from "../helpers.js";
 
-const OPTIONS = { title: "Review: a change", outro: "2 issues to fix - 1 high, 1 medium" };
-
 function page(sample = GOLDEN_SAMPLES[0] ?? "sample-01-order-outbox"): string {
-  return buildPage(readGoldenDiff(sample), OPTIONS);
+  return buildPage(readGoldenDiff(sample));
 }
 
 describe("buildPage", () => {
@@ -41,30 +39,11 @@ describe("buildPage", () => {
   });
 
   it.each(GOLDEN_SAMPLES)("builds for %s", (sample) => {
-    expect(() => buildPage(readGoldenDiff(sample), OPTIONS)).not.toThrow();
+    expect(() => buildPage(readGoldenDiff(sample))).not.toThrow();
   });
 });
 
 describe("escaping", () => {
-  it("escapes a title so it cannot close a tag", () => {
-    // A branch name is user-controlled and ends up on the title card.
-    const html = buildPage("diff --git a/a.ts b/a.ts\n", {
-      title: '</div><script>alert("x")</script>',
-      outro: "1 issue to fix - 1 low",
-    });
-    expect(html).not.toContain('<script>alert("x")');
-    expect(html).toContain("&lt;/div&gt;");
-  });
-
-  it.each([
-    ["&", "&amp;"],
-    ["<", "&lt;"],
-    [">", "&gt;"],
-    ['"', "&quot;"],
-  ])("escapes %s", (input, expected) => {
-    expect(escapeHtml(input)).toBe(expected);
-  });
-
   it("escapes a diff that closes a script tag", () => {
     // A diff of an HTML file really can contain this, and JSON.stringify does not escape "/".
     const diff = 'diff --git a/i.html b/i.html\n+  </script><script>alert("x")</script>\n';
@@ -74,7 +53,7 @@ describe("escaping", () => {
     // Still the same string once JavaScript has parsed it.
     expect(JSON.parse(literal.replace(/<\\\//g, "</"))).toBe(diff);
 
-    expect(buildPage(diff, OPTIONS)).not.toContain('</script><script>alert("x")');
+    expect(buildPage(diff)).not.toContain('</script><script>alert("x")');
   });
 });
 
