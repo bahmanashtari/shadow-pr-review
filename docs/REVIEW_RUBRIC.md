@@ -19,6 +19,26 @@ prompt. Keep it concise and concrete; every change must be re-evaluated on the g
 - Missing tests when tests are part of the change and cover the main paths.
 - Requests for full RFC-grade validation where a pragmatic check is reasonable.
 
+## What a finding has to say
+
+A finding is read by a developer who has to decide what to do about it, and it is the only
+material the narration has - so anything missing here is missing from the video too.
+
+- **What the code does**, in terms of the lines quoted as evidence.
+- **What breaks because of it**, concretely and downstream: which service, which caller, which
+  row, what state they end up in. "The event may be sent before the commit" is the mechanism;
+  "another service reserves stock for an order that was never saved" is the consequence, and the
+  consequence is the part that tells a reviewer whether to care.
+- **What to do instead**, named the way the industry names it - a transactional outbox, a
+  repository port, an idempotency key, a nullable-backfill-then-enforce migration - and what
+  that choice costs, when it costs something worth knowing.
+
+`rationale` usually takes three or four sentences, roughly 300 to 700 characters. `suggestion`
+usually takes two or three, roughly 200 to 500. Those are what saying the above costs, not
+quotas: a genuinely small finding can be said in less, and padding one to reach a number makes
+it harder to read, not more useful. What is not acceptable is a consequential finding stated in
+one clause, because that is the consequence going unsaid.
+
 ## Severity
 
 | Severity | Meaning | Examples |

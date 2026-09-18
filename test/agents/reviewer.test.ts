@@ -137,6 +137,18 @@ describe("buildReviewerPrompt", () => {
     expect(prompt).toContain("Do not rate those medium.");
   });
 
+  it("asks for the consequence, not just the mechanism", () => {
+    // ADR-028 measured the gap: "the model states the mechanism and skips the outcome", and
+    // the narration can only say what the finding carries (ADR-024), so this is where the
+    // material for a useful video either exists or does not.
+    const prompt = buildReviewerPrompt();
+    expect(prompt).toContain("what breaks because of it");
+    expect(prompt).toContain("that was never saved");
+    expect(prompt).toContain("transactional outbox");
+    // A band, not a quota - the ADR-039 lesson, applied one stage earlier.
+    expect(prompt).toContain("not quotas to fill");
+  });
+
   it("lists analyzer findings as already reported", () => {
     const prompt = buildReviewerPrompt({ analyzerFindings: "- a.ts:1 [high/ddd-boundaries] x" });
     expect(prompt).toContain("Already reported");

@@ -1553,3 +1553,95 @@ a cue reading `it.` shown for **238 ms**, worse than anything in the model outpu
 measured. The defect was in the hand-written standard too, which is worth writing down twice
 over: the fixtures are what this tool aims at, and they had been read many times without anyone
 noticing, because a subtitle file is read as text and this only exists as a flash on screen.
+
+## ADR-041: The Reviewer says the consequence, and the label that was hiding a blind spot (accepted, September 2026)
+
+**Context.** Bahman's decision that a video exists to help a pull-request reviewer understand a
+found issue - with clear reasoning and industry-standard suggestions - and that the intro and
+outro should go so the time is spent on the issues instead. The narration can only say what a
+finding contains (ADR-024, CLAUDE.md principle 5), so this is the half that has to land first:
+freeing narration time without enriching the review would invite the model to invent
+consequences about somebody's production system.
+
+**The room was already in the contract.** `finding.rationale` and `finding.suggestion` allow
+1200 characters each. The Reviewer was using 115 to 295 and 84 to 257 - about a fifth - and the
+prompt never said what either field should contain. The same shape of bug ADR-039 fixed one
+stage later: a generous cap stated without a target gets undershot.
+
+**The decision.** `HOW_TO_EXPLAIN` in the Reviewer's prompt, and a matching section in
+`docs/REVIEW_RUBRIC.md`, ask for two beats that ADR-028 had already identified as missing -
+*"the model states the mechanism and skips the outcome"*:
+
+- what breaks **downstream**, concretely: which service, which caller, which row, what state
+  they are left in. "The event may be sent before the commit" is the mechanism; "another service
+  reserves stock for an order that was never saved" is the consequence, and the consequence is
+  what tells a reviewer whether to care.
+- what to do, **named the way the industry names it** - a transactional outbox, a repository
+  port, an idempotency key, a nullable-then-backfill-then-enforce migration - and what that
+  choice costs when the cost is worth knowing.
+
+Bands, not quotas, per ADR-039: three or four sentences for the rationale, two or three for the
+suggestion, with the exception stated so a small finding is not padded. No minimum is checked,
+for the same reason the 40-word narration floor is not.
+
+**What it produced.** Only three of the six findings are the model's - the other three come from
+the analyzers (ADR-022) and carry fixed text a prompt cannot reach:
+
+| | before | after | fixtures |
+|---|---|---|---|
+| model `rationale`, mean | 251 | **466** | 221 |
+| model `suggestion`, mean | 200 | **347** | - |
+
+**This is the first change that deliberately aims past the fixtures**, and that is worth naming:
+the golden `review.expected.json` files were written for the old format and now understate what
+a good finding contains. They are behind the intent rather than ahead of it, which inverts the
+relationship every previous ADR has assumed.
+
+**And then recall appeared to drop from 1.000 to 0.750**, which turned out to be the most useful
+thing in the run.
+
+`sample-02`'s consumer has a loop decrementing stock per item, and **two different real bugs live
+on those lines**: redelivery (`non-idempotent-consumer`, must-find, needs `high` - a replayed
+event decrements twice) and non-atomicity (`partial-decrement`, optional, `medium..low` - a
+failure midway leaves partial updates). The model has only ever found the second. Across five
+runs on disk it has never once said redelivery, idempotency or dedupe.
+
+It was scoring as though it had found the first because it files that finding under
+`event-consistency`, which the redelivery label accepted as an alternative category and the
+atomicity label did not, with overlapping line ranges. Rated `high`, it cleared the redelivery
+label's severity bar and counted as found. **Recall has read 1.000 on this sample since ADR-026
+while the tool was blind to a replayed-event bug.**
+
+The enrichment did not break that. It rated the same finding `medium` - which is more accurate
+for an atomicity problem - and `medium` does not clear a `high` bar, so the coincidence stopped
+holding.
+
+**The labels are corrected**, which Bahman decided after the alternatives were put to him. The
+redelivery label no longer accepts `event-consistency`; the atomicity label now does. Re-scoring
+both runs against the corrected labels shows what actually happened:
+
+| | recall | calibration |
+|---|---|---|
+| before enrichment | 0.750 | **0.833** |
+| after enrichment | 0.750 | **1.000** |
+
+Recall was 0.750 both times, honestly. The enrichment's real effect on the numbers was to **fix
+an over-rating**: `high` was outside `partial-decrement`'s `medium..low` band, and `medium` is
+inside it. The old label mapping had been hiding a miscalibration as well as a blind spot,
+because the wrong label supplied the wrong band.
+
+**Two earlier claims are superseded.** ADR-026's 1.000 recall was partly an artifact of this
+mapping, which strengthens rather than weakens its own conclusion that the golden set had run
+out of discrimination. And ADR-036's calibration of 1.000 for `sample-02` was the same artifact.
+
+**The blind spot is now named and unhidden**, which is the part worth having: the Reviewer does
+not notice that an event consumer can be redelivered the same event. That is a serious
+production bug class, the rubric already says a redelivered consumer is "at least high", and
+nothing in the pipeline currently finds one. It belongs to the golden-set work in step 4 and to
+the rubric, deliberately, rather than to a category list that could make the number go green
+again.
+
+**A note on cost.** The run took 9:33 against about 3:00 before, because the Reviewer prompt
+changed - so every review was a cache miss - and because longer rationales are more output
+tokens. The steady-state cost is one cold review per prompt change, which is what it has always
+been.

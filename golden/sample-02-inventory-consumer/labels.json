@@ -6,7 +6,7 @@
       "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
       "line_start": 14, "line_end": 18,
       "category": "idempotency",
-      "accept_categories": ["event-consistency", "correctness"],
+      "accept_categories": ["correctness"],
       "min_severity": "high",
       "max_severity": "high",
       "description": "Redelivered order.placed events decrement stock again; no dedupe by orderId/eventId."
@@ -28,6 +28,7 @@
       "file": "services/inventory-service/src/interface/messaging/order-placed.consumer.ts",
       "line_start": 16, "line_end": 18,
       "category": "concurrency",
+      "accept_categories": ["event-consistency"],
       "min_severity": "low",
       "max_severity": "medium",
       "description": "Per-item decrements are not atomic; a failure midway leaves partial updates."

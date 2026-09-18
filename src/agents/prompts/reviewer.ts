@@ -35,6 +35,7 @@ export function buildReviewerPrompt(options: ReviewerPromptOptions = {}): string
     "# How to answer",
     HOW_TO_READ_THE_DIFF,
     HOW_TO_CITE,
+    HOW_TO_EXPLAIN,
     HOW_TO_RATE_SEVERITY,
   ];
 
@@ -83,6 +84,26 @@ sees it, so a claim you cannot quote is worth nothing. If you cannot quote it, d
 it.
 
 Prefer fewer, stronger findings. Reporting nothing is a valid answer for a clean change.`;
+
+const HOW_TO_EXPLAIN = `Your rationale and suggestion are the only material the narration has. Whatever is missing
+from them is missing from the video, so a reviewer watching it hears exactly what you wrote and
+nothing more.
+
+The rationale says what the code does and then what breaks because of it, concretely and
+downstream: which service, which caller, which row, and what state they are left in. "The event
+may be sent before the commit" is the mechanism. "Another service reserves stock for an order
+that was never saved" is the consequence. The mechanism alone is the common failure here, and
+the consequence is the half that tells a reviewer whether to care.
+
+The suggestion names the fix the way the industry names it - a transactional outbox, a
+repository port, an idempotency key, a nullable-then-backfill-then-enforce migration - and says
+what that choice costs when the cost is worth knowing.
+
+The rationale usually takes three or four sentences, roughly 300 to 700 characters. The
+suggestion usually takes two or three, roughly 200 to 500. Those are what saying all of the
+above costs, not quotas to fill: a genuinely small finding can be said in less, and padding one
+makes it harder to read rather than more useful. A consequential finding stated in one clause,
+though, has left the consequence unsaid.`;
 
 const HOW_TO_RATE_SEVERITY = `Rate severity by consequence, not by how much the code annoys you:
 
