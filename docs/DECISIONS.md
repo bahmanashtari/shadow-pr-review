@@ -1274,3 +1274,93 @@ rounds.
 and its finishing claim is checkable: correct the one known over-rating and change nothing else.
 With one calibration case the set can show the mechanism works and cannot establish a rate, so
 Milestone 3 step 4 still governs any claim about how often this happens.
+
+## ADR-037: The Verifier agent, and the contradiction it uncovered (accepted, September 2026)
+
+**Context.** ARCHITECTURE section 3 has always specified two layers for the Verify stage. The
+first - deterministic checks that need no model - has been built since ADR-023. This is the
+second: for each surviving finding, see only the relevant hunk and the claim, and answer keep,
+downgrade or drop. ADR-036 added the axis that makes it judgeable.
+
+**The contract already fitted, so nothing in `schemas/` changed for the agent.** `Verification`
+was already `{ status: "verified" | "downgraded", original_severity?, note? }`, the `dropped`
+reasons already carried `claim_not_supported`, `out_of_scope` and `style_only`, and `runVerify`
+already preserved a verdict rather than overwriting it. The stage grew a `judge` option and the
+rest was assembly.
+
+**One call per finding, because the isolation is the mechanism.** A judge shown all ten findings
+is shown the Reviewer's confidence and the other claims' framing; a judge shown one claim and
+the lines it is about is checking the claim. It also caches per finding (ADR-017), so re-running
+after one finding changes is free for the rest, and a budget stop keeps every verdict already
+reached. `describeClaim` deliberately omits `confidence`: a number the first model assigned to
+its own answer is not evidence for the second.
+
+**The agent reads the same rubric the Reviewer did**, not a second standard. It is checking that
+the first opinion was applied, not offering a competing one - which is also why the prompt says
+to default to keep: the Verifier sees less of the change than the Reviewer did, which is enough
+to catch a claim the code contradicts and not enough to overturn a judgement it merely disagrees
+with.
+
+**It cannot fail the stage, at any point.** No model, no Ollama, a budget stop, or an answer
+that will not validate after its repairs all land in the same place: the findings judged carry
+their verdict, the rest keep the first layer's, and `review.json` is written either way. A bare
+`spr stage verify` passes no judge at all, so re-screening a run folder stays offline, instant
+and free - the property ADR-023 gave the stage, which an optional second layer should not take
+away. `SPR_LLM_PROVIDER=fake` answers keep for everything, because a fake drop would remove a
+real analyzer finding and a fake downgrade would rewrite its severity, and an offline run would
+then disagree with a real one about what the change contains.
+
+**Not built: the "small model" and the cost flag.** ARCHITECTURE said "a small model;
+optionally a larger one for high and critical findings only (cost flag)". ADR-026 falsified the
+premise underneath the first half: `qwen3:4b` was the *slowest* model measured, 731.7 seconds
+against the 30B default's 397.7, because a dense 4B runs more active parameters per token than
+a 30B mixture-of-experts. So the Verifier uses the configured model, and the escalation flag is
+deferred until a hosted model is worth paying for rather than built as a branch nobody has a
+reason to take. ARCHITECTURE is corrected in the same commit.
+
+The plan also proposed a `verify.model` setting, to point this stage at a different model from
+the rest of the pipeline. That is not built either, and for the same reason it gave against the
+cost flag: it is a config surface with no current user, and the argument that rejected one
+rejects both. Adding it the moment somebody wants the Verifier on a different model is a small
+change; carrying it untested until then is not free.
+
+**What it did, measured.** `spr eval` over the golden set, with the calibration axis:
+
+| | before | after |
+|---|---|---|
+| precision | 1.000 | 1.000 |
+| recall | 1.000 | 1.000 |
+| **calibration** | **0.833** | **1.000** |
+| findings kept | 6 | 6 |
+| dropped by the agent | - | 0 |
+
+Six findings judged, five kept untouched, one downgraded: `sample-03`'s finding from `critical`
+to `low`, with the note *"Rubric explicitly lists 'PII in error text' as low severity (not
+critical)."* That is exactly the claim this step was allowed to make - correct the one known
+over-rating and change nothing else - and the note shows it reached the ruling through the
+rubric rather than around it. It dropped nothing, which on a set of six defensible findings is
+the right amount.
+
+**And it uncovered a sharper version of ADR-034's contradiction.** ADR-034 found that
+`sample-03`'s narration said "a critical security issue" while its outro card said "1 critical",
+both wrong against a ground truth of `low`. With the severity corrected the card now reads "1
+low" - and the narration *still says critical three times*, because the Narrator takes the word
+from `review.summary`, which still opens "Critical security issue: PII exposed in error
+message". The Reviewer writes that line, the Verifier judges findings and does not touch it, and
+nothing re-checks it.
+
+So fixing the field made the video's self-contradiction worse rather than better, and localised
+its cause exactly: **`review.summary` is the last place a severity word is asserted without
+being grounded in the `severity` field.** Roadmap step 9 carries it, with this as its evidence.
+Deliberately not fixed here: it is a prompt change and needs `spr eval` behind it (ADR-025), and
+widening this step to cover the Reviewer's summary would put two arguments in one commit.
+
+**A second-order effect worth recording.** `sample-03`'s narration went from 25.2 to 32.8
+seconds against a fixture of 32 - the closest any sample has come to its hand-written standard.
+Nothing in the Narrator changed. A finding described as `low` rather than `critical` simply
+gives the model a different thing to say, which is a reminder that the length question ADR-028
+opened is not purely a prompt-length problem.
+
+**Cost.** Three samples took 195.4 seconds with review and narrate warm in the cache and every
+Verifier call cold - roughly half a minute per finding on `qwen3:30b` with thinking on. The
+per-finding cache means that is paid once per finding rather than once per run.

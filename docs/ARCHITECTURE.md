@@ -98,10 +98,22 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
    `review.maxFindings` (10), with `over_cap` for the rest. Ids are carried over from
    `review.raw.json` unchanged, so a finding can be followed from one file to the other.
    Survivors are marked `verification.status = "verified"`, unless they already carry a verdict.
-2. Verifier agent (Milestone 3): for each surviving finding, sees only the relevant hunk(s) and
-   the claim, and answers keep / downgrade / drop with a note. Default: a small model;
-   optionally a larger one for high and critical findings only (cost flag). `style_only` is its
-   reason to give, not the deterministic layer's.
+2. Verifier agent (`src/agents/verifier.ts`, ADR-037). For each surviving finding, sees only
+   the relevant hunk(s) and the claim, and answers keep / downgrade / drop with a note. One
+   call per finding: the isolation is the mechanism, because a judge shown all ten is shown the
+   Reviewer's confidence and the other claims' framing. It uses the configured model - **not a
+   smaller one**, which ADR-026 measured as slower here, and the larger-model-for-high-and-
+   critical cost flag is deferred until a hosted model is worth paying for. `style_only`,
+   `claim_not_supported` and `out_of_scope` are its reasons to give; the mechanical ones belong
+   to layer 1, which can prove them. A downgrade may only lower severity, and records
+   `original_severity`.
+
+   **The layer is optional at every point.** No model, no Ollama, a budget stop, or an answer
+   that will not validate after its repairs all land in the same place: the findings judged
+   carry their verdict, the rest keep layer 1's, and `review.json` is written either way. The
+   stage never fails because of it, so `spr stage verify` stays offline, instant and free
+   without one. `SPR_LLM_PROVIDER=fake` answers keep for everything, which is the only safe
+   verdict for a judge that cannot read.
 
 ### 4. Narrator agent
 - Input: `review.json` only (never the raw diff, which keeps it grounded and cheap). Each

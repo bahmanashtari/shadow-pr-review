@@ -104,7 +104,7 @@ pnpm spr run --diff change.patch --until compose [--title "..."] [--out runs/x] 
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
-pnpm spr stage verify --run runs/<id>               # re-check review.raw.json; no model, offline
+pnpm spr stage verify --run runs/<id>               # re-screen review.raw.json; deterministic layer only
 pnpm spr stage narrate --run runs/<id>              # re-narrate review.json; free on a cache hit
 pnpm spr stage tts --run runs/<id>                  # re-speak script.json; free on a cache hit
 pnpm spr stage direct --run runs/<id>               # re-schedule script + manifest; no model, offline
@@ -118,9 +118,16 @@ pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repea
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
 ```
 
-Review and narrate need a local model: `ollama serve` with the model from
+Review, verify and narrate need a local model: `ollama serve` with the model from
 `config/default.json` pulled. `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all:
-only the deterministic analyzers (ADR-022) contribute findings, and the script is a placeholder.
+only the deterministic analyzers (ADR-022) contribute findings, the Verifier keeps everything,
+and the script is a placeholder.
+
+Verify has two layers (ADR-037). The deterministic one always runs; the agent that judges
+keep / downgrade / drop runs inside `spr run` and `spr eval`, and **not** in a bare
+`spr stage verify`, which re-screens a run folder offline and for free. The agent never fails
+the stage: whatever it could not answer for keeps the deterministic layer's verdict, and the
+CLI line says how many findings were judged and how many were downgraded.
 
 The Composer needs a real `ffmpeg` and `ffprobe` on the PATH: `brew install ffmpeg` here, or
 `sudo apt-get install -y ffmpeg` on Debian and Ubuntu. Playwright's bundled ffmpeg will not do -

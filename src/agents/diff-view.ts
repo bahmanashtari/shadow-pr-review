@@ -44,6 +44,28 @@ function renderFileLines(file: KeptFile): string[] {
 }
 
 /**
+ * Just the hunks a line range touches, for an agent that should see one claim's code and no
+ * more than that.
+ *
+ * The Verifier's isolation is the mechanism rather than a saving (ARCHITECTURE section 3): a
+ * judge shown the whole change can be swayed by the rest of it, and one shown only these lines
+ * can check the claim against the code and little else. Hunk-granular rather than line-granular
+ * because a claim about a line is rarely checkable without the lines around it.
+ *
+ * @returns the rendering, or undefined when no hunk overlaps the range - which the
+ * deterministic layer's `hasRange` has already ruled out for anything reaching the agent.
+ */
+export function renderRange(file: KeptFile, start: number, end: number): string | undefined {
+  const touched = file.hunks.filter((hunk) => {
+    const last = hunk.new_start + hunk.new_lines - 1;
+    return hunk.new_start <= end && start <= last;
+  });
+  if (touched.length === 0) return undefined;
+
+  return renderFileLines({ ...file, hunks: touched }).join("\n");
+}
+
+/**
  * The whole reviewable diff as text. Deterministic: the same `ingest.json` always renders
  * to the same string.
  */

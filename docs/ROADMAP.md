@@ -59,13 +59,17 @@ Steps 8 to 10 came out of the first complete run (ADR-034) and are numbered afte
 seven rather than inserted among them, so nothing that already points at a step number moves.
 Step 8 was taken first, ahead of step 1, because it was a defect rather than an improvement -
 the pipeline could ship a video with the end of the narration cut off and report the best sync
-figure the project had recorded. That is fixed (ADR-035), so step 1 has the "next" marker back.
-Steps 9 and 10 are the other two the end-to-end run turned up and are ready to pick up in any
-order; 9 is a prompt change and pairs naturally with step 6.
+figure the project had recorded (ADR-035). Step 1 followed, in two commits: the calibration axis
+that made it measurable, then the agent itself (ADR-036, ADR-037).
+
+**Step 9 is marked next**, because step 1 sharpened it: correcting `sample-03`'s severity left
+its outro card reading "1 low" while the narration still says "critical" three times, so one of
+three videos now contradicts itself more visibly than before. It is a prompt change and wants
+step 6's target band in the same commit and the same `spr eval` run.
 
 | Step | Scope | Status |
 |---|---|---|
-| 1 | Verifier agent (keep / downgrade / drop). **Read the plan before starting**: the agent is additive within the existing contract, but nothing in `spr eval` can currently tell whether it helped - precision and recall are already 1.000 (ADR-026), and over-rating severity is free by construction, so the step needs a calibration axis before it can be judged. Plan: `docs/plans/m3-step1-verifier-agent.md` | next |
+| 1 | Verifier agent (keep / downgrade / drop), preceded by the calibration axis that made it judgeable. Calibration went 0.833 to 1.000: six findings judged, five kept, one downgraded with the rubric quoted back (ADR-036, ADR-037). The "small model" and the cost flag ARCHITECTURE specified were dropped and deferred, on ADR-026's measurement. Plan: `docs/plans/m3-step1-verifier-agent.md` | done |
 | 2 | Prompt-injection hardening and tests (hostile comments in diffs) | planned |
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) | planned |
@@ -73,7 +77,7 @@ order; 9 is a prompt change and pairs naturally with step 6.
 | 6 | Narration length: give the Narrator a per-step target band instead of only a cap, and restate the whole-video line in `docs/NARRATION_STYLE.md`, which the measurement falsified. The cause is pinned to one sentence in `HOW_TO_ANSWER` (`src/agents/prompts/narrator.ts`): "Those are hard limits, not targets." Both files feed the prompt, so it is one change, and it needs a `spr eval` run behind it because it moves ADR-026's baseline (ADR-028). **Re-measured in ADR-034**: finding steps now mean 33.7 words against the fixtures' 44.6, so the gap narrowed by half and did not close, and the decision stands. ADR-034 also supersedes ADR-028's speaking rate (2.5 w/s is right, not 2.35) and adds the argument that the one length rule written as a band is the one the model obeys | planned |
 | 7 | Score redundancy in `spr eval`: nothing in `src/eval/score.ts` can see two kept findings making the same claim, because every metric scores findings one at a time - `sample-01` scored 1.000/1.000 both with and without a duplicate (ADR-029). Wants its own axis, in the shape ADR-025 gave restraint - and the calibration axis added in step 1 (ADR-036) is now a worked example of that shape to copy | planned |
 | 8 | **The Composer's sync check was vacuous, and a short recording went unnoticed.** `assertInSync` compares the final file's two streams, which `-shortest` has already forced into agreement, so it can only ever measure frame granularity - it passed a `final.mp4` whose narration was cut off 429 ms early at "8 ms apart". Compare the final audio against `timeline.total_duration_ms` instead, and check `record.json`'s `recorded_duration_ms` against the webm's real duration, which was 678 ms shorter on the run that failed. Done: three checks, each against a reference the encode cannot move, and the run that failed now fails (ADR-035). Plan: `docs/plans/m3-step8-sync-check.md` | done |
-| 9 | **The narration says "critical" where the outro card says "high".** The Narrator takes the word from the Reviewer's `summary` prose, which opens "Critical ..." on all three samples, rather than from the `severity` field the card counts. Two of three videos contradict themselves out loud (ADR-034). A prompt change, so it needs `spr eval` behind it (ADR-025) and belongs with step 6 | planned |
+| 9 | **Next. The narration says "critical" where the outro card says "low".** The Narrator takes the word from the Reviewer's `summary` prose, which opens "Critical ..." on all three samples, rather than from the `severity` field the card counts (ADR-034). **Step 1 made this sharper, not better**: with `sample-03` correctly downgraded to `low`, its card now reads "1 low" while the narration still says critical three times, because `review.summary` still opens "Critical security issue". That line is now the last place a severity word is asserted without being grounded in the `severity` field, so the cause is fully localised (ADR-037). A prompt change, so it needs `spr eval` behind it (ADR-025) and belongs with step 6 | next |
 | 10 | **Orphan subtitle cues.** `cuesForStep` divides a step's window between cue groups by character count, which is right arithmetic and flashes a trailing half-group on screen for 415 ms ("layer."). Wants a minimum cue duration, borrowing time from the group before it, or a split that balances groups rather than filling them (ADR-034) | planned |
 
 ## Milestone 4: GitHub integration

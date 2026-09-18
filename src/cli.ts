@@ -6,6 +6,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { loadConfig, readSecrets } from "./config.js";
 import type { SprConfig } from "./contracts/generated/config.js";
 import type { IngestResult } from "./contracts/generated/ingest.js";
+import type { Finding } from "./contracts/generated/review.js";
 import { checkIngest, checkReview } from "./contracts/checks.js";
 import {
   CONTRACT_NAMES,
@@ -17,6 +18,7 @@ import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
 import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
+import { judgeFindings } from "./agents/verifier.js";
 import { readScript, runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
 import { runEval } from "./eval/run.js";
 import { formatReport } from "./eval/report.js";
@@ -175,7 +177,7 @@ async function runPipeline(opts: RunOptions): Promise<void> {
     await review(runDir, built.ingest, config, tracer);
 
     if (opts.until === "review") return;
-    verify(runDir, built.ingest, config);
+    await verify(runDir, built.ingest, config, tracer);
 
     if (opts.until === "verify") return;
     await narrate(runDir, config, tracer);
@@ -319,9 +321,33 @@ async function narrate(runDir: string, config: SprConfig, tracer: Tracer): Promi
  * Runs the Verify stage over an existing run folder and prints what survived.
  * It reads `review.raw.json` back from disk rather than taking the Review stage's result in
  * memory, so `spr run` and `spr stage verify` follow exactly the same path.
+ *
+ * The agent layer is passed in only when there is a tracer to account for it (ADR-037). A bare
+ * `spr stage verify` therefore runs the deterministic checks alone, offline and instantly,
+ * which is what makes re-screening a run folder free.
  */
-function verify(runDir: string, ingest: IngestResult, config: SprConfig): void {
-  const outcome = runVerify({ ingest, review: readRawReview(runDir), config });
+async function verify(
+  runDir: string,
+  ingest: IngestResult,
+  config: SprConfig,
+  tracer?: Tracer,
+): Promise<void> {
+  const judge =
+    tracer === undefined
+      ? {}
+      : {
+          judge: (findings: readonly Finding[]) =>
+            judgeFindings({
+              findings,
+              ingest,
+              provider: createProvider(config, readSecrets()),
+              config,
+              budget: new Budget(config.budgets),
+              tracer,
+              cache: createCache(config.cache),
+            }),
+        };
+  const outcome = await runVerify({ ingest, review: readRawReview(runDir), config, ...judge });
   writeVerifiedReview(runDir, outcome.review);
   console.log(summarizeVerify(outcome));
 }
@@ -373,7 +399,7 @@ export function buildProgram(): Command {
         const config = loadConfig();
         const runDir = path.resolve(opts.run);
         report(runDir, "re-running verify");
-        verify(runDir, readIngest(runDir), config);
+        await verify(runDir, readIngest(runDir), config);
         return;
       }
       if (stage === "narrate") {

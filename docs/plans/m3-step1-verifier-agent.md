@@ -1,6 +1,11 @@
 # Plan: Milestone 3, step 1 (the Verifier agent)
 
-Status: proposed. Read CLAUDE.md, docs/ROADMAP.md, ARCHITECTURE.md section 3, and ADR-023,
+Status: done, in two commits - the calibration axis (ADR-036) and then the agent (ADR-037).
+All three decisions in section 4 were taken as recommended: build it now and claim less (Q1's
+sequencing), add the axis first in its own commit (Q2), and drop "small" while deferring the
+cost flag (Q3). The finishing claim held: calibration went 0.833 to 1.000 on one downgrade,
+with nothing else moved. What the run additionally uncovered is in ADR-037's last third and is
+now roadmap step 9. Read CLAUDE.md, docs/ROADMAP.md, ARCHITECTURE.md section 3, and ADR-023,
 ADR-025 and ADR-026 first. The short version of what follows: the agent itself is
 straightforward and the contract already fits it, but **nothing currently in this repository can
 tell whether it helped or hurt**, and section 3 is about fixing that before writing it.

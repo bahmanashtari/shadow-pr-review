@@ -2,22 +2,30 @@
  * The Verify stage: `review.raw.json` plus `ingest.json` become `review.json`, the only
  * review file the Narrator is allowed to read.
  *
- * ARCHITECTURE.md gives this stage two layers. This is the first: deterministic checks that
- * need no model, so the stage runs offline, instantly, and for free. The Verifier agent
- * (keep / downgrade / drop with a note) joins it in Milestone 3 and judges only what survives
- * here.
+ * ARCHITECTURE.md gives this stage two layers, and both are built. The first is deterministic
+ * checks that need no model, so without the second the stage still runs offline, instantly and
+ * for free. The second is the Verifier agent (keep / downgrade / drop with a note, ADR-037),
+ * which judges only what survives the first and is optional at every point: `judge` left out,
+ * this file behaves exactly as it did before it existed.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { checkReview } from "../contracts/checks.js";
+import { checkReview, compareFindings } from "../contracts/checks.js";
 import type { SprConfig } from "../contracts/generated/config.js";
 import type { IngestResult } from "../contracts/generated/ingest.js";
-import type { DroppedFinding, ReviewResult } from "../contracts/generated/review.js";
+import type { DroppedFinding, Finding, ReviewResult } from "../contracts/generated/review.js";
 import { assertContract, validateContract } from "../contracts/validate.js";
 import { HunkIndex } from "../ingest/hunk-index.js";
 import { ContractError, StageError } from "../lib/errors.js";
 import { REVIEW_RAW_FILE } from "../agents/reviewer.js";
 import { screenFindings, type Dropped } from "./grounding.js";
+import {
+  downgrade as applyDowngrade,
+  toDropped as agentDropped,
+  type JudgeOutcome,
+  type Verdict,
+  type Verdicts,
+} from "../agents/verifier.js";
 
 /** File this stage writes. */
 export const REVIEW_FILE = "review.json";
@@ -31,6 +39,11 @@ export interface RunVerifyOptions {
   /** The contents of `review.raw.json`. */
   review: ReviewResult;
   config: SprConfig;
+  /**
+   * The second layer (ADR-037). Omitted, the stage is exactly what it was: offline, instant and
+   * free. Given, its verdicts are applied to whatever survived the deterministic checks.
+   */
+  judge?: (findings: readonly Finding[]) => Promise<JudgeOutcome>;
 }
 
 /** What the stage produced. */
@@ -39,6 +52,14 @@ export interface VerifyOutcome {
   kept: number;
   /** The findings this run removed, in id order. Entries already in the raw file are not counted. */
   dropped: DroppedFinding[];
+  /** How many findings the agent gave a verdict on. Zero whenever it did not run. */
+  judged: number;
+  /** How many of those it lowered the severity of. */
+  downgraded: number;
+  /** Why the agent pass stopped early, when it did. */
+  stopped?: string;
+  /** Findings the agent could not answer for. They keep the first layer's verdict. */
+  failed: number;
 }
 
 /** Turns a rejected finding into the `dropped` entry the contract asks for. */
@@ -61,7 +82,7 @@ function toDropped({ finding, rejection }: Dropped): DroppedFinding {
  * kept or dropped: `trace.jsonl` and `spr eval` both need that mapping, and gaps in the kept
  * list are informative rather than untidy.
  */
-export function runVerify(options: RunVerifyOptions): VerifyOutcome {
+export async function runVerify(options: RunVerifyOptions): Promise<VerifyOutcome> {
   const { ingest, review, config } = options;
   const index = HunkIndex.fromIngest(ingest);
 
@@ -72,15 +93,35 @@ export function runVerify(options: RunVerifyOptions): VerifyOutcome {
   });
 
   const dropped = screening.dropped.map(toDropped);
+  const survivors = screening.kept.map((finding) => ({
+    // Surviving the deterministic checks is exactly the claim `verified` makes here: the
+    // lines exist and the evidence is verbatim. A verdict already on the finding - from the
+    // agent below, on an earlier run - is left alone, so re-running never erases one.
+    ...finding,
+    verification: finding.verification ?? { status: "verified" as const },
+  }));
+
+  const judged = options.judge === undefined ? undefined : await options.judge(survivors);
+  const verdicts: Verdicts = judged?.verdicts ?? new Map<string, Verdict>();
+
+  const kept: Finding[] = [];
+  let downgraded = 0;
+  for (const finding of survivors) {
+    const verdict = verdicts.get(finding.id);
+    if (verdict === undefined || verdict.verdict === "keep") {
+      kept.push(finding);
+    } else if (verdict.verdict === "downgrade") {
+      kept.push(applyDowngrade(finding, verdict));
+      downgraded += 1;
+    } else {
+      dropped.push(agentDropped(finding, verdict));
+    }
+  }
+
   const verified: ReviewResult = {
     ...review,
-    findings: screening.kept.map((finding) => ({
-      // Surviving the deterministic checks is exactly the claim `verified` makes here: the
-      // lines exist and the evidence is verbatim. A verdict already on the finding - from the
-      // Milestone 3 agent - is left alone, so re-running the stage never erases one.
-      ...finding,
-      verification: finding.verification ?? { status: "verified" },
-    })),
+    // A downgrade can move a finding out of severity order, and the contract wants it sorted.
+    findings: [...kept].sort(compareFindings),
     // Anything the raw file already dropped stays dropped, which keeps the stage idempotent.
     dropped: [...review.dropped, ...dropped],
   };
@@ -89,7 +130,15 @@ export function runVerify(options: RunVerifyOptions): VerifyOutcome {
   const problems = checkReview(verified, { maxFindings: config.review.maxFindings });
   if (problems.length > 0) throw new ContractError(REVIEW_FILE, problems);
 
-  return { review: verified, kept: verified.findings.length, dropped };
+  return {
+    review: verified,
+    kept: verified.findings.length,
+    dropped,
+    judged: verdicts.size,
+    downgraded,
+    failed: judged?.failed ?? 0,
+    ...(judged?.stopped == null ? {} : { stopped: judged.stopped }),
+  };
 }
 
 /** Reads and validates an existing `review.raw.json`. */
@@ -119,13 +168,30 @@ export function writeVerifiedReview(runDir: string, review: ReviewResult): void 
   writeFileSync(path.join(runDir, REVIEW_FILE), `${JSON.stringify(review, null, 2)}\n`, "utf8");
 }
 
-/** One line such as `3 findings kept, 2 dropped (1 lines_not_in_diff, 1 duplicate)`. */
+/**
+ * One line such as `3 findings kept, 2 dropped (1 duplicate, 1 style_only), 5 judged, 1
+ * downgraded`.
+ *
+ * The judged count is printed whenever the agent ran, including when it ran and changed
+ * nothing: a run where the second layer was skipped and a run where it agreed with everything
+ * would otherwise look identical, and those are very different things to have happened.
+ */
 export function summarizeVerify(outcome: VerifyOutcome): string {
   const kept = `${outcome.kept} ${outcome.kept === 1 ? "finding" : "findings"} kept`;
-  if (outcome.dropped.length === 0) return `${kept}, none dropped`;
 
-  const counts = new Map<string, number>();
-  for (const d of outcome.dropped) counts.set(d.reason, (counts.get(d.reason) ?? 0) + 1);
-  const detail = [...counts].map(([reason, n]) => `${n} ${reason}`).join(", ");
-  return `${kept}, ${outcome.dropped.length} dropped (${detail})`;
+  const parts = [kept];
+  if (outcome.dropped.length === 0) parts.push("none dropped");
+  else {
+    const counts = new Map<string, number>();
+    for (const d of outcome.dropped) counts.set(d.reason, (counts.get(d.reason) ?? 0) + 1);
+    const detail = [...counts].map(([reason, n]) => `${n} ${reason}`).join(", ");
+    parts.push(`${outcome.dropped.length} dropped (${detail})`);
+  }
+  if (outcome.judged > 0) {
+    parts.push(`${outcome.judged} judged`);
+    if (outcome.downgraded > 0) parts.push(`${outcome.downgraded} downgraded`);
+  }
+  if (outcome.failed > 0) parts.push(`${outcome.failed} not judged`);
+  if (outcome.stopped !== undefined) parts.push(`agent stopped: ${outcome.stopped}`);
+  return parts.join(", ");
 }

@@ -24,6 +24,7 @@ import { fromDiffFile } from "../ingest/sources.js";
 import { StageError } from "../lib/errors.js";
 import { createProvider } from "../providers/llm/create.js";
 import { runVerify, writeVerifiedReview } from "../verify/verify.js";
+import { judgeFindings } from "../agents/verifier.js";
 import { buildReport, measureScript, scoreReview, total } from "./score.js";
 
 /** Input for {@link runEval}. */
@@ -123,7 +124,23 @@ async function evaluateSample(
   });
   writeReview(runDir, review.review);
 
-  const verified = runVerify({ ingest: built.ingest, review: review.review, config });
+  // The agent layer runs here too: `spr eval` exists to measure the pipeline a viewer gets,
+  // and the calibration axis (ADR-036) is only meaningful against a review the Verifier saw.
+  const verified = await runVerify({
+    ingest: built.ingest,
+    review: review.review,
+    config,
+    judge: (findings) =>
+      judgeFindings({
+        findings,
+        ingest: built.ingest,
+        provider,
+        config,
+        budget: new Budget(config.budgets),
+        tracer,
+        cache,
+      }),
+  });
   writeVerifiedReview(runDir, verified.review);
 
   // A failed Narrate stage is a result, not a reason to abandon the sample's review score.

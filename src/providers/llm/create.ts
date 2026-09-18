@@ -46,10 +46,24 @@ function narratedIds(schema: Record<string, unknown>): string[] {
 }
 
 /**
+ * What the fake answers the Verifier: keep, always.
+ *
+ * The one safe verdict for a judge that cannot read. A fake drop would remove a real finding
+ * the analyzers produced, and a fake downgrade would rewrite its severity - so an offline run
+ * would quietly disagree with a real one about what the change contains. Keeping everything
+ * makes `SPR_LLM_PROVIDER=fake` mean "the deterministic layers, and nothing else".
+ */
+const KEEP_VERDICT = {
+  verdict: "keep",
+  note: "No model was used: the fake provider is selected, so nothing was judged.",
+};
+
+/**
  * Answers whichever stage is asking. The fake has no idea what it is reviewing, so every
  * answer is empty or placeholder, but it is always valid for the schema it was handed.
  */
 function fakeAnswer(schema: Record<string, unknown> | undefined): string {
+  if (schema?.title === "Verdict") return JSON.stringify(KEEP_VERDICT);
   if (schema?.title !== "NarratorAnswer") return JSON.stringify(EMPTY_ANSWER);
   return JSON.stringify({
     intro: STUB_NARRATION.intro,
