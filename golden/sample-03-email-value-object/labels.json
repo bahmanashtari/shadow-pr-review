@@ -1,5 +1,6 @@
 {
   "sample": "sample-03-email-value-object",
+  "origin": "synthetic",
   "must_find": [],
   "acceptable": [
     {

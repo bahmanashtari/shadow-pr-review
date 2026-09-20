@@ -27,12 +27,22 @@ export interface ModelRun {
   samples: SampleResult[];
   totals: Totals;
   /**
+   * `totals` partitioned into real and anonymized changes versus hand-written ones, with an entry only for an origin the set actually contains. A synthetic sample measures whether the model recognises a bug somebody wrote for it to find, which is a weaker claim than finding one that reached production, and the two must not be averaged into a single number that reads like the stronger claim.
+   *
+   * @maxItems 2
+   */
+  by_origin?: OriginTotals[];
+  /**
    * Why this model could not be scored in full. Its totals then cover only the samples that ran, and are not comparable with a complete row. One model breaking must not discard the others' measurements.
    */
   failed?: string | null;
 }
 export interface SampleResult {
   sample: string;
+  /**
+   * Copied from the sample's labels.json, so a report can be read years later without the golden set beside it.
+   */
+  origin: "real" | "synthetic";
   run_dir: string;
   /**
    * True when every model call for this sample was served from the on-disk cache (ADR-017), so the row measures a past answer rather than a fresh one.
@@ -162,4 +172,19 @@ export interface Totals {
    * How many samples kept more findings than their max_findings allows.
    */
   over_budget?: number;
+}
+export interface OriginTotals {
+  origin: "real" | "synthetic";
+  /**
+   * How many golden samples carry this origin. An origin with no samples has no entry at all, rather than an entry full of nulls.
+   */
+  samples: number;
+  precision: number | null;
+  recall: number | null;
+  must_find: number;
+  found: number;
+  kept: number;
+  false_positives?: number;
+  calibrated?: number | null;
+  miscalibrated?: number;
 }

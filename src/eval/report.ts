@@ -19,6 +19,11 @@ function padLeft(value: string, width: number): string {
   return value.length >= width ? value : " ".repeat(width - value.length) + value;
 }
 
+/** `1 sample` / `3 samples`, because a report is read by a person. */
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 /** `5 steps / 51s (want 5 / 89s)`, or why there is no script. */
 function scriptCell(sample: SampleResult): string {
   const s = sample.script;
@@ -37,6 +42,39 @@ function droppedCell(sample: SampleResult): string {
 }
 
 const COLUMNS = { sample: 30, kept: 5, rate: 7, fp: 4 };
+
+/**
+ * The real / synthetic split under the total, or one line when the set is all of a kind.
+ *
+ * A single origin gets prose rather than a row, because a row identical to TOTAL invites the
+ * reader to compare two numbers that are the same number. The synthetic wording is the point
+ * of the whole axis: it says what the rates above are a claim about.
+ */
+function originLines(run: ModelRun): string[] {
+  const entries = run.by_origin ?? [];
+  const [only] = entries;
+
+  if (only === undefined) return [];
+  if (entries.length === 1) {
+    if (only.origin === "real") return [`  all ${plural(only.samples, "sample")} are real changes`];
+    return [
+      `  all ${plural(only.samples, "sample")} are synthetic: these rates say the model finds bugs`,
+      `  written for it to find, which is a weaker claim than finding one that shipped`,
+    ];
+  }
+
+  return entries.map((e) =>
+    [
+      pad(`  ${e.origin}`, COLUMNS.sample),
+      padLeft(String(e.kept), COLUMNS.kept),
+      padLeft(rate(e.precision), COLUMNS.rate),
+      padLeft(rate(e.recall), COLUMNS.rate),
+      padLeft(rate(e.calibrated ?? null), COLUMNS.rate),
+      padLeft(String(e.false_positives ?? 0), COLUMNS.fp),
+      `  ${plural(e.samples, "sample")}, ${e.found}/${e.must_find} must_find`,
+    ].join(" "),
+  );
+}
 
 /** One model's block: a row per sample, a total row, then the detail worth acting on. */
 export function formatModel(run: ModelRun): string[] {
@@ -82,6 +120,8 @@ export function formatModel(run: ModelRun): string[] {
         `${t.narrated ?? 0}/${run.samples.length} narrated, ${t.seconds}s`,
     ].join(" "),
   );
+
+  lines.push(...originLines(run));
 
   for (const s of run.samples) {
     const detail: string[] = [];

@@ -68,18 +68,20 @@ to help a pull-request reviewer understand a found issue, so the Reviewer now sa
 downstream and how to fix it (ADR-041), and the video is findings only - no intro, no outro, no
 card, and no video at all when nothing was found (ADR-042).
 
-**Step 4 is marked next**, with a plan waiting at `Status: proposed`. ADR-041 made it the most
-pressing: the Reviewer has never once found `sample-02`'s redelivery bug, recall now reads an
-honest 0.750 because of it, and three samples cannot tell a real improvement from noise. It needs
-material only Bahman has - real changes from his team's services - so the plan opens by asking
-for it. Steps 2, 3, 5, 7 and 13 remain, none blocking another.
+**Step 4 is in progress.** ADR-041 made it the most pressing: the Reviewer has never once found
+`sample-02`'s redelivery bug, recall now reads an honest 0.750 because of it, and three samples
+cannot tell a real improvement from noise. The two halves of it that need nothing from anybody
+are done - the expected reviews now describe what a good finding contains (ADR-041's format), and
+a sample must declare whether it is real or synthetic (ADR-043, proposed). **The samples
+themselves are waiting on Bahman**, because the material is his: real changes from his team's
+services, with what the bug actually was. Steps 2, 3, 5, 7 and 13 remain, none blocking another.
 
 | Step | Scope | Status |
 |---|---|---|
 | 1 | Verifier agent (keep / downgrade / drop), preceded by the calibration axis that made it judgeable. Calibration went 0.833 to 1.000: six findings judged, five kept, one downgraded with the rubric quoted back (ADR-036, ADR-037). The "small model" and the cost flag ARCHITECTURE specified were dropped and deferred, on ADR-026's measurement. Plan: `docs/plans/m3-step1-verifier-agent.md` | done |
 | 2 | Prompt-injection hardening and tests (hostile comments in diffs) | planned |
 | 3 | Budget and cache tuning; cost report per run | planned |
-| 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026) Plan: `docs/plans/m3-step4-golden-set.md` | next |
+| 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models now tie at 1.000 precision and recall on the current three samples (ADR-026). Landed so far: the three `review.expected.json` fixtures rewritten to the format ADR-041 asks for, and a required `origin` on every `labels.json` that `spr eval` totals separately (ADR-043, proposed). Waiting on Bahman for the diffs themselves. Plan: `docs/plans/m3-step4-golden-set.md` | in progress |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |
 | 6 | Narration length: a per-step target band instead of only a cap, and the whole-video line in `docs/NARRATION_STYLE.md` restated as the format's structural range. The cause was one sentence in `HOW_TO_ANSWER` - "Those are hard limits, not targets." - and removing it moved finding steps from a mean of 33.7 words to 42.7 against the fixtures' 44.6, with precision, recall and calibration unmoved (ADR-028, ADR-034, ADR-039). The 40-word floor is prompt guidance and deliberately not a check, because two hand-written fixtures sit below it. Plan: `docs/plans/m3-step9-narration-severity-and-length.md` | done |
 | 7 | Score redundancy in `spr eval`: nothing in `src/eval/score.ts` can see two kept findings making the same claim, because every metric scores findings one at a time - `sample-01` scored 1.000/1.000 both with and without a duplicate (ADR-029). Wants its own axis, in the shape ADR-025 gave restraint - and the calibration axis added in step 1 (ADR-036) is now a worked example of that shape to copy | planned |

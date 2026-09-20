@@ -1,5 +1,6 @@
 {
   "sample": "sample-01-order-outbox",
+  "origin": "synthetic",
   "must_find": [
     {
       "key": "publish-before-commit",

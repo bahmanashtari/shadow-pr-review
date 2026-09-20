@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { formatComparison, formatModel, formatReport } from "../../src/eval/report.js";
 import type { ModelRun, SampleResult } from "../../src/contracts/generated/eval.js";
-import { buildReport, total } from "../../src/eval/score.js";
+import { buildReport, total, totalsByOrigin } from "../../src/eval/score.js";
 
 const FILE = "services/order-service/src/application/commands/place-order.handler.ts";
 
 function sample(over: Partial<SampleResult> = {}): SampleResult {
   return {
     sample: "sample-01-order-outbox",
+    origin: "synthetic",
     run_dir: "/tmp/runs/eval/sample-01",
     cached: false,
     seconds: 23,
@@ -119,6 +120,34 @@ describe("formatModel", () => {
       },
     });
     expect(formatModel(run({ samples: [novel] })).join("\n")).toContain("(unlabelled)");
+  });
+});
+
+describe("the origin of the samples", () => {
+  function run(samples: SampleResult[]): ModelRun {
+    return {
+      provider: "ollama",
+      model: "qwen3:30b",
+      samples,
+      totals: total(samples),
+      by_origin: totalsByOrigin(samples),
+    };
+  }
+
+  it("says in words when every sample is synthetic, rather than repeating the total", () => {
+    const lines = formatModel(run([sample(), sample({ sample: "sample-02" })])).join("\n");
+    expect(lines).toContain("all 2 samples are synthetic");
+    expect(lines).toContain("written for it to find");
+    expect(lines).not.toMatch(/^ {2}synthetic\s+\d/m);
+  });
+
+  it("splits the total into a row per origin once the set holds both", () => {
+    const lines = formatModel(
+      run([sample(), sample({ sample: "sample-04", origin: "real" })]),
+    ).join("\n");
+    expect(lines).toMatch(/^ {2}real\s/m);
+    expect(lines).toMatch(/^ {2}synthetic\s/m);
+    expect(lines).toContain("1 sample, 1/1 must_find");
   });
 });
 

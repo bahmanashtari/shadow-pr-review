@@ -7,6 +7,7 @@ import {
   measureScript,
   scoreReview,
   total,
+  totalsByOrigin,
 } from "../../src/eval/score.js";
 import { readLabels } from "../../src/eval/run.js";
 import type { SampleResult } from "../../src/contracts/generated/eval.js";
@@ -52,6 +53,7 @@ function required(over: Partial<RequiredLabel> = {}): RequiredLabel {
 function labels(over: Partial<GoldenLabels> = {}): GoldenLabels {
   return {
     sample: "sample-test",
+    origin: "synthetic",
     must_find: [required()],
     acceptable: [],
     must_not_flag: [],
@@ -358,6 +360,7 @@ describe("total", () => {
   function sample(over: Partial<SampleResult["review"]>, seconds = 1): SampleResult {
     return {
       sample: "s",
+      origin: "synthetic",
       run_dir: "/tmp/s",
       cached: false,
       seconds,
@@ -481,6 +484,71 @@ describe("measureScript", () => {
     expect(result.narrated).toBe(false);
     expect(result.failure).toContain("71 words");
     expect(result.steps).toBeUndefined();
+  });
+});
+
+describe("totalsByOrigin", () => {
+  function sample(origin: SampleResult["origin"], over: Partial<SampleResult["review"]>) {
+    return {
+      sample: `s-${origin}`,
+      origin,
+      run_dir: "/tmp/s",
+      cached: false,
+      seconds: 1,
+      review: {
+        kept: 1,
+        max_findings: null,
+        within_budget: true,
+        precision: 1,
+        recall: 1,
+        found: [],
+        missed: [],
+        acceptable_found: [],
+        false_positives: [],
+        dropped: [],
+        ...over,
+      },
+      script: { narrated: true },
+    } satisfies SampleResult;
+  }
+
+  it("scores each origin on its own items rather than on the pooled ones", () => {
+    const real = sample("real", { kept: 2, found: [{ key: "a", finding_id: "F01" }], missed: [] });
+    const synthetic = sample("synthetic", {
+      kept: 2,
+      found: [{ key: "b", finding_id: "F01" }],
+      missed: ["c"],
+    });
+
+    const entries = totalsByOrigin([real, synthetic]);
+    expect(entries.map((e) => e.origin)).toEqual(["real", "synthetic"]);
+    expect(entries[0]?.recall).toBe(1);
+    expect(entries[0]?.must_find).toBe(1);
+    // Pooled recall is 2/3, which is the number this axis exists to stop anyone quoting as
+    // evidence about real code.
+    expect(entries[1]?.recall).toBe(0.5);
+    expect(total([real, synthetic]).recall).toBe(rounded(2 / 3));
+  });
+
+  it("gives an origin the set does not contain no entry at all", () => {
+    const entries = totalsByOrigin([sample("synthetic", {})]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.origin).toBe("synthetic");
+    expect(entries[0]?.samples).toBe(1);
+  });
+
+  it("produces entries the contract accepts", () => {
+    const report = buildReport("golden", [
+      {
+        provider: "ollama",
+        model: "qwen3:30b",
+        samples: [sample("real", {}), sample("synthetic", {})],
+        totals: total([sample("real", {}), sample("synthetic", {})]),
+        by_origin: totalsByOrigin([sample("real", {}), sample("synthetic", {})]),
+      },
+    ]);
+    const result = validateContract("eval", report);
+    expect(result.ok ? [] : result.errors).toEqual([]);
   });
 });
 

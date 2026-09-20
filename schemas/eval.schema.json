@@ -29,6 +29,12 @@
         "model": { "type": "string", "minLength": 1 },
         "samples": { "type": "array", "items": { "$ref": "#/$defs/SampleResult" } },
         "totals": { "$ref": "#/$defs/Totals" },
+        "by_origin": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/OriginTotals" },
+          "description": "`totals` partitioned into real and anonymized changes versus hand-written ones, with an entry only for an origin the set actually contains. A synthetic sample measures whether the model recognises a bug somebody wrote for it to find, which is a weaker claim than finding one that reached production, and the two must not be averaged into a single number that reads like the stronger claim."
+        },
         "failed": {
           "type": ["string", "null"],
           "description": "Why this model could not be scored in full. Its totals then cover only the samples that ran, and are not comparable with a complete row. One model breaking must not discard the others' measurements."
@@ -38,9 +44,13 @@
     "SampleResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sample", "run_dir", "cached", "review", "script"],
+      "required": ["sample", "origin", "run_dir", "cached", "review", "script"],
       "properties": {
         "sample": { "type": "string", "minLength": 1 },
+        "origin": {
+          "enum": ["real", "synthetic"],
+          "description": "Copied from the sample's labels.json, so a report can be read years later without the golden set beside it."
+        },
         "run_dir": { "type": "string", "minLength": 1 },
         "cached": {
           "type": "boolean",
@@ -240,6 +250,27 @@
           "minimum": 0,
           "description": "How many samples kept more findings than their max_findings allows."
         }
+      }
+    },
+    "OriginTotals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "samples", "precision", "recall", "must_find", "found", "kept"],
+      "properties": {
+        "origin": { "enum": ["real", "synthetic"] },
+        "samples": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many golden samples carry this origin. An origin with no samples has no entry at all, rather than an entry full of nulls."
+        },
+        "precision": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "recall": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "must_find": { "type": "integer", "minimum": 0 },
+        "found": { "type": "integer", "minimum": 0 },
+        "kept": { "type": "integer", "minimum": 0 },
+        "false_positives": { "type": "integer", "minimum": 0 },
+        "calibrated": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "miscalibrated": { "type": "integer", "minimum": 0 }
       }
     },
     "Severity": { "enum": ["critical", "high", "medium", "low"] }

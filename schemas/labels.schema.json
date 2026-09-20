@@ -5,12 +5,16 @@
   "description": "Contract for golden/<sample>/labels.json: the hand-written ground truth `spr eval` scores against. `must_find` items drive recall, `must_find` and `acceptable` together drive precision, and `must_not_flag` names the mistakes this sample exists to catch. Code-level validators must additionally enforce: line_end >= line_start, keys are unique within a sample, and `sample` matches the folder name.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sample", "must_find", "acceptable", "must_not_flag"],
+  "required": ["sample", "origin", "must_find", "acceptable", "must_not_flag"],
   "properties": {
     "sample": {
       "type": "string",
       "minLength": 1,
       "description": "The sample folder's name, for example sample-01-order-outbox."
+    },
+    "origin": {
+      "enum": ["real", "synthetic"],
+      "description": "Where the change came from. `real` is an anonymized change from a service that actually runs; `synthetic` is written from a known bug pattern. Required rather than optional and defaulted, because the whole point is that nobody reads a synthetic score as evidence about production code, and a field that can be forgotten would be forgotten on exactly the sample where it matters. `spr eval` totals the two separately."
     },
     "must_find": {
       "type": "array",

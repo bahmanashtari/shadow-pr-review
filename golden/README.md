@@ -13,9 +13,29 @@ persistence code with your real patterns; the labels stay the same.
 | File | Purpose |
 |---|---|
 | `diff.patch` | The change under review (unified diff, `git apply`-able). |
-| `labels.json` | Ground truth for evals: issues that MUST be found and things that MUST NOT be flagged. Validates against `schemas/labels.schema.json`. |
+| `labels.json` | Ground truth for evals: issues that MUST be found and things that MUST NOT be flagged, and where the change came from. Validates against `schemas/labels.schema.json`. |
 | `review.expected.json` | An ideal `review.json` (after the Verifier). Validates against `schemas/review.schema.json`. |
 | `script.expected.json` | An ideal `script.json`. Validates against `schemas/script.schema.json`. |
+
+## Real and synthetic samples
+
+Every `labels.json` must say `"origin": "real"` or `"origin": "synthetic"`, and `spr eval`
+totals the two separately.
+
+A **synthetic** sample is written from a known bug pattern by whoever is building the tool. It
+measures whether the Reviewer recognises a bug somebody put there for it to find. A **real**
+sample is an anonymized change from a service that actually runs, and its bug is one that a
+person had to catch - or did not. Only the second supports a claim about production code, so the
+two are never averaged into one rate that would read like the stronger claim.
+
+The field is required rather than optional-and-defaulted on purpose: a flag that can be left off
+gets left off, and the sample it is forgotten on is exactly the one whose score somebody quotes.
+
+Anonymising a real change means renaming services, bounded contexts, tables, columns, event
+names, config keys, hosts, people and ticket ids, and removing comments that describe the
+business. What must survive is the shape of the code, because that is what is being measured.
+This repository is public, and git keeps what it is given, so a sample is reviewed before it is
+committed rather than after.
 
 ## How to score
 
@@ -54,6 +74,8 @@ persistence code with your real patterns; the labels stay the same.
 checks every sample.
 
 ## Samples
+
+All three are synthetic. Real ones are Milestone 3 step 4.
 
 1. `sample-01-order-outbox`: event published inside a DB transaction (no outbox),
    application layer coupled to TypeORM, untyped event contract.

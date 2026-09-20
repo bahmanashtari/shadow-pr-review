@@ -1732,3 +1732,51 @@ cards for `--diff` runs; the frame-step scope of ADR-038's severity rule; and th
 wrap-up band in ADR-039 and `docs/NARRATION_STYLE.md`. A truncated diff used to be disclosed "in
 the intro" (ARCHITECTURE section 3's trigger table); that disclosure moves to the pull-request
 comment, which Milestone 4 step 2 will write.
+
+## ADR-043: A sample says where it came from (proposed, September 2026)
+
+**Status: proposed.** It implements the recommendation this session put to Bahman as Q2 of
+`docs/plans/m3-step4-golden-set.md`, and was built ahead of his answer so the field exists
+before the first real sample rather than after it. It becomes accepted when he confirms the
+shape; the alternative he may prefer is at the end.
+
+**Context.** Milestone 3 step 4 adds real, anonymized changes from the team's services to a
+golden set that currently holds three hand-written ones. The plan proposed a `"synthetic": true`
+field in `labels.json` so `spr eval` can report the two kinds separately, and the reason it gave
+is the one that matters: nobody should later read a synthetic 1.000 as evidence about production
+code.
+
+**A synthetic sample measures a weaker thing, and the difference is not a detail.** It asks
+whether the Reviewer recognises a bug that somebody wrote for it to find. A real change asks
+whether it finds a bug that got past a person and shipped. ADR-026 is the standing warning:
+three of four models tied at 1.000 on this set, which was not four good models but a benchmark
+that had run out of discrimination, and every sample in it was written by the same hand that
+wrote the rubric.
+
+**The decision: a required `origin` of `real` or `synthetic` on every `labels.json`**, copied
+into each `SampleResult` in `eval.json`, with `spr eval` totalling the origins separately in
+`by_origin` beside the pooled `totals`.
+
+**Required, rather than the plan's optional boolean.** With an optional `"synthetic": true`, the
+absent field has to mean something, and the only available meaning is "real" - so forgetting it
+promotes a sample rather than demoting one. The failure is silent, and it lands on exactly the
+sample whose number somebody quotes. A required enum cannot be forgotten: the schema refuses the
+file, and the three existing samples had to be marked `synthetic` to keep validating, which is
+the correct answer for all three.
+
+**An origin with no samples gets no entry**, rather than an entry full of nulls, so a set that is
+entirely one kind says so by omission. The printed report then says it in words - *all 3 samples
+are synthetic: these rates say the model finds bugs written for it to find, which is a weaker
+claim than finding one that shipped* - because a `synthetic` row identical to the `TOTAL` row
+invites the reader to compare two numbers that are the same number. Once both kinds are present
+the prose is replaced by a row each, sharing the total's columns.
+
+**Consequences.** `golden/README.md` gains the anonymisation rules the first real sample will be
+held to, and names the constraint that makes them matter: this repository is public, and git
+keeps what it is given, so a sample is reviewed before it is committed rather than after.
+Nothing about scoring changes - `total` is unmoved and `totalsByOrigin` is the same arithmetic
+over a partition - so no existing number in ADR-026, ADR-036 or ADR-041 shifts.
+
+**If Bahman prefers the plan's optional boolean**, the change is small: make the field optional,
+default the absent case, and delete the three markings. The argument against is only the silent
+failure above, and it is his call which way that trade falls.

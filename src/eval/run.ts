@@ -25,7 +25,7 @@ import { StageError } from "../lib/errors.js";
 import { createProvider } from "../providers/llm/create.js";
 import { runVerify, writeVerifiedReview } from "../verify/verify.js";
 import { judgeFindings } from "../agents/verifier.js";
-import { buildReport, measureScript, scoreReview, total } from "./score.js";
+import { buildReport, measureScript, scoreReview, total, totalsByOrigin } from "./score.js";
 
 /** Input for {@link runEval}. */
 export interface RunEvalOptions {
@@ -168,6 +168,7 @@ async function evaluateSample(
 
   return {
     sample,
+    origin: labels.origin,
     run_dir: runDir,
     cached: calls.length > 0 && calls.every((c) => c.cached),
     seconds: Math.round((Date.now() - started) / 100) / 10,
@@ -218,6 +219,7 @@ export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
       model,
       samples: results,
       totals: total(results),
+      by_origin: totalsByOrigin(results),
       ...(failed === undefined ? {} : { failed }),
     });
   }

@@ -28,6 +28,10 @@ export interface GoldenLabels {
    */
   sample: string;
   /**
+   * Where the change came from. `real` is an anonymized change from a service that actually runs; `synthetic` is written from a known bug pattern. Required rather than optional and defaulted, because the whole point is that nobody reads a synthetic score as evidence about production code, and a field that can be forgotten would be forgotten on exactly the sample where it matters. `spr eval` totals the two separately.
+   */
+  origin: "real" | "synthetic";
+  /**
    * Issues the Reviewer must report. An empty list is meaningful: the sample tests restraint, and its recall is undefined rather than zero.
    */
   must_find: RequiredLabel[];

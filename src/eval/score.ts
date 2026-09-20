@@ -11,6 +11,7 @@ import type {
   FalsePositive,
   Match,
   Miscalibration,
+  OriginTotals,
   ReviewScore,
   ScriptResult,
   SampleResult,
@@ -27,6 +28,9 @@ import type { NarrationScript } from "../contracts/generated/script.js";
 
 /** A label that names a place in the diff: everything but `must_not_flag`. */
 type PlacedLabel = RequiredLabel | AcceptableLabel;
+
+/** Where a sample's change came from. Taken from the contract rather than restated here. */
+type Origin = SampleResult["origin"];
 
 /** Rates are reported to three decimals; more is noise in a report a person reads. */
 function rate(numerator: number, denominator: number): number | null {
@@ -270,6 +274,40 @@ export function total(samples: readonly SampleResult[]): Totals {
     narrated,
     over_budget: overBudget,
   };
+}
+
+/**
+ * The same arithmetic as {@link total}, once per origin the set contains.
+ *
+ * A synthetic sample asks whether the model recognises a bug somebody wrote for it to find; a
+ * real one asks whether it finds a bug that reached production. The second is the claim this
+ * tool is for, and averaging the two produces a number that reads like it while resting on the
+ * first. An origin with no samples gets no entry rather than an entry full of nulls, so a set
+ * that is entirely one kind says so by omission instead of by a row of dashes.
+ */
+export function totalsByOrigin(samples: readonly SampleResult[]): OriginTotals[] {
+  const origins: Origin[] = ["real", "synthetic"];
+  const entries: OriginTotals[] = [];
+
+  for (const origin of origins) {
+    const mine = samples.filter((s) => s.origin === origin);
+    if (mine.length === 0) continue;
+    const t = total(mine);
+    entries.push({
+      origin,
+      samples: mine.length,
+      precision: t.precision,
+      recall: t.recall,
+      must_find: t.must_find,
+      found: t.found,
+      kept: t.kept,
+      false_positives: t.false_positives,
+      calibrated: t.calibrated ?? null,
+      miscalibrated: t.miscalibrated ?? 0,
+    });
+  }
+
+  return entries;
 }
 
 /** Builds the report written to `eval.json`. */

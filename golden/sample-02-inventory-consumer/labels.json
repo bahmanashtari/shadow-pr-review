@@ -1,5 +1,6 @@
 {
   "sample": "sample-02-inventory-consumer",
+  "origin": "synthetic",
   "must_find": [
     {
       "key": "non-idempotent-consumer",
