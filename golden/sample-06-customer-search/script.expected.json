@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "language": "en-US",
+  "steps": [
+    {
+      "id": "S00",
+      "finding_id": "F01",
+      "text": "This is critical. The search term the caller sends is pasted straight into the SQL statement, so a quote character ends the text and whatever follows runs against the database with the service's own privileges. That is the customer table, so treat it as a full export of personal data. Bind the term as a parameter instead.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+        "side": "new",
+        "line_start": 13,
+        "line_end": 16
+      },
+      "estimated_seconds": 21.9
+    },
+    {
+      "id": "S01",
+      "finding_id": "F02",
+      "text": "A high severity problem in the controller. The route just above this one requires authentication and the new search route does not, so anybody who can reach the service can look up customers by name without signing in. Move the guard onto the controller so every route is covered unless somebody deliberately writes an exception.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/customer-service/src/interface/http/customer.controller.ts",
+        "side": "new",
+        "line_start": 15,
+        "line_end": 17
+      },
+      "estimated_seconds": 21.2
+    },
+    {
+      "id": "S02",
+      "finding_id": "F03",
+      "text": "A medium severity point about what comes back. The query selects every column and the response passes it through untouched, so all the personal data in the table goes to the caller, and any column added later joins it silently. Name the columns you need, and add a limit while you are there.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+        "side": "new",
+        "line_start": 15,
+        "line_end": 15
+      },
+      "estimated_seconds": 20.4
+    }
+  ]
+}

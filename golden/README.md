@@ -12,7 +12,7 @@ persistence code with your real patterns; the labels stay the same.
 
 | File | Purpose |
 |---|---|
-| `diff.patch` | The change under review (unified diff, `git apply`-able). |
+| `diff.patch` | The change under review, as a unified diff. A sample that adds files applies to an empty tree; one that modifies them is a diff against code that does not live here, so it parses and scores but does not apply. |
 | `labels.json` | Ground truth for evals: issues that MUST be found and things that MUST NOT be flagged, and where the change came from. Validates against `schemas/labels.schema.json`. |
 | `review.expected.json` | An ideal `review.json` (after the Verifier). Validates against `schemas/review.schema.json`. |
 | `script.expected.json` | An ideal `script.json`. Validates against `schemas/script.schema.json`. |
@@ -75,7 +75,7 @@ checks every sample.
 
 ## Samples
 
-All three are synthetic. Real ones are Milestone 3 step 4.
+All seven are synthetic. Real ones are still owed - see Milestone 3 step 4 in the roadmap.
 
 1. `sample-01-order-outbox`: event published inside a DB transaction (no outbox),
    application layer coupled to TypeORM, untyped event contract.
@@ -83,3 +83,18 @@ All three are synthetic. Real ones are Milestone 3 step 4.
    unsafe NOT NULL migration, empty `down()`.
 3. `sample-03-email-value-object`: a mostly clean change. Tests restraint: one low
    finding only, plus a false positive the Verifier must drop.
+4. `sample-04-payment-webhook`: an unsigned payment webhook that credits a wallet, and
+   credits it again on every redelivery while the event id sits unused in the payload.
+5. `sample-05-summary-projection`: a read model that double counts on replay, and a
+   migration that drops a column outright. No analyzer fires here, so both required
+   findings are the model's to earn.
+6. `sample-06-customer-search`: SQL built by interpolation, and a new route left without
+   the guard its neighbour carries. The only sample whose diff modifies files rather than
+   adding them, so the authorization problem is visible only in a context line.
+7. `sample-07-retry-backoff`: a good change with one subtle remark (no jitter) and two
+   tempting wrong answers. The harder restraint test of the two.
+
+Three samples carry a redelivery or replay bug as a `must_find` - 2, 4 and 5 - deliberately in
+different shapes: a broker consumer, an HTTP webhook and a projection replay. ADR-041 found the
+Reviewer had never once reported one, and a single case could not say whether that was a blind
+spot or an accident.

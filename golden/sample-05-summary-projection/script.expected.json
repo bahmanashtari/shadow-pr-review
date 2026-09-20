@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "language": "en-US",
+  "steps": [
+    {
+      "id": "S00",
+      "finding_id": "F01",
+      "text": "This one is critical. The migration drops the legacy total column as soon as it runs, and nothing in this change copies those values anywhere first. The moment it reaches production that data is gone, and the only way back is a database restore. Stop reading the column in this release and drop it in the next one.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+        "side": "new",
+        "line_start": 4,
+        "line_end": 7
+      },
+      "estimated_seconds": 22.3
+    },
+    {
+      "id": "S01",
+      "finding_id": "F02",
+      "text": "A high severity problem in the projection. It adds one to the order count and adds to revenue every single time it handles an event, and keeps no record of which events it has already applied. Replays happen, both from retries and when a read model is rebuilt, and every replay pushes the totals further above the truth.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/reporting-service/src/infrastructure/projections/order-summary.projection.ts",
+        "side": "new",
+        "line_start": 10,
+        "line_end": 17
+      },
+      "estimated_seconds": 22.3
+    },
+    {
+      "id": "S02",
+      "finding_id": "F03",
+      "text": "Worth a quick low severity note. The rollback does add the column back, so this is not a migration that cannot be reverted. What it cannot bring back is the contents, so every restored row is empty. Anyone rolling back expecting the old reports to work should know that.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+        "side": "new",
+        "line_start": 10,
+        "line_end": 13
+      },
+      "estimated_seconds": 18.8
+    }
+  ]
+}

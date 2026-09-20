@@ -1,0 +1,64 @@
+{
+  "sample": "sample-06-customer-search",
+  "origin": "synthetic",
+  "must_find": [
+    {
+      "key": "sql-injection",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "line_start": 13,
+      "line_end": 16,
+      "category": "security",
+      "min_severity": "critical",
+      "max_severity": "critical",
+      "description": "The search term is interpolated into the SQL string, so the caller can run arbitrary statements."
+    },
+    {
+      "key": "missing-authorization",
+      "file": "services/customer-service/src/interface/http/customer.controller.ts",
+      "line_start": 15,
+      "line_end": 17,
+      "category": "security",
+      "accept_categories": [
+        "privacy"
+      ],
+      "min_severity": "medium",
+      "max_severity": "high",
+      "description": "The new search route carries no guard, while the route beside it in the same controller does."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "select-star-returns-pii",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "line_start": 15,
+      "line_end": 15,
+      "category": "privacy",
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "Every column of the customer table is selected and returned, so personal data leaves the service and a future column joins the response on its own."
+    },
+    {
+      "key": "unbounded-result-set",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "line_start": 15,
+      "line_end": 15,
+      "category": "performance",
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "The query has no limit, so a common term returns the whole table."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "raw-sql-in-repository",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "description": "Objecting to raw SQL inside a repository in the infrastructure layer. That is where raw SQL belongs; the problem here is the interpolation, not the SQL."
+    },
+    {
+      "key": "missing-trigram-index",
+      "description": "Demanding an index for the pattern match. Nothing in the diff shows the table's indexes, so this is a guess about code that was not provided."
+    }
+  ],
+  "max_findings": 4,
+  "notes": "The first sample whose diff modifies files rather than adding them, which matters because the authorization finding is only visible in a context line: the guard on the route above is unchanged, so a reviewer that reads added lines alone cannot see the asymmetry. Also the set's only injection case, and its strictest band - critical only, because rating this anything less is a calibration failure rather than a judgement call."
+}

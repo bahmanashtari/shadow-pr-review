@@ -1,0 +1,67 @@
+{
+  "sample": "sample-04-payment-webhook",
+  "origin": "synthetic",
+  "must_find": [
+    {
+      "key": "webhook-signature-not-verified",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 15,
+      "line_end": 18,
+      "category": "security",
+      "min_severity": "high",
+      "max_severity": "critical",
+      "description": "The endpoint credits a wallet from an unauthenticated request body; the provider's webhook signature is never verified."
+    },
+    {
+      "key": "webhook-not-idempotent",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 16,
+      "line_end": 18,
+      "category": "idempotency",
+      "accept_categories": [
+        "correctness"
+      ],
+      "min_severity": "high",
+      "max_severity": "high",
+      "description": "A retried webhook credits the wallet a second time; the eventId in the payload is never used to deduplicate."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "money-as-float",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 7,
+      "line_end": 7,
+      "category": "correctness",
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "Amount is a JSON number, so money is handled in floating point."
+    },
+    {
+      "key": "payload-not-validated",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 4,
+      "line_end": 7,
+      "category": "api-contract",
+      "description": "The body is a local interface with no runtime validation, so any shape that parses as JSON reaches the wallet."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "missing-auth-guard",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "category": "security",
+      "description": "Demanding a JWT or session guard on a provider webhook. The provider cannot present a user credential; signature verification is the control that fits, and it is already required by webhook-signature-not-verified."
+    },
+    {
+      "key": "controller-in-interface-layer",
+      "description": "Calling an HTTP controller in the interface layer a DDD violation. That is where a controller belongs."
+    },
+    {
+      "key": "synchronous-credit",
+      "description": "Insisting the webhook enqueue the credit instead of doing it inline. A design preference, and not what makes this handler unsafe."
+    }
+  ],
+  "max_findings": 4,
+  "notes": "The redelivery blind spot (ADR-041) in a different shape from sample-02: an HTTP webhook rather than a broker consumer, with the deduplication key sitting unused in the payload. Also carries the set's second critical-severity label, so over-rating and under-rating both have somewhere to show."
+}

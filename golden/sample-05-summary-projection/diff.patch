@@ -1,0 +1,46 @@
+diff --git a/services/reporting-service/src/infrastructure/projections/order-summary.projection.ts b/services/reporting-service/src/infrastructure/projections/order-summary.projection.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/services/reporting-service/src/infrastructure/projections/order-summary.projection.ts
+@@ -0,0 +1,19 @@
++import { EventsHandler, IEventHandler } from '@nestjs/cqrs';
++import { InjectDataSource } from '@nestjs/typeorm';
++import { DataSource } from 'typeorm';
++import { OrderPlacedEvent } from '../../domain/events/order-placed.event';
++
++@EventsHandler(OrderPlacedEvent)
++export class OrderSummaryProjection implements IEventHandler<OrderPlacedEvent> {
++  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
++
++  async handle(event: OrderPlacedEvent): Promise<void> {
++    await this.dataSource.query(
++      `UPDATE order_summary
++          SET orders = orders + 1,
++              revenue = revenue + $2
++        WHERE customer_id = $1`,
++      [event.customerId, event.total],
++    );
++  }
++}
+diff --git a/services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts b/services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts
+@@ -0,0 +1,15 @@
++import { MigrationInterface, QueryRunner } from 'typeorm';
++
++export class DropLegacyTotal1726500000000 implements MigrationInterface {
++  public async up(queryRunner: QueryRunner): Promise<void> {
++    await queryRunner.query(
++      `ALTER TABLE "order_summary" DROP COLUMN "legacy_total"`,
++    );
++  }
++
++  public async down(queryRunner: QueryRunner): Promise<void> {
++    await queryRunner.query(
++      `ALTER TABLE "order_summary" ADD COLUMN "legacy_total" integer`,
++    );
++  }
++}

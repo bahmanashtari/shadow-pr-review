@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "language": "en-US",
+  "steps": [
+    {
+      "id": "S00",
+      "finding_id": "F01",
+      "text": "The change itself is in good shape, so there is one low severity remark. The delay depends only on the attempt number, which means every client that failed at the same moment comes back at the same moment, and a dependency that has just recovered gets the whole fleet at once. Multiplying by a random factor spreads them out.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/shared/src/messaging/retry-policy.ts",
+        "side": "new",
+        "line_start": 19,
+        "line_end": 19
+      },
+      "estimated_seconds": 22.7
+    }
+  ]
+}

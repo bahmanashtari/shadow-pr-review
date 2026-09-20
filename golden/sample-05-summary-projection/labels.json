@@ -1,0 +1,68 @@
+{
+  "sample": "sample-05-summary-projection",
+  "origin": "synthetic",
+  "must_find": [
+    {
+      "key": "column-dropped-without-backfill",
+      "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+      "line_start": 4,
+      "line_end": 7,
+      "category": "data-migration",
+      "accept_categories": [
+        "correctness"
+      ],
+      "min_severity": "high",
+      "max_severity": "critical",
+      "description": "DROP COLUMN destroys the legacy total on deploy, with nothing copied out first."
+    },
+    {
+      "key": "projection-double-counts-on-replay",
+      "file": "services/reporting-service/src/infrastructure/projections/order-summary.projection.ts",
+      "line_start": 10,
+      "line_end": 17,
+      "category": "idempotency",
+      "accept_categories": [
+        "correctness"
+      ],
+      "min_severity": "high",
+      "max_severity": "high",
+      "description": "The projection increments on every delivery and tracks no applied events, so a redelivery or a replay inflates the totals."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "down-restores-schema-not-data",
+      "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+      "line_start": 10,
+      "line_end": 13,
+      "category": "data-migration",
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "down() adds the column back empty, so a rollback is structural only."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "irreversible-migration",
+      "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+      "category": "data-migration",
+      "description": "Claiming the migration has no down or cannot be reverted. It has one and it restores the column; what it cannot restore is the data, which is a different and more precise point."
+    },
+    {
+      "key": "migration-fails-on-existing-rows",
+      "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
+      "category": "data-migration",
+      "description": "Claiming DROP COLUMN fails when the table already has rows. It does not - that is the NOT NULL rule from sample-02, applied to a different statement. The real problem is that the drop succeeds and takes the data with it."
+    },
+    {
+      "key": "eventual-consistency",
+      "description": "Treating the read model lagging behind the write model as a defect. That is the design of a projection, not a bug in it."
+    },
+    {
+      "key": "raw-sql-in-projection",
+      "description": "Demanding the ORM's query builder instead of raw SQL inside an infrastructure adapter. The rubric allows raw SQL there."
+    }
+  ],
+  "max_findings": 4,
+  "notes": "The second redelivery case, deliberately unlike sample-02 and sample-04: no broker retry in sight, the replay that rebuilds a read model is the trigger, and the damage is a wrong number rather than wrong stock. Also the set's first sample where the tempting wrong answer is stated as a must_not_flag - the migration does have a down(), and saying it does not is a more attractive finding than the true one. No deterministic analyzer fires anywhere in this sample, so both must_find items are the model's to earn: the projection sits in infrastructure, where using the ORM is correct, and the migration neither adds a NOT NULL column nor leaves down() empty."
+}

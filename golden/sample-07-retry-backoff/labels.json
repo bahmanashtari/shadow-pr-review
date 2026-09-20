@@ -1,0 +1,39 @@
+{
+  "sample": "sample-07-retry-backoff",
+  "origin": "synthetic",
+  "must_find": [],
+  "acceptable": [
+    {
+      "key": "no-jitter",
+      "file": "services/shared/src/messaging/retry-policy.ts",
+      "line_start": 15,
+      "line_end": 19,
+      "category": "correctness",
+      "accept_categories": [
+        "concurrency",
+        "performance"
+      ],
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "The delay is deterministic, so every client that failed together retries together after an outage."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "off-by-one-attempt-budget",
+      "file": "services/shared/src/messaging/retry-policy.ts",
+      "category": "correctness",
+      "description": "Claiming the comparison should be greater-than rather than greater-or-equal. The doc comment says attempt counts attempts already made, and the tests pin the behaviour: five attempts are allowed and the sixth stops."
+    },
+    {
+      "key": "magic-numbers",
+      "description": "Asking for the delays to be pulled out of the file. They are already named constants at the top of it."
+    },
+    {
+      "key": "missing-tests",
+      "description": "Tests are part of this change, and they cover all three behaviours."
+    }
+  ],
+  "max_findings": 1,
+  "notes": "The second restraint sample, and a harder one than sample-03: the change is genuinely good, the one defensible remark is subtle, and the two most tempting wrong answers - an off-by-one that the tests disprove and magic numbers that are already extracted - are both stated as must_not_flag. A run that says nothing here scores as well on precision as one that finds the jitter point, and only acceptable_found tells them apart."
+}

@@ -1,9 +1,20 @@
 # Plan: Milestone 3, step 4 (a golden set that can tell things apart)
 
-Status: proposed, written at the end of the session that built Milestone 3 steps 1 and 6 to 12,
-so the next session can put its questions to Bahman and start rather than reconstruct why this is
-next. Read CLAUDE.md, docs/ROADMAP.md, `golden/README.md`, and ADR-025, ADR-026, ADR-036 and
-ADR-041 first. **Do not rewrite this plan; amend its status when it is approved.**
+Status: **approved with changes, 19 September 2026**, having been written at the end of the
+session that built Milestone 3 steps 1 and 6 to 12. Bahman answered the three questions in
+section 3:
+
+- **Q1: not this session.** The real changes from his team's services are not available yet, so
+  the step takes the Q2 fallback and adds hand-written samples marked `synthetic`. The samples
+  the roadmap actually wants are still owed, and adding synthetic ones does not discharge that -
+  what they buy is a set large enough to show whether the redelivery blind spot moves.
+- **Q2: approved, in the stronger shape.** `origin` is a *required* enum of `real` or
+  `synthetic` rather than the optional `"synthetic": true` this plan proposed, because an absent
+  optional flag has to mean "real" and so forgetting it promotes a sample silently. ADR-043.
+- **Q3: approved.** Taken first, as its own commit (c35dd99), since it depends on nothing else.
+
+Read CLAUDE.md, docs/ROADMAP.md, `golden/README.md`, and ADR-025, ADR-026, ADR-036 and ADR-041
+first. **Do not rewrite this plan**; its body is the record of why this step is next.
 
 ## 1. Why this is next
 

@@ -1,0 +1,46 @@
+diff --git a/services/customer-service/src/interface/http/customer.controller.ts b/services/customer-service/src/interface/http/customer.controller.ts
+index 1a2b3c4..5d6e7f8 100644
+--- a/services/customer-service/src/interface/http/customer.controller.ts
++++ b/services/customer-service/src/interface/http/customer.controller.ts
+@@ -2,13 +2,18 @@
+ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+ import { CustomerRepository } from '../../infrastructure/persistence/customer.repository';
+ 
+ @Controller('customers')
+ export class CustomerController {
+   constructor(private readonly customers: CustomerRepository) {}
+ 
+   @UseGuards(JwtAuthGuard)
+   @Get(':id')
+   async byId(@Param('id') id: string) {
+     return this.customers.findById(id);
+   }
++
++  @Get('search')
++  async search(@Query('q') q: string) {
++    return this.customers.searchByName(q);
++  }
+ }
+diff --git a/services/customer-service/src/infrastructure/persistence/customer.repository.ts b/services/customer-service/src/infrastructure/persistence/customer.repository.ts
+index 1a2b3c4..5d6e7f8 100644
+--- a/services/customer-service/src/infrastructure/persistence/customer.repository.ts
++++ b/services/customer-service/src/infrastructure/persistence/customer.repository.ts
+@@ -1,12 +1,18 @@
+ import { Injectable } from '@nestjs/common';
+ import { DataSource } from 'typeorm';
+ import { CustomerEntity } from './customer.entity';
+ 
+ @Injectable()
+ export class CustomerRepository {
+   constructor(private readonly dataSource: DataSource) {}
+ 
+   async findById(id: string): Promise<CustomerEntity | null> {
+     return this.dataSource.getRepository(CustomerEntity).findOneBy({ id });
+   }
++
++  async searchByName(query: string): Promise<CustomerEntity[]> {
++    return this.dataSource.query(
++      `SELECT * FROM customer WHERE name ILIKE '%${query}%'`,
++    );
++  }
+ }

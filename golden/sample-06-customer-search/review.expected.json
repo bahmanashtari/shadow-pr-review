@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "pull_request",
+    "repo": "acme/shop-platform",
+    "pr_number": 218,
+    "ref": "feature/customer-search",
+    "base_sha": null,
+    "head_sha": null,
+    "title": "Add customer search by name"
+  },
+  "summary": "Adds a search endpoint and the repository method behind it. The term is interpolated into the SQL rather than bound, and the new route is the only one in its controller without an authentication guard, so an anonymous caller can query the customer table at will.",
+  "findings": [
+    {
+      "id": "F01",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "side": "new",
+      "line_start": 13,
+      "line_end": 16,
+      "severity": "critical",
+      "category": "security",
+      "summary": "Search term is interpolated straight into SQL",
+      "rationale": "The query string from the request is placed into the SQL text by template interpolation, so anything the caller types becomes part of the statement. A single quote ends the literal and everything after it runs with the application's database privileges: reading other tables, updating rows, or dropping them. The customer table holds personal data, so the cheapest version of this is a full export of it.",
+      "suggestion": "Pass the term as a bound parameter and let the driver escape it, keeping the pattern in the parameter rather than in the SQL: use a placeholder in the statement and pass the wrapped term in the values array. Parameter binding is not a style preference here; it is the only thing that separates the data from the statement.",
+      "confidence": 0.97,
+      "evidence": [
+        "`SELECT * FROM customer WHERE name ILIKE '%${query}%'`,"
+      ],
+      "verification": {
+        "status": "verified",
+        "note": "The term reaches the SQL through interpolation, with no binding anywhere."
+      }
+    },
+    {
+      "id": "F02",
+      "file": "services/customer-service/src/interface/http/customer.controller.ts",
+      "side": "new",
+      "line_start": 15,
+      "line_end": 17,
+      "severity": "high",
+      "category": "security",
+      "summary": "New endpoint has no guard, while its neighbour in the same controller does",
+      "rationale": "The route directly above this one carries an authentication guard and the new search route does not, so anyone who can reach the service can search the customer base without signing in. A lookup by id at least needs the id; a search by name returns whoever matches, which makes this the more useful of the two endpoints to an unauthenticated caller. The asymmetry within one controller also suggests it was overlooked rather than intended.",
+      "suggestion": "Put the same guard on the new route, or move it to the controller so every route is covered by default and an exception has to be written down deliberately. Class-level protection with explicit opt-outs is the safer default, because the failure mode of forgetting becomes a locked door rather than an open one.",
+      "confidence": 0.86,
+      "evidence": [
+        "@Get('search')",
+        "async search(@Query('q') q: string) {"
+      ],
+      "verification": {
+        "status": "verified"
+      }
+    },
+    {
+      "id": "F03",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "side": "new",
+      "line_start": 15,
+      "line_end": 15,
+      "severity": "medium",
+      "category": "privacy",
+      "summary": "Search returns whole customer rows to the caller",
+      "rationale": "The statement selects every column and the controller returns the result as it stands, so whatever the customer table holds goes over the wire: addresses, phone numbers, anything added to the table later. A column added for an unrelated feature silently becomes part of this response, and nobody reviewing that column's addition is likely to notice it.",
+      "suggestion": "Select the columns the search result actually needs and map them to a response type, so adding a column to the table cannot widen an existing response. There is no unbounded limit on the query either, so a common term can return the whole table in one response; a limit and an offset belong here too.",
+      "confidence": 0.78,
+      "evidence": [
+        "`SELECT * FROM customer WHERE name ILIKE '%${query}%'`,"
+      ],
+      "verification": {
+        "status": "verified"
+      }
+    }
+  ],
+  "dropped": [],
+  "stats": {
+    "files_reviewed": 2,
+    "files_skipped": []
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "language": "en-US",
+  "steps": [
+    {
+      "id": "S00",
+      "finding_id": "F01",
+      "text": "This is a critical security problem. The endpoint takes a customer and an amount from the request body and credits real money, and nothing checks who sent it. Anyone who finds the address can pay themselves. The provider signs every webhook it sends, so verify that signature over the raw body before touching the wallet.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+        "side": "new",
+        "line_start": 15,
+        "line_end": 18
+      },
+      "estimated_seconds": 21.2
+    },
+    {
+      "id": "S01",
+      "finding_id": "F02",
+      "text": "A high severity problem on the same handler. Payment providers retry a webhook when the response is slow or fails, so this capture will arrive twice sooner or later, and each arrival credits the wallet again. The event id is right there in the body, unused. Store it with a unique constraint and skip a delivery you have already seen.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+        "side": "new",
+        "line_start": 16,
+        "line_end": 18
+      },
+      "estimated_seconds": 23.1
+    },
+    {
+      "id": "S02",
+      "finding_id": "F03",
+      "text": "One small thing to note, and it is low severity. The amount is a plain number, so money is being added up in floating point and will drift off exact cents. Carry it as whole minor units instead, which is usually how the provider sends it anyway.",
+      "subtitle": null,
+      "focus": {
+        "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+        "side": "new",
+        "line_start": 7,
+        "line_end": 7
+      },
+      "estimated_seconds": 18.1
+    }
+  ]
+}

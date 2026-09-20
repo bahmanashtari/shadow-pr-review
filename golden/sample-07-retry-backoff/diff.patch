@@ -1,0 +1,50 @@
+diff --git a/services/shared/src/messaging/retry-policy.ts b/services/shared/src/messaging/retry-policy.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/services/shared/src/messaging/retry-policy.ts
+@@ -0,0 +1,20 @@
++const BASE_DELAY_MS = 200;
++const MAX_DELAY_MS = 30_000;
++const MAX_ATTEMPTS = 5;
++
++export interface RetryDecision {
++  retry: boolean;
++  delayMs: number;
++}
++
++/**
++ * Exponential backoff with a ceiling and a fixed attempt budget.
++ *
++ * `attempt` is the number of attempts already made, so the first retry is attempt 1.
++ */
++export function nextRetry(attempt: number): RetryDecision {
++  if (attempt >= MAX_ATTEMPTS) {
++    return { retry: false, delayMs: 0 };
++  }
++  return { retry: true, delayMs: Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS) };
++}
+diff --git a/services/shared/src/messaging/retry-policy.spec.ts b/services/shared/src/messaging/retry-policy.spec.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/services/shared/src/messaging/retry-policy.spec.ts
+@@ -0,0 +1,18 @@
++import { nextRetry } from './retry-policy';
++
++describe('nextRetry', () => {
++  it('doubles the delay with each attempt', () => {
++    expect(nextRetry(0).delayMs).toBe(200);
++    expect(nextRetry(1).delayMs).toBe(400);
++    expect(nextRetry(2).delayMs).toBe(800);
++  });
++
++  it('never exceeds the ceiling', () => {
++    expect(nextRetry(4).delayMs).toBe(3200);
++    expect(nextRetry(10).delayMs).toBe(30_000);
++  });
++
++  it('stops after the attempt budget', () => {
++    expect(nextRetry(5)).toEqual({ retry: false, delayMs: 0 });
++  });
++});

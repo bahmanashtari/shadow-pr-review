@@ -1733,12 +1733,12 @@ wrap-up band in ADR-039 and `docs/NARRATION_STYLE.md`. A truncated diff used to 
 the intro" (ARCHITECTURE section 3's trigger table); that disclosure moves to the pull-request
 comment, which Milestone 4 step 2 will write.
 
-## ADR-043: A sample says where it came from (proposed, September 2026)
+## ADR-043: A sample says where it came from (accepted, September 2026)
 
-**Status: proposed.** It implements the recommendation this session put to Bahman as Q2 of
-`docs/plans/m3-step4-golden-set.md`, and was built ahead of his answer so the field exists
-before the first real sample rather than after it. It becomes accepted when he confirms the
-shape; the alternative he may prefer is at the end.
+**Accepted.** It was built ahead of Bahman's answer, as the recommendation this session put to
+him as Q2 of `docs/plans/m3-step4-golden-set.md`, so the field would exist before the first real
+sample rather than after it. He took the recommendation - the required enum, not the plan's
+optional boolean - and the alternative is kept at the end as the record of what was weighed.
 
 **Context.** Milestone 3 step 4 adds real, anonymized changes from the team's services to a
 golden set that currently holds three hand-written ones. The plan proposed a `"synthetic": true`
@@ -1777,6 +1777,7 @@ keeps what it is given, so a sample is reviewed before it is committed rather th
 Nothing about scoring changes - `total` is unmoved and `totalsByOrigin` is the same arithmetic
 over a partition - so no existing number in ADR-026, ADR-036 or ADR-041 shifts.
 
-**If Bahman prefers the plan's optional boolean**, the change is small: make the field optional,
-default the absent case, and delete the three markings. The argument against is only the silent
-failure above, and it is his call which way that trade falls.
+**The alternative, for the record.** The plan's optional `"synthetic": true` would have meant
+making the field optional, defaulting the absent case, and marking nothing. It was put to Bahman
+with the argument above - the silent failure lands on exactly the sample whose number gets quoted
+- and he took the required enum instead.
