@@ -20,8 +20,8 @@
       "severity": "high",
       "category": "event-consistency",
       "summary": "Event is published inside the transaction, before commit, and is fire-and-forget",
-      "rationale": "broker.emit runs inside dataSource.transaction, so consumers can receive order.placed before the order row is committed, or for an order whose commit later fails. The result of emit is neither awaited nor error-handled, so a broker outage loses the event with no retry. This breaks consistency between order-service and its consumers.",
-      "suggestion": "Use a transactional outbox: insert an outbox row with the event in the same transaction as the order, and have a separate relay publish pending outbox rows after commit, marking them as sent. Consumers must then be idempotent.",
+      "rationale": "The emit call sits inside the dataSource.transaction callback, so order.placed is published before the transaction commits, and its result is neither awaited nor given an error handler. A subscriber can act on the event while the order row is still invisible to other connections, or after a commit that ultimately rolls back: stock is reserved and a confirmation sent for an order that order-service never saved. The fire-and-forget call also hides the opposite failure - if the broker is down, emit fails silently, the order commits, and no consumer ever hears about it.",
+      "suggestion": "Use a transactional outbox: write the event into an outbox table in the same transaction that saves the order, and let a separate relay publish committed rows and mark them sent. That makes publication as atomic as the write and survives a broker outage, at the cost of one more table, a relay process, and at-least-once delivery, so consumers must be idempotent. Short of that, at minimum await the emit and publish only after the transaction has returned.",
       "confidence": 0.93,
       "evidence": [
         "await this.dataSource.transaction(async (manager) => {",
@@ -38,8 +38,8 @@
       "severity": "medium",
       "category": "ddd-boundaries",
       "summary": "Application layer depends directly on TypeORM and the persistence entity",
-      "rationale": "The handler imports DataSource from typeorm and OrderEntity from the infrastructure layer, and performs the save itself. This couples the use case to the ORM, makes it hard to unit test without a database, and bypasses the aggregate's repository.",
-      "suggestion": "Define an OrderRepository port in the domain layer (for example save(order: Order)), implement it in infrastructure with TypeORM, and inject it by token. Handle the transaction (and outbox write) inside that implementation or a unit-of-work abstraction.",
+      "rationale": "The handler imports DataSource from typeorm and OrderEntity from the infrastructure layer and performs the save itself, so the application layer depends on the ORM and on a persistence detail instead of on the aggregate's repository. A schema or ORM change now reaches into use-case code, and this handler cannot be unit tested without a live database, which makes the test that would catch the publish-before-commit bug expensive to write. It also leaves no single place that owns the transaction, which is where the outbox write belongs.",
+      "suggestion": "Define an OrderRepository port in the domain layer - save(order: Order) - implement it in infrastructure with TypeORM, and inject it by token so the handler depends on the interface rather than on DataSource. Put the transaction, and the outbox write that goes with it, behind that implementation or a unit-of-work abstraction. The cost is one interface and one adapter per aggregate; the gain is a handler that can be tested against a fake.",
       "confidence": 0.85,
       "evidence": [
         "import { DataSource } from 'typeorm';",
@@ -56,8 +56,8 @@
       "severity": "low",
       "category": "api-contract",
       "summary": "Integration event has no shared, versioned contract",
-      "rationale": "The payload is an inline object literal published on a plain string pattern. Other services depend on this shape, but nothing types or versions it, and it carries no event id or timestamp that consumers could use for deduplication and ordering.",
-      "suggestion": "Define an OrderPlacedV1 contract in a shared contracts package, including eventId and occurredAt, and publish through a typed helper so producers and consumers compile against the same shape.",
+      "rationale": "The payload is an inline object literal published on the string 'order.placed', so nothing types or versions the contract that other services compile against. Adding or renaming a field here is invisible until a consumer deserializes it in production, where it surfaces as a missing property rather than a build failure. The payload also carries no event id or timestamp, so a consumer that wants to deduplicate redeliveries or order events has nothing to key on.",
+      "suggestion": "Declare an OrderPlacedV1 type in a shared contracts package, including eventId and occurredAt, and publish through a helper typed on it so producer and consumers break at compile time instead of at runtime. A shared package costs a release step whenever the contract changes, which is the point: the change becomes visible to everyone who depends on it.",
       "confidence": 0.72,
       "evidence": [
         "orderId: order.id,",

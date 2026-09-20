@@ -20,8 +20,8 @@
       "severity": "low",
       "category": "privacy",
       "summary": "Raw email address is included in the error message",
-      "rationale": "The DomainError message interpolates the user's input. Domain errors are commonly logged or returned to clients, so this can leak personal data into logs.",
-      "suggestion": "Use a generic message such as 'Invalid email address' and, if needed, attach a masked value or a field name instead of the raw input.",
+      "rationale": "The DomainError message interpolates raw, the address the caller supplied, so every rejected address is carried in the exception text. Errors of this kind are normally logged and are often returned to the client, which puts personal data into log storage that outlives the request and is read by people with no reason to see it. It is a small leak on one line, and the kind that spreads once the pattern is copied into the next value object.",
+      "suggestion": "Throw a constant message such as 'Invalid email address' and attach the field name rather than the value. If a concrete value genuinely helps debugging, mask it - j***@example.com - so the log says what shape of input failed without recording who it belonged to.",
       "confidence": 0.7,
       "evidence": [
         "throw new DomainError(`Invalid email address: ${raw}`);"

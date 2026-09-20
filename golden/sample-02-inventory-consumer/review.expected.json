@@ -20,8 +20,8 @@
       "severity": "high",
       "category": "data-migration",
       "summary": "NOT NULL column added without a default will fail on existing rows",
-      "rationale": "In PostgreSQL, adding a NOT NULL column with no default fails if stock_item already contains rows, because existing rows would hold NULL. This migration will pass on an empty dev database and fail in staging or production.",
-      "suggestion": "Add the column with DEFAULT 0 (fast in modern PostgreSQL for constant defaults), or add it nullable, backfill, then set NOT NULL in a follow-up migration.",
+      "rationale": "ALTER TABLE ... ADD COLUMN NOT NULL with no DEFAULT is rejected by PostgreSQL when stock_item already holds rows, because those rows would need a NULL in the new column. An empty development database has no rows, so this passes locally and fails the moment it runs against staging or production, where the migration aborts and takes the deploy with it. The service is then left on the old schema while code that expects reserved_quantity is already rolling out.",
+      "suggestion": "Add the column with DEFAULT 0 as well as NOT NULL, which PostgreSQL 11 and later apply without rewriting the table for a constant default. If the value cannot be a constant, use the nullable-then-backfill-then-enforce sequence: add it nullable, backfill in batches, then SET NOT NULL in a follow-up migration once every row has a value.",
       "confidence": 0.95,
       "evidence": [
         "ADD COLUMN \"reserved_quantity\" integer NOT NULL"
@@ -37,8 +37,8 @@
       "severity": "high",
       "category": "idempotency",
       "summary": "Consumer is not idempotent, so redelivered events decrement stock twice",
-      "rationale": "Brokers deliver at least once, so the same order.placed event can arrive more than once (retries, rebalances, restarts). The handler decrements stock every time it runs and never checks whether this orderId was already processed.",
-      "suggestion": "Record processed events (for example an inbox table keyed by eventId or orderId with a unique constraint) in the same transaction as the stock update, and skip events that are already recorded.",
+      "rationale": "Brokers deliver at least once, so the same order.placed event arrives again after a consumer restart, a partition rebalance, or an ack lost in flight. The handler decrements stock on every delivery and never records which orderId it has already processed, so a redelivered event subtracts the same quantity a second time. Stock on hand drifts below the true figure with nothing in the data to say why, and orders are refused for items that are physically in the warehouse.",
+      "suggestion": "Make the consumer idempotent with an inbox table keyed by eventId - or by orderId here - with a unique constraint, written in the same transaction as the decrement, so a duplicate delivery hits the constraint and the handler returns without touching stock. That requires the producer to put a stable id on the event, which is the other half of the same fix. The cost is one insert per event, and it is what makes at-least-once delivery safe.",
       "confidence": 0.92,
       "evidence": [
         "@EventPattern('order.placed')",
@@ -55,8 +55,8 @@
       "severity": "medium",
       "category": "concurrency",
       "summary": "Per-item decrements are not atomic across the order",
-      "rationale": "Each item is decremented in its own call. If a later item fails (for example insufficient stock), earlier items stay decremented, and a redelivery applies them again. Stock ends up inconsistent with the order.",
-      "suggestion": "Move the loop into a single application-service method that updates all items in one transaction, ideally with row locks or a conditional update (quantity >= requested), and emits a failure event if any item cannot be reserved.",
+      "rationale": "Each item is decremented in its own call with no transaction around the loop, so the batch is not atomic. If a later item fails - insufficient stock, a lost connection - the earlier items stay decremented while the event is nacked, leaving stock reserved for an order that was never fully reserved. The redelivery that follows starts the loop at the first item again and compounds the drift.",
+      "suggestion": "Move the loop into a single application-service method that updates every item in one transaction, using a conditional update (quantity >= requested) or row locks so concurrent orders cannot oversell the same SKU. If any item cannot be reserved, roll the transaction back and publish a reservation-failed event rather than leaving the order half reserved.",
       "confidence": 0.8,
       "evidence": [
         "for (const item of event.items) {"
@@ -72,8 +72,8 @@
       "severity": "low",
       "category": "data-migration",
       "summary": "Empty down() makes the migration irreversible",
-      "rationale": "down() does nothing, so reverting this migration leaves the column in place and the migration history out of sync with the schema.",
-      "suggestion": "Drop the column in down(): ALTER TABLE \"stock_item\" DROP COLUMN \"reserved_quantity\".",
+      "rationale": "down() has an empty body, so reverting this migration reports success while leaving reserved_quantity in place. The schema and the migrations table are then out of step, and the next deploy that re-applies the migration fails on a column that already exists. This only affects rollbacks, not the forward deploy.",
+      "suggestion": "Drop the column in down(): ALTER TABLE \"stock_item\" DROP COLUMN \"reserved_quantity\". A reversible migration is what lets a bad release be rolled back in one step, instead of by hand at the worst possible moment.",
       "confidence": 0.9,
       "evidence": [
         "public async down(queryRunner: QueryRunner): Promise<void> {}"
