@@ -203,8 +203,8 @@
       "required": ["narrated"],
       "properties": {
         "narrated": {
-          "type": "boolean",
-          "description": "False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues."
+          "type": ["boolean", "null"],
+          "description": "False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues. Null when the verified review kept no findings, so there was nothing to narrate: making no script is the correct outcome for a clean review (ADR-042), and on a restraint sample often the best one, so it is neither a script made nor one that failed."
         },
         "failure": { "type": ["string", "null"] },
         "steps": { "type": "integer", "minimum": 0 },
@@ -248,7 +248,16 @@
           "description": "How many matched findings fell outside their band, over every sample."
         },
         "seconds": { "type": "number", "minimum": 0 },
-        "narrated": { "type": "integer", "minimum": 0 },
+        "narrated": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many samples the Narrate stage produced a script for."
+        },
+        "narratable": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many samples kept at least one finding, and so had something to narrate: `narrated`'s denominator. A sample that kept nothing is left out rather than counted as a script that was not made, because making none is the correct outcome for it (ADR-042)."
+        },
         "over_budget": {
           "type": "integer",
           "minimum": 0,

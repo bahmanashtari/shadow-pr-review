@@ -142,9 +142,9 @@ export interface Miscalibration {
 }
 export interface ScriptResult {
   /**
-   * False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues.
+   * False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues. Null when the verified review kept no findings, so there was nothing to narrate: making no script is the correct outcome for a clean review (ADR-042), and on a restraint sample often the best one, so it is neither a script made nor one that failed.
    */
-  narrated: boolean;
+  narrated: boolean | null;
   failure?: string | null;
   steps?: number;
   words?: number;
@@ -171,7 +171,14 @@ export interface Totals {
    */
   miscalibrated?: number;
   seconds: number;
+  /**
+   * How many samples the Narrate stage produced a script for.
+   */
   narrated?: number;
+  /**
+   * How many samples kept at least one finding, and so had something to narrate: `narrated`'s denominator. A sample that kept nothing is left out rather than counted as a script that was not made, because making none is the correct outcome for it (ADR-042).
+   */
+  narratable?: number;
   /**
    * How many samples kept more findings than their max_findings allows.
    */

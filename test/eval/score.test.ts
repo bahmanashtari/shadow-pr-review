@@ -424,6 +424,24 @@ describe("total", () => {
     const over = sample({ kept: 3, within_budget: false, max_findings: 1 });
     expect(total([over, sample({})]).over_budget).toBe(1);
   });
+
+  it("counts narration only over samples that had something to narrate", () => {
+    const made = { ...sample({ kept: 1 }), script: { narrated: true } };
+    const failed = { ...sample({ kept: 2 }), script: { narrated: false, failure: "71 words" } };
+    const clean = { ...sample({ kept: 0 }), script: { narrated: null, failure: null } };
+
+    const t = total([made, failed, clean, clean]);
+    // The failure counts against the total; the two clean samples are in neither number.
+    expect(t.narrated).toBe(1);
+    expect(t.narratable).toBe(2);
+  });
+
+  it("has nothing narratable when every sample kept nothing", () => {
+    const clean = { ...sample({ kept: 0 }), script: { narrated: null, failure: null } };
+    const t = total([clean, clean]);
+    expect(t.narrated).toBe(0);
+    expect(t.narratable).toBe(0);
+  });
 });
 
 function rounded(value: number): number {
@@ -469,8 +487,8 @@ describe("total and calibration", () => {
 
 describe("measureScript", () => {
   it("measures what the checks do not constrain", () => {
-    const { script } = loadGolden("sample-01-order-outbox");
-    const result = measureScript(script, script);
+    const { review: verified, script } = loadGolden("sample-01-order-outbox");
+    const result = measureScript(verified, script, script);
 
     expect(result.narrated).toBe(true);
     // One step per finding, no intro or wrap-up (ADR-042).
@@ -480,10 +498,28 @@ describe("measureScript", () => {
   });
 
   it("records a failed Narrate stage as a result rather than losing the sample", () => {
-    const result = measureScript(undefined, undefined, "71 words, maximum is 60");
+    const result = measureScript(
+      review([finding()]),
+      undefined,
+      undefined,
+      "71 words, maximum is 60",
+    );
     expect(result.narrated).toBe(false);
     expect(result.failure).toContain("71 words");
     expect(result.steps).toBeUndefined();
+  });
+
+  it("says a review that kept nothing had nothing to narrate, rather than that it failed", () => {
+    // sample-07's shape: a restraint sample where keeping nothing is a good result (ADR-042).
+    const { script: expected } = loadGolden("sample-07-retry-backoff");
+    const result = measureScript(review([]), undefined, expected);
+    expect(result).toEqual({ narrated: null, failure: null });
+  });
+
+  it("decides nothing to narrate from the review, whatever failure arrived with it", () => {
+    const result = measureScript(review([]), undefined, undefined, "This review kept no findings");
+    expect(result.narrated).toBeNull();
+    expect(result.failure).toBeNull();
   });
 });
 
@@ -614,6 +650,24 @@ describe("totalsByOrigin", () => {
 });
 
 describe("buildReport", () => {
+  it("accepts a sample with nothing to narrate under the contract", () => {
+    const clean: SampleResult = {
+      sample: "sample-07-retry-backoff",
+      origin: "synthetic",
+      run_dir: "/tmp/s",
+      cached: false,
+      seconds: 1,
+      stopped: null,
+      review: scoreReview(review([]), labels({ must_find: [] })),
+      script: measureScript(review([]), undefined, undefined),
+    };
+    const report = buildReport("golden", [
+      { provider: "fake", model: "fake", samples: [clean], totals: total([clean]) },
+    ]);
+    const result = validateContract("eval", report);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+  });
+
   it("produces a report that validates against the contract", () => {
     const report = buildReport(
       "golden",

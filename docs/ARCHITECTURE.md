@@ -254,7 +254,9 @@ out, so a prompt or model change can be argued about with numbers instead of rea
 
 - For each sample it runs ingest, review, verify and narrate on `diff.patch`, then scores the
   produced `review.json` and `script.json` against `labels.json`. The matching rule and the
-  rulings around it are in `golden/README.md` and ADR-025.
+  rulings around it are in `golden/README.md` and ADR-025. A sample whose verified review kept
+  nothing is not narrated, as in `spr run`, and is reported as having nothing to narrate rather
+  than as a failed Narrate stage (ADR-042).
 - `--model` is repeatable, so one invocation produces the whole comparison table with the same
   labels, prompt and code across every row. This is what ADR-015 and ADR-018 defer the choice
   of default model to.

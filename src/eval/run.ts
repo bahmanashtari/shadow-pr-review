@@ -143,24 +143,28 @@ async function evaluateSample(
   });
   writeVerifiedReview(runDir, verified.review);
 
-  // A failed Narrate stage is a result, not a reason to abandon the sample's review score.
+  // A failed Narrate stage is a result, not a reason to abandon the sample's review score. A
+  // review that kept nothing is not narrated at all: `spr run` stops after Verify on it, because
+  // there is nothing to explain (ADR-042), and `measureScript` reports it as such.
   let script: NarrationScript | undefined;
   let failure: string | undefined;
-  try {
-    const narrated = await runNarrate({
-      review: verified.review,
-      provider,
-      config,
-      budget: new Budget(config.budgets),
-      tracer,
-      cache,
-      runDir,
-    });
-    script = narrated.script;
-    writeScript(runDir, narrated.script);
-  } catch (error) {
-    if (!(error instanceof StageError)) throw error;
-    failure = error.message.split("\n")[0] ?? error.message;
+  if (verified.review.findings.length > 0) {
+    try {
+      const narrated = await runNarrate({
+        review: verified.review,
+        provider,
+        config,
+        budget: new Budget(config.budgets),
+        tracer,
+        cache,
+        runDir,
+      });
+      script = narrated.script;
+      writeScript(runDir, narrated.script);
+    } catch (error) {
+      if (!(error instanceof StageError)) throw error;
+      failure = error.message.split("\n")[0] ?? error.message;
+    }
   }
 
   const calls = tracer.entries.filter((e) => e.kind === "llm_call");
@@ -174,8 +178,14 @@ async function evaluateSample(
     seconds: Math.round((Date.now() - started) / 100) / 10,
     stopped: review.stopped,
     review: scoreReview(verified.review, labels),
-    script: measureScript(script, expectedScript, failure),
+    script: measureScript(verified.review, script, expectedScript, failure),
   };
+}
+
+/** How a sample's narration went, in the progress line's words. */
+function narration(result: SampleResult): string {
+  if (result.script.narrated === null) return "nothing to narrate";
+  return result.script.narrated ? "narrated" : "not narrated";
 }
 
 /** Scores every sample for every model and returns the report. */
@@ -204,7 +214,7 @@ export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
           `${model} ${sample}: ${result.review.kept} kept, ` +
             `${result.review.found.length}/${result.review.found.length + result.review.missed.length} must_find, ` +
             `${result.review.false_positives.length} fp, ` +
-            `${result.script.narrated ? "narrated" : "not narrated"}, ${result.seconds ?? 0}s`,
+            `${narration(result)}, ${result.seconds ?? 0}s`,
         );
       } catch (error) {
         // One model that cannot run must not discard what the others measured.

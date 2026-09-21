@@ -102,6 +102,50 @@ describe("formatModel", () => {
     expect(text).toContain("narrate failed: /steps/2 (S02): 71 words");
   });
 
+  it("says a sample that kept nothing had nothing to narrate, not that narration failed", () => {
+    // sample-07's shape: a restraint sample where keeping nothing is the good result (ADR-042).
+    const clean = sample({
+      sample: "sample-07-retry-backoff",
+      review: { ...sample().review, kept: 0, precision: null, recall: null, found: [] },
+      script: { narrated: null, failure: null },
+    });
+    const lines = formatModel(run({ samples: [clean] }));
+    const text = lines.join("\n");
+
+    expect(lines[2]).toContain("nothing to narrate");
+    expect(text).not.toContain("not narrated");
+    expect(text).not.toContain("narrate failed");
+    // Nothing else is wrong with it, so it gets no detail block at all.
+    expect(text).not.toMatch(/^ {2}sample-07-retry-backoff$/m);
+  });
+
+  it("counts narration in the total only over samples that had something to narrate", () => {
+    const made = sample();
+    const failed = sample({
+      sample: "sample-02",
+      script: { narrated: false, failure: "/steps/2 (S02): 71 words, maximum is 60" },
+    });
+    const clean = sample({
+      sample: "sample-07-retry-backoff",
+      review: { ...sample().review, kept: 0, precision: null, recall: null, found: [] },
+      script: { narrated: null, failure: null },
+    });
+    const lines = formatModel(run({ samples: [made, failed, clean] }));
+    const totals = lines.find((line) => line.startsWith("TOTAL"));
+
+    // The failure counts against the total and the clean sample does not: 1 of 2, not 1 of 3.
+    expect(totals).toContain("1/2 narrated");
+    expect(lines.join("\n")).toContain("narrate failed: /steps/2 (S02): 71 words");
+  });
+
+  it("falls back to every sample when a report predates the narratable count", () => {
+    const old = run();
+    const totals = { ...old.totals };
+    delete totals.narratable;
+    const lines = formatModel({ ...old, totals });
+    expect(lines.find((line) => line.startsWith("TOTAL"))).toContain("1/1 narrated");
+  });
+
   it("names an unlabelled false positive as such", () => {
     const novel = sample({
       review: {

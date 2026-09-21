@@ -27,6 +27,8 @@ function plural(count: number, noun: string): string {
 /** `5 steps / 51s (want 5 / 89s)`, or why there is no script. */
 function scriptCell(sample: SampleResult): string {
   const s = sample.script;
+  // A clean review makes no script by design (ADR-042), which is not the same as failing to.
+  if (s.narrated === null) return `nothing to narrate`;
   if (!s.narrated) return `not narrated`;
   const want =
     s.expected_steps === undefined
@@ -117,7 +119,7 @@ export function formatModel(run: ModelRun): string[] {
       padLeft(rate(t.calibrated ?? null), COLUMNS.rate),
       padLeft(String(t.false_positives), COLUMNS.fp),
       `  ${t.found}/${t.must_find} must_find, +${t.acceptable_found ?? 0} optional, ` +
-        `${t.narrated ?? 0}/${run.samples.length} narrated, ${t.seconds}s`,
+        `${t.narrated ?? 0}/${t.narratable ?? run.samples.length} narrated, ${t.seconds}s`,
     ].join(" "),
   );
 
@@ -148,7 +150,9 @@ export function formatModel(run: ModelRun): string[] {
           `band ${m.max_severity}..${m.min_severity}`,
       );
     }
-    if (!s.script.narrated && s.script.failure) detail.push(`narrate failed: ${s.script.failure}`);
+    if (s.script.narrated === false && s.script.failure) {
+      detail.push(`narrate failed: ${s.script.failure}`);
+    }
     if (detail.length > 0) {
       lines.push(`  ${s.sample}`);
       for (const line of detail) lines.push(`    ${line}`);

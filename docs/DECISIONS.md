@@ -1727,6 +1727,20 @@ into the developer's own `.cache/spr` under the new key. Its sibling `withFakePr
 redirected the cache for exactly this reason. Both now do, and 88 poisoned entries were purged.
 It looked like a cache-invalidation bug and was a test that did not clean up after itself.
 
+**And `spr eval`, which the decision did not reach at first.** Added after acceptance. `spr run`
+stopped after Verify on a clean review, but the eval still called the Narrator on one, caught the
+`StageError` this ADR made it throw, and reported the sample as `not narrated` with a
+`narrate failed: This review kept no findings...` line, counted against the `N/7 narrated` total.
+That misreported exactly the samples where keeping nothing is the good result, such as
+`sample-07-retry-backoff`. The eval now skips Narrate when the verified review kept nothing, the
+way `spr run` does, and the contract says so: `ScriptResult.narrated` is `null` for such a sample,
+the way precision is `null` over an empty set, and `Totals.narratable` counts the samples that
+had something to narrate, which is the denominator the report prints. A clean sample is in
+neither count; a Narrator that failed on a review with findings still counts against the total.
+`measureScript` decides it from the review, not from the error text, so the two cannot be
+confused. Both schema changes are additive, so an older `eval.json` still validates, and its
+report falls back to the old denominator.
+
 **Supersedes** the outro card in plan m2-step3 (Q6); the last paragraph of ADR-034, on title
 cards for `--diff` runs; the frame-step scope of ADR-038's severity rule; and the intro and
 wrap-up band in ADR-039 and `docs/NARRATION_STYLE.md`. A truncated diff used to be disclosed "in

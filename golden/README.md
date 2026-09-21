@@ -68,7 +68,9 @@ committed rather than after.
   Narrate stage, which fails rather than writing a script
   that breaks them, so the eval does not re-check them. It measures what they do not constrain -
   steps, words and duration against `script.expected.json` - and records a sample that never
-  reached a script. Compare wording and tone by reading, not by scoring.
+  reached a script. A sample whose verified review kept nothing has nothing to narrate
+  (ADR-042): it is reported as such, not as a failure, and left out of the narrated total.
+  Compare wording and tone by reading, not by scoring.
 
 ### Writing `accept_categories`
 

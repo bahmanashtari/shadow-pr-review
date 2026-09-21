@@ -420,6 +420,16 @@ describe("spr CLI", () => {
     const totals = text.split("\n").find((line) => line.startsWith("TOTAL"));
     expect(totals).toMatch(/must_find/);
     expect(totals).toMatch(/\s1\.000\s/);
+    // A sample that kept nothing has nothing to narrate (ADR-042), which is not a failure of the
+    // Narrate stage. The fake provider keeps nothing on several samples, restraint ones included.
+    const { models } = report as {
+      models: { samples: { review: { kept: number }; script: unknown }[] }[];
+    };
+    const clean = (models[0]?.samples ?? []).filter((s) => s.review.kept === 0);
+    expect(clean.length).toBeGreaterThan(0);
+    for (const s of clean) expect(s.script).toEqual({ narrated: null, failure: null });
+    expect(text).toContain("nothing to narrate");
+    expect(text).not.toContain("narrate failed");
     // A single model prints no comparison table.
     expect(text).not.toContain("comparison");
   });

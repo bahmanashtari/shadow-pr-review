@@ -223,12 +223,19 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
  * inside the Narrate stage, which fails rather than writing a script that breaks them
  * (ADR-024), so asserting them again could only ever pass. What is left is what the checks do
  * not constrain - how much was said, and whether it was said at all.
+ *
+ * A verified review that kept no findings has nothing to narrate, and producing no script for
+ * it is the correct outcome rather than a failed stage (ADR-042): `narrated` is then null, the
+ * way precision is null over an empty set. That is decided from the review, not from whether a
+ * script or a failure arrived, so a clean sample cannot be mistaken for a Narrator that broke.
  */
 export function measureScript(
+  review: ReviewResult,
   script: NarrationScript | undefined,
   expected: NarrationScript | undefined,
   failure?: string,
 ): ScriptResult {
+  if (review.findings.length === 0) return { narrated: null, failure: null };
   if (!script) return { narrated: false, failure: failure ?? null };
 
   const words = script.steps.map((s) => countWords(s.text));
@@ -268,6 +275,7 @@ export function total(samples: readonly SampleResult[]): Totals {
   let falsePositives = 0;
   let seconds = 0;
   let narrated = 0;
+  let narratable = 0;
   let overBudget = 0;
   // Counted over findings rather than averaged over samples, so a sample with four banded
   // findings weighs four times one with a single banded finding.
@@ -281,7 +289,9 @@ export function total(samples: readonly SampleResult[]): Totals {
     kept += s.review.kept;
     falsePositives += s.review.false_positives.length;
     seconds += s.seconds ?? 0;
-    if (s.script.narrated) narrated += 1;
+    // A sample with nothing to narrate is in neither count: no script was the right answer.
+    if (s.script.narrated !== null) narratable += 1;
+    if (s.script.narrated === true) narrated += 1;
     if (!s.review.within_budget) overBudget += 1;
     banded += s.review.calibration_scored ?? 0;
     miscalibrated += s.review.miscalibrated?.length ?? 0;
@@ -299,6 +309,7 @@ export function total(samples: readonly SampleResult[]): Totals {
     miscalibrated,
     seconds: Math.round(seconds * 10) / 10,
     narrated,
+    narratable,
     over_budget: overBudget,
   };
 }
