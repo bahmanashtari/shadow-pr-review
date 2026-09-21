@@ -2010,3 +2010,40 @@ has been seen.
 rewrite. A re-narration of a sample-01 run whose cached script said "order.placed" was repaired
 in one call to "the order placed event". No ADR of its own, as its plan proposed; the check's
 comment records the accepted false positive on "e.g.".
+
+## ADR-047: A finding on lines the change did not touch is out of scope (accepted, September 2026)
+
+**Context.** Roadmap step 15, approved by Bahman as recommended. The rubric's first scope rule -
+review only what the change introduces or makes worse - had no enforcement, and went unnoticed
+while every golden diff added whole files: an added file has no unchanged lines. The first
+modified-file sample exposed it, when `qwen3:4b` flagged an import the pull request never touched
+and the Verifier agent kept it (ADR-045).
+
+**Decision.** Verify drops a finding whose range includes no added line (new side) or removed line
+(old side) as `out_of_scope`, after the range check and before the evidence check. The rubric's
+scope rule now says so, and says where such a finding belongs instead: if a change breaks code it
+did not touch, point at the added or removed line that causes it and name the broken code in the
+rationale. The cause of a regression is always a changed line, so a well-placed finding loses
+nothing. The deterministic analyzers scan added lines only and are unaffected; no schema changed,
+because `out_of_scope` already existed for a file the change never touched.
+
+**Checked offline.** Re-screening a copy of `qwen3:4b`'s sample-06 run drops exactly the
+unchanged-import finding, with the note "new lines 3-3 are unchanged context", and keeps the SQL
+injection finding. `runs/eval-models-2/` itself is left as it was measured.
+
+**Measured cold with the default model**, since the rubric is part of the prompt: no finding was
+dropped as `out_of_scope`, precision 1.000, calibration 1.000, and recall **0.800** (8/10), up from
+0.600. Both new finds were read, not trusted: `sample-02`'s redelivery bug - *"Missing idempotency
+handling causes duplicate stock decrements"*, filed as `idempotency`, the default model's first
+ever - and `sample-05`'s dropped column, described as permanent data loss rather than the false
+"fails on existing rows" of ADR-044.
+
+**The recall number is not credited to this step**, and that is the most useful thing in this ADR.
+The model runs at temperature 0, so the change in output was caused by the change in prompt - but
+the prompt change was one sentence about unchanged lines, which concerns neither bug. Recall has
+now read 0.400, 0.500, 0.600 and 0.800 across four versions of the prompt and Verify, and only the
+0.600 had a mechanism that explains it (ADR-046). The honest reading is a model close to its
+threshold on these bugs, tipped by any edit, in either direction. A number that moves this much
+under an unrelated edit is a warning about single measurements, not a result; it is also the
+strongest argument yet for the real samples, and for measuring a prompt change against more than
+one cold run before believing it.

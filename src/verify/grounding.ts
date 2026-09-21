@@ -40,8 +40,9 @@ function quote(text: string, max = 120): string {
  * Checks one finding against the diff it claims to describe.
  * Returns null when the finding is grounded, or the first failure otherwise.
  *
- * The order is deliberate: a file that is not in the diff has no lines to check, and a
- * finding whose lines do not exist cannot be quoted from them.
+ * The order is deliberate: a file that is not in the diff has no lines to check, a finding
+ * whose lines do not exist cannot be quoted from them, and a finding on lines the change did not
+ * touch is out of scope whatever it quotes.
  */
 export function checkGrounded(index: HunkIndex, finding: Finding): Rejection | null {
   if (!index.hasFile(finding.file)) {
@@ -59,6 +60,18 @@ export function checkGrounded(index: HunkIndex, finding: Finding): Rejection | n
       note:
         `${finding.side} lines ${finding.line_start}-${finding.line_end} are not all in the ` +
         `diff for this file`,
+    };
+  }
+
+  // The rubric's first scope rule: code the change did not touch is context, not a target. A
+  // regression the change causes in unchanged code has its cause on a changed line, which is
+  // where the Reviewer is told to point it (roadmap step 15).
+  if (!index.touchesChange(finding.file, finding.side, finding.line_start, finding.line_end)) {
+    return {
+      reason: "out_of_scope",
+      note:
+        `${finding.side} lines ${finding.line_start}-${finding.line_end} are unchanged context; ` +
+        `the change neither added nor removed any of them`,
     };
   }
 

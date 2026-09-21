@@ -11,6 +11,9 @@ interface FileIndex {
   file: KeptFile;
   old: Map<number, string>;
   new: Map<number, string>;
+  /** Old-side numbers of removed lines, and new-side numbers of added lines. */
+  removed: Set<number>;
+  added: Set<number>;
   /** Normalized text of every diff line, grouped by hunk, in diff order. */
   hunkTexts: string[][];
 }
@@ -31,12 +34,21 @@ export function normalizeSnippet(text: string): string {
 }
 
 function indexFile(file: KeptFile): FileIndex {
-  const index: FileIndex = { file, old: new Map(), new: new Map(), hunkTexts: [] };
+  const index: FileIndex = {
+    file,
+    old: new Map(),
+    new: new Map(),
+    removed: new Set(),
+    added: new Set(),
+    hunkTexts: [],
+  };
   for (const hunk of file.hunks) {
     const texts: string[] = [];
     for (const line of hunk.lines) {
       if (line.old !== null) index.old.set(line.old, line.text);
       if (line.new !== null) index.new.set(line.new, line.text);
+      if (line.kind === "del" && line.old !== null) index.removed.add(line.old);
+      if (line.kind === "add" && line.new !== null) index.added.add(line.new);
       texts.push(normalizeSnippet(line.text));
     }
     index.hunkTexts.push(texts);
@@ -82,6 +94,21 @@ export class HunkIndex {
       if (!lines.has(line)) return false;
     }
     return true;
+  }
+
+  /**
+   * True when a range includes at least one line this change added (new side) or removed (old
+   * side). A range of context lines alone is code the change did not touch, which the rubric
+   * says is not a target (roadmap step 15).
+   */
+  touchesChange(path: string, side: DiffSide, start: number, end: number): boolean {
+    const entry = this.byPath.get(path);
+    if (!entry) return false;
+    const changed = side === "old" ? entry.removed : entry.added;
+    for (let line = start; line <= end; line += 1) {
+      if (changed.has(line)) return true;
+    }
+    return false;
   }
 
   /** The text of one line, without its `+`, `-` or space marker. */

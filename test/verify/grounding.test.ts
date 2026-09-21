@@ -110,6 +110,28 @@ describe("checkGrounded", () => {
     expect(rejection?.note).toContain("evidence 2 of 2");
   });
 
+  it("drops a finding on lines the change did not touch as out of scope (step 15)", () => {
+    // qwen3:4b on sample-06: an import the pull request did not change (ADR-045).
+    const search = HunkIndex.fromIngest(ingestOfDiff(readGoldenDiff("sample-06-customer-search")));
+    const controller = "services/customer-service/src/interface/http/customer.controller.ts";
+    const onContext = finding({
+      file: controller,
+      line_start: 3,
+      line_end: 3,
+      category: "ddd-boundaries",
+      evidence: [
+        "import { CustomerRepository } from '../../infrastructure/persistence/customer.repository';",
+      ],
+    });
+    const rejection = checkGrounded(search, onContext);
+    expect(rejection?.reason).toBe("out_of_scope");
+    expect(rejection?.note).toContain("unchanged context");
+
+    // The same claim anchored on the line the change added is in scope.
+    const onChange = { ...onContext, line_start: 15, line_end: 17, evidence: ["@Get('search')"] };
+    expect(checkGrounded(search, onChange)).toBeNull();
+  });
+
   it("keeps evidence quoted from outside the claimed range", () => {
     // sample-01 F02 points at lines 19-20 and quotes the import on line 2, which is exactly
     // how that claim should be supported. Evidence is checked against the file, not the range.

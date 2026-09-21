@@ -161,6 +161,24 @@ describe("HunkIndex", () => {
     expect(quotedText("return order.id;")).toBe("return order.id;");
   });
 
+  it("knows which lines a change touched, and which are only context (step 15)", () => {
+    const search = indexOf(readGoldenDiff("sample-06-customer-search"));
+    const controller = "services/customer-service/src/interface/http/customer.controller.ts";
+    // Line 9 is the guard on the existing route: in the diff, but unchanged.
+    expect(search.hasRange(controller, "new", 9, 9)).toBe(true);
+    expect(search.touchesChange(controller, "new", 9, 9)).toBe(false);
+    expect(search.touchesChange(controller, "new", 1, 13)).toBe(false);
+    // The new route is added; a range reaching into it counts.
+    expect(search.touchesChange(controller, "new", 15, 17)).toBe(true);
+    expect(search.touchesChange(controller, "new", 12, 15)).toBe(true);
+    // A removed line counts on the old side, and only there.
+    const modified = indexOf(readDiffFixture("multi-hunk.patch"));
+    expect(modified.touchesChange("src/service.ts", "old", 23, 23)).toBe(true);
+    expect(modified.touchesChange("src/service.ts", "new", 23, 23)).toBe(false);
+    expect(modified.touchesChange("src/service.ts", "new", 24, 24)).toBe(true);
+    expect(search.touchesChange("nope.ts", "new", 1, 1)).toBe(false);
+  });
+
   it("indexes both sides of a modified file", () => {
     const modified = indexOf(readDiffFixture("multi-hunk.patch"));
     expect(modified.hasRange("src/service.ts", "old", 1, 4)).toBe(true);
