@@ -121,6 +121,31 @@ describe("formatModel", () => {
     });
     expect(formatModel(run({ samples: [novel] })).join("\n")).toContain("(unlabelled)");
   });
+
+  it("says where a false positive landed when it sits on a label under another category", () => {
+    const misfiled = sample({
+      review: {
+        ...sample().review,
+        false_positives: [
+          {
+            finding_id: "F02",
+            file: FILE,
+            line_start: 13,
+            line_end: 13,
+            category: "event-consistency",
+            summary: "Event handler lacks idempotency",
+            must_not_flag_key: null,
+            near_miss_key: "projection-double-counts-on-replay",
+          },
+        ],
+      },
+    });
+    const text = formatModel(run({ samples: [misfiled] })).join("\n");
+    expect(text).toContain("false positive F02 (unlabelled) event-consistency");
+    expect(text).toContain(
+      "on projection-double-counts-on-replay's lines, filed under event-consistency",
+    );
+  });
 });
 
 describe("the origin of the samples", () => {

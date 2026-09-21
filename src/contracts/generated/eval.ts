@@ -124,6 +124,10 @@ export interface FalsePositive {
    * The must_not_flag label this finding appears to be, when one names it. Null means the model invented a mistake the set does not know about yet, which is worth reading.
    */
   must_not_flag_key?: string | null;
+  /**
+   * A label this finding sits on - same file, overlapping lines - under a category the label does not accept, preferring must_find labels. Attribution only, like must_not_flag_key: the finding stays a false positive, because the category is part of what says which issue a finding is about, and a finding at the right place under another heading may be the right bug misfiled or a different claim altogether. Null when a must_not_flag entry already names the mistake, or nothing is there.
+   */
+  near_miss_key?: string | null;
 }
 export interface Miscalibration {
   key: string;

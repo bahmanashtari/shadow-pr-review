@@ -487,6 +487,67 @@ describe("measureScript", () => {
   });
 });
 
+describe("near misses", () => {
+  it("names the label a false positive sits on under another category, and keeps it false", () => {
+    // sample-05's shape: the redelivery bug described correctly, filed as event-consistency.
+    const misfiled = finding({ category: "event-consistency", line_start: 22, line_end: 22 });
+    const score = scoreReview(
+      review([misfiled]),
+      labels({ must_find: [required({ key: "replay-double-counts", category: "idempotency" })] }),
+    );
+
+    expect(score.precision).toBe(0);
+    expect(score.missed).toEqual(["replay-double-counts"]);
+    expect(score.false_positives[0]?.near_miss_key).toBe("replay-double-counts");
+  });
+
+  it("prefers a must_find label to an acceptable one on the same lines", () => {
+    const misfiled = finding({ category: "performance" });
+    const score = scoreReview(
+      review([misfiled]),
+      labels({
+        acceptable: [
+          {
+            key: "optional-here-too",
+            file: FILE,
+            line_start: 19,
+            line_end: 27,
+            category: "api-contract",
+            description: "Also on these lines.",
+          },
+        ],
+      }),
+    );
+    expect(score.false_positives[0]?.near_miss_key).toBe("publish-before-commit");
+  });
+
+  it("leaves a mistake the set already names as that name, not as a near miss", () => {
+    // sample-05 again: the false DROP COLUMN claim sits on a must_find's lines too.
+    const wrong = finding({ category: "maintainability" });
+    const score = scoreReview(
+      review([wrong]),
+      labels({
+        must_not_flag: [
+          {
+            key: "known-wrong-claim",
+            file: FILE,
+            line_start: 19,
+            line_end: 27,
+            description: "A claim this sample is known to attract.",
+          },
+        ],
+      }),
+    );
+    expect(score.false_positives[0]?.must_not_flag_key).toBe("known-wrong-claim");
+    expect(score.false_positives[0]?.near_miss_key).toBeNull();
+  });
+
+  it("is null when nothing is at that place", () => {
+    const elsewhere = finding({ line_start: 90, line_end: 91 });
+    expect(scoreReview(review([elsewhere]), labels()).false_positives[0]?.near_miss_key).toBeNull();
+  });
+});
+
 describe("totalsByOrigin", () => {
   function sample(origin: SampleResult["origin"], over: Partial<SampleResult["review"]>) {
     return {

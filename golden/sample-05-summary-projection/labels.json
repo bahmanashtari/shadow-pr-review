@@ -51,7 +51,8 @@
     {
       "key": "migration-fails-on-existing-rows",
       "file": "services/reporting-service/src/infrastructure/persistence/migrations/1726500000000-DropLegacyTotal.ts",
-      "category": "data-migration",
+      "line_start": 4,
+      "line_end": 7,
       "description": "Claiming DROP COLUMN fails when the table already has rows. It does not - that is the NOT NULL rule from sample-02, applied to a different statement. The real problem is that the drop succeeds and takes the data with it."
     },
     {

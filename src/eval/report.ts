@@ -135,6 +135,11 @@ export function formatModel(run: ModelRun): string[] {
         `false positive ${fp.finding_id} (${name}) ${fp.category} ` +
           `${fp.file}:${fp.line_start}-${fp.line_end} - ${fp.summary}`,
       );
+      // Said on its own line because it changes what the one above means: the finding may be
+      // the right bug under the wrong heading, which only reading it can settle.
+      if (fp.near_miss_key) {
+        detail.push(`  on ${fp.near_miss_key}'s lines, filed under ${fp.category}`);
+      }
     }
     for (const m of s.review.miscalibrated ?? []) {
       // The direction is the point: over-rating and under-rating call for opposite corrections.

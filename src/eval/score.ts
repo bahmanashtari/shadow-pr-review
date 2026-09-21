@@ -101,6 +101,28 @@ function nameFor(finding: Finding, forbidden: readonly ForbiddenLabel[]): string
   return hit?.key ?? null;
 }
 
+/**
+ * The label a false positive sits on under a category that label does not accept.
+ *
+ * Deliberately attribution rather than credit. ADR-025 could count an under-rated finding as
+ * precise because a finding at the right lines *with the right category* has spotted the issue:
+ * the category is part of what says which issue it is. Without it there is no telling a real
+ * bug filed under another heading from a different claim made at the same place - sample-05
+ * has both, on neighbouring lines. So the finding stays a false positive, and this names where
+ * it landed so a person can read which of the two it was. `must_find` labels are preferred
+ * because they are the ones whose miss the report is already explaining.
+ */
+function nearMissFor(finding: Finding, labels: GoldenLabels): string | null {
+  const placed: PlacedLabel[] = [...labels.must_find, ...labels.acceptable];
+  const hit = placed.find(
+    (label) =>
+      label.file === finding.file &&
+      finding.line_start <= label.line_end &&
+      label.line_start <= finding.line_end,
+  );
+  return hit?.key ?? null;
+}
+
 /** What the Verifier removed, by reason, in a stable order. */
 function droppedByReason(review: ReviewResult): ReviewScore["dropped"] {
   const counts = new Map<string, number>();
@@ -160,16 +182,21 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
   const placed: PlacedLabel[] = [...labels.must_find, ...labels.acceptable];
   const falsePositives: FalsePositive[] = kept
     .filter((f) => !placed.some((label) => locates(f, label)))
-    .map((f) => ({
-      finding_id: f.id,
-      file: f.file,
-      line_start: f.line_start,
-      line_end: f.line_end,
-      category: f.category,
-      severity: f.severity,
-      summary: f.summary,
-      must_not_flag_key: nameFor(f, labels.must_not_flag),
-    }));
+    .map((f) => {
+      const named = nameFor(f, labels.must_not_flag);
+      return {
+        finding_id: f.id,
+        file: f.file,
+        line_start: f.line_start,
+        line_end: f.line_end,
+        category: f.category,
+        severity: f.severity,
+        summary: f.summary,
+        must_not_flag_key: named,
+        // A mistake the set already names is not also a near miss: the name is the better answer.
+        near_miss_key: named === null ? nearMissFor(f, labels) : null,
+      };
+    });
 
   const budget = labels.max_findings;
   return {
