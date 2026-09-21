@@ -161,9 +161,9 @@ That path is not unit-tested, because recording is real time: `pnpm test` stops 
 file sizes to compare against the last run. Run it before a release and after touching a stage
 boundary. It needs the whole toolchain up at once (a model, the Kokoro container, ffmpeg,
 Chromium) and takes roughly as long as the videos it makes - 2:18 for the original three samples
-on a warm cache. The set now holds seven (ADR-044), so expect longer; the four newer samples
-have not been through it yet, and two of them - 05 and 07 - keep nothing on the default
-model today, which correctly makes no video.
+on a warm cache. The set now holds nine (ADR-044, ADR-049), so expect longer; the six newer
+samples have not been through it yet, and the restraint samples - 07 and 09, and 03 on some
+runs - keep nothing on the default model, which correctly makes no video.
 
 The Composer reports `narration complete, picture N ms short of it`. The first half is a
 checked claim: the final file's sound is compared against the clips and gaps the schedule was
