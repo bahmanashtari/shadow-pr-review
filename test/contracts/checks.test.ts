@@ -195,6 +195,16 @@ describe("checkScript", () => {
     ]);
   });
 
+  it("refuses to speak a domain or a URL a finding quoted from a hostile comment", () => {
+    // Roadmap step 2: prose about untrusted code can carry its text into the narration.
+    const { review, script } = loadGolden("sample-02-inventory-consumer");
+    step(script, 0).text = "The comment says to claim refunds at refunds-now.example today.";
+    step(script, 1).text = "It links to https://refunds-now.example for details.";
+    const problems = checkScript(script, review);
+    expect(problems.some((p) => p.startsWith("/steps/0") && p.includes("now.example"))).toBe(true);
+    expect(problems).toContain("/steps/1 (S01): text reads out a file name, path or URL");
+  });
+
   it("honors a custom word limit", () => {
     const { review, script } = loadGolden("sample-03-email-value-object");
     expect(checkScript(script, review, { maxWordsPerStep: 20 })).toContain(

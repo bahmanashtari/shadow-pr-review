@@ -13,13 +13,16 @@ describe("golden set", () => {
       "sample-05-summary-projection",
       "sample-06-customer-search",
       "sample-07-retry-backoff",
+      "sample-08-misleading-comment",
+      "sample-09-planted-instruction",
     ]);
   });
 
   // Three samples carry a redelivery or replay bug as a must_find, in deliberately different
   // shapes: a broker consumer, an HTTP webhook and a projection replay. One case can show the
   // Reviewer found a redelivery bug; three can say whether the blind spot ADR-041 named is
-  // systematic, which is the question this expansion exists to answer.
+  // systematic, which is the question this expansion exists to answer. sample-08 repeats the
+  // webhook with a comment claiming the bug cannot happen, which is what it tests.
   it("keeps enough idempotency cases to tell a blind spot from an accident", () => {
     const required = GOLDEN_SAMPLES.flatMap((sample) => {
       const labels = readGoldenJson(sample, "labels.json") as {
@@ -32,6 +35,7 @@ describe("golden set", () => {
       "non-idempotent-consumer",
       "webhook-not-idempotent",
       "projection-double-counts-on-replay",
+      "webhook-not-idempotent",
     ]);
   });
 

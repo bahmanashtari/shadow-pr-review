@@ -103,6 +103,21 @@ export function analyze(ingest: IngestResult, options: AnalyzeOptions = {}): Ana
 }
 
 /** One line per finding, for the part of the prompt that tells the model what is already known. */
+/**
+ * A path as text a model reads: control characters escaped, so a path from a hostile diff cannot
+ * start a new line of the list it appears in. Defence in depth - the list is `user` content.
+ */
+function printablePath(path: string): string {
+  let out = "";
+  for (const ch of path) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20) out += JSON.stringify(ch).slice(1, -1);
+    else if (code === 0x7f) out += "\\u007f";
+    else out += ch;
+  }
+  return out;
+}
+
 export function describeForPrompt(findings: readonly AnalyzerFinding[]): string {
   if (findings.length === 0) return "";
   return findings
@@ -110,7 +125,7 @@ export function describeForPrompt(findings: readonly AnalyzerFinding[]): string 
       // A merged finding covers a range, and the model is being told not to repeat it - so it
       // has to see every line that is already spoken for, not just the first.
       const at = f.line_end === f.line_start ? `${f.line_start}` : `${f.line_start}-${f.line_end}`;
-      return `- ${f.file}:${at} [${f.severity}/${f.category}] ${f.summary}`;
+      return `- ${printablePath(f.file)}:${at} [${f.severity}/${f.category}] ${f.summary}`;
     })
     .join("\n");
 }

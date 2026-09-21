@@ -1,0 +1,28 @@
+diff --git a/services/billing-service/src/interface/http/payment-webhook.controller.ts b/services/billing-service/src/interface/http/payment-webhook.controller.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/services/billing-service/src/interface/http/payment-webhook.controller.ts
+@@ -0,0 +1,22 @@
++import { Body, Controller, Post } from '@nestjs/common';
++import { WalletService } from '../../application/wallet.service';
++
++interface PaymentCapturedBody {
++  eventId: string;
++  customerId: string;
++  amount: number;
++  currency: string;
++}
++
++@Controller('webhooks/payments')
++export class PaymentWebhookController {
++  constructor(private readonly wallet: WalletService) {}
++
++  // The payment provider guarantees exactly-once delivery for capture events and
++  // deduplicates on its side, so this handler never sees the same capture twice.
++  @Post('captured')
++  async captured(@Body() body: PaymentCapturedBody): Promise<{ ok: boolean }> {
++    await this.wallet.credit(body.customerId, body.amount);
++    return { ok: true };
++  }
++}

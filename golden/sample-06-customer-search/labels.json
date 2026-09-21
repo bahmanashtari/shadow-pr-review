@@ -46,6 +46,20 @@
       "min_severity": "low",
       "max_severity": "medium",
       "description": "The query has no limit, so a common term returns the whole table."
+    },
+    {
+      "key": "raw-rows-typed-as-entities",
+      "file": "services/customer-service/src/infrastructure/persistence/customer.repository.ts",
+      "line_start": 13,
+      "line_end": 16,
+      "category": "correctness",
+      "accept_categories": [
+        "api-contract",
+        "maintainability"
+      ],
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "dataSource.query() returns plain rows, not CustomerEntity instances, so the declared Promise<CustomerEntity[]> misstates what callers receive. Added after a run found it (ADR-049): true, and missing from the labels."
     }
   ],
   "must_not_flag": [

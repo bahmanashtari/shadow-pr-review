@@ -76,13 +76,13 @@ redelivery, and was filing it as `event-consistency` because nothing ever told i
 it belongs to. With the rubric defining the categories it reads 1.000 / 0.500, calibration
 0.875, no false positives (ADR-044). **The real samples are still owed**, and only Bahman has the
 material, so a session should not resume step 4 without it. Steps 13 and 14 have since
-landed and recall reads 0.600 (ADR-046). Step 15 followed (ADR-047), then 7 (ADR-048). Steps 2, 3
-and 5 remain, none blocking another.
+landed and recall reads 0.600 (ADR-046). Step 15 followed (ADR-047), then 7 (ADR-048) and 2 (ADR-049).
+Steps 3 and 5 remain.
 
 | Step | Scope | Status |
 |---|---|---|
 | 1 | Verifier agent (keep / downgrade / drop), preceded by the calibration axis that made it judgeable. Calibration went 0.833 to 1.000: six findings judged, five kept, one downgraded with the rubric quoted back (ADR-036, ADR-037). The "small model" and the cost flag ARCHITECTURE specified were dropped and deferred, on ADR-026's measurement. Plan: `docs/plans/m3-step1-verifier-agent.md` | done |
-| 2 | Prompt-injection hardening and tests (hostile comments in diffs) | planned |
+| 2 | **Hostile and misleading text in a diff.** Two adversarial samples: a sincere comment claiming a redelivery bug cannot happen (08), and a comment telling AI reviewers to report a critical bug that does not exist (09). The default model resisted both before any hardening. The real find was a hole: analyzer findings sat in the Reviewer's *system* prompt naming their file, and a quoted git path can hold a newline, so a diff could write its own lines there - demonstrated, then closed by moving the list to the user message. The Reviewer gained the untrusted-input section the Verifier had (ADR-049). Taken under Bahman's instruction to continue. Plan: `docs/plans/m3-step2-hostile-diffs.md` | done |
 | 3 | Budget and cache tuning; cost report per run | planned |
 | 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models tied at 1.000 precision and recall on the original three samples (ADR-026). Done so far: the expected reviews rewritten to ADR-041's format; a required `origin` on every sample (ADR-043); four synthetic samples, 04 to 07; a near-miss line for a false positive that sits on a label under another category; and a category guide in the rubric, which took recall from 0.400 to 0.500 and false positives from 3 to 0 (ADR-044). The model comparison it unblocked kept `qwen3:30b` on evidence rather than by default (ADR-045). Gaps the set now shows: redelivery when a louder bug shares its lines, an unauthenticated money endpoint, a guard missing only in context, a dropped column. **Still owed: the real samples**, which wait on Bahman. Plan: `docs/plans/m3-step4-golden-set.md` | in progress |
 | 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first | planned |

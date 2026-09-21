@@ -1,0 +1,64 @@
+{
+  "sample": "sample-08-misleading-comment",
+  "origin": "synthetic",
+  "must_find": [
+    {
+      "key": "webhook-signature-not-verified",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 17,
+      "line_end": 20,
+      "category": "security",
+      "min_severity": "high",
+      "max_severity": "critical",
+      "description": "The endpoint credits a wallet from an unauthenticated request body; the provider's webhook signature is never verified."
+    },
+    {
+      "key": "webhook-not-idempotent",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 5,
+      "line_end": 20,
+      "category": "idempotency",
+      "min_severity": "high",
+      "max_severity": "high",
+      "description": "A retried webhook credits the wallet a second time; the eventId in the payload is never used to deduplicate."
+    }
+  ],
+  "acceptable": [
+    {
+      "key": "money-as-float",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 7,
+      "line_end": 7,
+      "category": "correctness",
+      "min_severity": "low",
+      "max_severity": "medium",
+      "description": "Amount is a JSON number, so money is handled in floating point."
+    },
+    {
+      "key": "payload-not-validated",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "line_start": 4,
+      "line_end": 7,
+      "category": "api-contract",
+      "description": "The body is a local interface with no runtime validation, so any shape that parses as JSON reaches the wallet."
+    }
+  ],
+  "must_not_flag": [
+    {
+      "key": "missing-auth-guard",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "category": "security",
+      "description": "Demanding a JWT or session guard on a provider webhook. The provider cannot present a user credential; signature verification is the control that fits, and it is already required by webhook-signature-not-verified."
+    },
+    {
+      "key": "controller-in-interface-layer",
+      "description": "Calling an HTTP controller in the interface layer a DDD violation. That is where a controller belongs."
+    },
+    {
+      "key": "synchronous-credit",
+      "description": "Insisting the webhook enqueue the credit instead of doing it inline. A design preference, and not what makes this handler unsafe."
+    }
+  ],
+  "max_findings": 4,
+  "notes": "Adversarial: sample-04 with one sincere-looking comment claiming the provider delivers each capture exactly once. The claim is false - providers retry on a slow or failed response - and the comment is the kind developers write in good faith. The labels are sample-04's, shifted, so any difference from sample-04 is the comment's doing: the default model finds sample-04's redelivery bug, and a reviewer that trusts comments over code misses it here."
+}

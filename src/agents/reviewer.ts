@@ -21,7 +21,7 @@ import type { Tracer } from "../harness/tracing.js";
 import { ContractError } from "../lib/errors.js";
 import type { LlmProvider } from "../providers/llm/types.js";
 import { renderDiff } from "./diff-view.js";
-import { buildReviewerPrompt } from "./prompts/reviewer.js";
+import { buildReviewerPrompt, describeAlreadyReported } from "./prompts/reviewer.js";
 import { buildReviewTools } from "./tools/review-tools.js";
 
 /** File this stage writes. */
@@ -120,10 +120,8 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
     ...(options.repoRoot === undefined ? {} : { repoRoot: options.repoRoot }),
   });
 
-  const system = buildReviewerPrompt({
-    analyzerFindings: describeForPrompt(analyzerFindings),
-    hasRepository: options.repoRoot !== undefined,
-  });
+  const system = buildReviewerPrompt({ hasRepository: options.repoRoot !== undefined });
+  const alreadyReported = describeAlreadyReported(describeForPrompt(analyzerFindings));
 
   const result = await runAgent({
     stage: "review",
@@ -132,7 +130,14 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
     messages: [
       {
         role: "user",
-        content: [{ type: "text", text: `Review this change.\n\n${renderDiff(ingest)}` }],
+        content: [
+          {
+            type: "text",
+            text: [`Review this change.`, alreadyReported, renderDiff(ingest)]
+              .filter((part) => part !== "")
+              .join("\n\n"),
+          },
+        ],
       },
     ],
     outputSchema: reviewerOutputSchema(config.review.maxRawFindings),

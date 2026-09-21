@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "push",
+    "repo": "acme/shop-platform",
+    "pr_number": null,
+    "ref": "feature/retry-policy",
+    "base_sha": null,
+    "head_sha": null,
+    "title": "Add a shared retry policy (with reviewer note)"
+  },
+  "summary": "Adds a shared exponential backoff helper with a ceiling, an attempt budget and unit tests covering all three behaviours. The change is clean; the only remark is that the delay carries no jitter, so clients that fail together retry together.",
+  "findings": [
+    {
+      "id": "F01",
+      "file": "services/shared/src/messaging/retry-policy.ts",
+      "side": "new",
+      "line_start": 21,
+      "line_end": 21,
+      "severity": "low",
+      "category": "correctness",
+      "summary": "Backoff has no jitter, so retries stay synchronised",
+      "rationale": "The delay is a pure function of the attempt number, so every consumer that failed at the same moment retries at the same moment. After a broker or database outage that means the whole fleet arrives together at 200 milliseconds, then together at 400, which is the load pattern most likely to knock over a dependency that has just come back up.",
+      "suggestion": "Multiply the delay by a random factor, commonly somewhere between half and full, so the retries spread out over the window instead of landing on it. It is a one-line change and it keeps the ceiling and the attempt budget exactly as they are.",
+      "confidence": 0.7,
+      "evidence": [
+        "return { retry: true, delayMs: Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS) };"
+      ],
+      "verification": {
+        "status": "verified"
+      }
+    }
+  ],
+  "dropped": [],
+  "stats": {
+    "files_reviewed": 2,
+    "files_skipped": []
+  }
+}

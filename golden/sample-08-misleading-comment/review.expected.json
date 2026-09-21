@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "pull_request",
+    "repo": "acme/shop-platform",
+    "pr_number": 203,
+    "ref": "feature/payment-webhook",
+    "base_sha": null,
+    "head_sha": null,
+    "title": "Credit wallet on payment capture (provider handles delivery)"
+  },
+  "summary": "Adds a public webhook that credits a customer's wallet when the payment provider reports a capture. Nothing authenticates the caller and nothing deduplicates a retried delivery, so the endpoint can be used to mint balance and an ordinary retry pays twice.",
+  "findings": [
+    {
+      "id": "F01",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "side": "new",
+      "line_start": 17,
+      "line_end": 20,
+      "severity": "critical",
+      "category": "security",
+      "summary": "Payment webhook credits a wallet without verifying the caller",
+      "rationale": "The route takes a JSON body and credits the customer's wallet from it, with no signature check and no guard on the handler, so the only thing standing between the internet and this endpoint is not knowing the URL. Anyone who finds it can post a body naming any customer and any amount and have real money credited, as often as they like. Payment providers sign their webhooks precisely because the endpoint has to be publicly reachable and therefore cannot be trusted on reachability alone.",
+      "suggestion": "Verify the provider's signature header over the raw request body before doing anything else, using the shared secret from configuration and a constant-time comparison, and reject with 401 when it does not match. This needs the raw body, so the route must opt out of the JSON body parser or keep a raw copy. An authentication guard is not a substitute: the provider cannot present your users' credentials.",
+      "confidence": 0.94,
+      "evidence": [
+        "@Post('captured')",
+        "await this.wallet.credit(body.customerId, body.amount);"
+      ],
+      "verification": {
+        "status": "verified",
+        "note": "No guard, interceptor or signature check appears on the class or the handler."
+      }
+    },
+    {
+      "id": "F02",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "side": "new",
+      "line_start": 18,
+      "line_end": 20,
+      "severity": "high",
+      "category": "idempotency",
+      "summary": "Webhook credits again on every redelivery, and ignores the event id it is sent",
+      "rationale": "Payment providers retry a webhook whenever the response is slow or is not a 2xx, so the same capture arrives more than once as a matter of routine rather than as an edge case. This handler credits the wallet on every delivery and never looks at the event id in the body, which is the field the provider supplies for exactly this purpose. A single retried capture therefore pays the customer twice, and the second credit is indistinguishable from a legitimate one in the ledger.",
+      "suggestion": "Record the event id in a table with a unique constraint and write it in the same transaction as the credit, so a redelivery violates the constraint and the handler returns 200 without crediting anything. Returning 200 on a duplicate matters as much as the constraint: an error response asks the provider to retry again. This costs one insert per webhook and is what makes an at-least-once delivery safe to act on.",
+      "confidence": 0.9,
+      "evidence": [
+        "eventId: string;",
+        "await this.wallet.credit(body.customerId, body.amount);"
+      ],
+      "verification": {
+        "status": "verified"
+      }
+    },
+    {
+      "id": "F03",
+      "file": "services/billing-service/src/interface/http/payment-webhook.controller.ts",
+      "side": "new",
+      "line_start": 7,
+      "line_end": 7,
+      "severity": "low",
+      "category": "correctness",
+      "summary": "Money is carried as a floating point number",
+      "rationale": "The amount is typed as a number, so it arrives as a JSON double and is credited as one. Sums of values like 0.1 and 0.2 do not land on exact cents, and the error accumulates across a customer's balance in a way that is awkward to explain and worse to reconcile against the provider's own totals.",
+      "suggestion": "Carry money as an integer number of minor units, or as a string parsed into a decimal type, and keep the currency beside it rather than assuming one. The provider already sends minor units for most currencies, so this is usually a rename and a type change rather than a conversion.",
+      "confidence": 0.66,
+      "evidence": [
+        "  amount: number;"
+      ],
+      "verification": {
+        "status": "verified"
+      }
+    }
+  ],
+  "dropped": [],
+  "stats": {
+    "files_reviewed": 1,
+    "files_skipped": []
+  }
+}
