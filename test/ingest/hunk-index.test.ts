@@ -84,6 +84,21 @@ describe("HunkIndex", () => {
     expect(index.containsSnippet(HANDLER, "22 +")).toBe(false);
   });
 
+  it("accepts a copied prefix on a context line, whose marker is a space", () => {
+    // sample-06 is the first golden diff that modifies files. Its context lines are rendered
+    // "   3   import ..." and a model copied one as "3 import ...".
+    const search = indexOf(readGoldenDiff("sample-06-customer-search"));
+    const controller = "services/customer-service/src/interface/http/customer.controller.ts";
+    const imported =
+      "import { CustomerRepository } from '../../infrastructure/persistence/customer.repository';";
+    expect(search.containsSnippet(controller, `3 ${imported}`)).toBe(true);
+    expect(search.containsSnippet(controller, `   9     @UseGuards(JwtAuthGuard)`)).toBe(true);
+    // Still verified against the line it claims: line 4 is not the import.
+    expect(search.containsSnippet(controller, `4 ${imported}`)).toBe(false);
+    // And a snippet that happens to start with a number is not changed when it matches as-is.
+    expect(search.containsSnippet(controller, "@Get(':id')")).toBe(true);
+  });
+
   it("indexes both sides of a modified file", () => {
     const modified = indexOf(readDiffFixture("multi-hunk.patch"));
     expect(modified.hasRange("src/service.ts", "old", 1, 4)).toBe(true);

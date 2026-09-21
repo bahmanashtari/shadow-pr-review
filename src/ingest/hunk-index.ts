@@ -16,10 +16,14 @@ interface FileIndex {
 }
 
 /**
- * A diff line as the Reviewer is shown it: the new-side line number, the +/- marker, then
+ * A diff line as the Reviewer is shown it: the line number, a `+`, `-` or space marker, then
  * the code. Models are asked to copy only the code, but sometimes copy the whole line.
+ *
+ * The space marker is a context line - unchanged code around a change. Every golden diff added
+ * whole files until sample-06, so no context line could be quoted and only `+` and `-` were
+ * recognised; the first modified-file sample lost a finding quoted as `3 import {...}`.
  */
-const RENDERED_LINE = /^(\d+)\s*([+-])\s?(.*)$/;
+const RENDERED_LINE = /^(\d+)(?:\s*[+-]\s?|\s+)(.*)$/;
 
 /** Trims and collapses runs of spaces and tabs, so indentation never breaks a match. */
 export function normalizeSnippet(text: string): string {
@@ -124,7 +128,7 @@ function matchesConsecutive(entry: FileIndex, parts: readonly string[]): boolean
 function peelRenderedPrefix(entry: FileIndex, part: string): string | null {
   const match = RENDERED_LINE.exec(part);
   if (!match) return part;
-  const text = normalizeSnippet(match[3] ?? "");
+  const text = normalizeSnippet(match[2] ?? "");
   if (text === "") return null;
   const line = Number(match[1]);
   const onSide = (side: ReadonlyMap<number, string>): boolean => {

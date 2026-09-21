@@ -19,10 +19,17 @@ await this.dataSource.query(`UPDATE order_summary SET orders = orders + 1, reven
 
 The finding was right and grounded in real code. It was lost to the shape of its quote.
 
-**How often: once.** Across every `review.json` under `runs/`, this is the only distinct
-evidence string ever dropped as `claim_not_supported`. The case for the step is that one
-observation plus a prior - multi-line SQL in template literals is ordinary in TypeORM code, so the
-shape will recur on real changes - not a measured rate. A plan built on one case should be cheap,
+**How often: once for this shape, and a second citation failure since.** Across every
+`review.json` under `runs/` when this plan was written, it was the only distinct evidence string
+ever dropped as `claim_not_supported`. The model comparison that followed (ADR-045) added a
+different one: `qwen3:4b` quoted sample-01's publish-before-commit finding with five evidence
+strings, one of them `21 +` - a blank line - and Verify, which requires every quote, dropped a
+correct must-find finding for it. A blank quote grounds nothing and harms nothing, so the same
+question applies: forgive it and verify the rest, or send it back. Whichever option below is
+taken should say what it does with an evidence string that is empty once its prefix is peeled,
+as long as at least one other quote grounds the finding. The case for the step is those two
+observations plus a prior - multi-line SQL in template literals is ordinary in TypeORM code, so the
+shape will recur on real changes - not a measured rate. A plan built on two cases should be cheap,
 and should not claim more than it can show.
 
 ## 2. What the code already does, and why it still failed
@@ -75,7 +82,8 @@ real samples show citation errors other than joined lines.
   a paraphrase that shares most characters does not; a snippet that matches a single line is
   unaffected.
 - No contract change: `evidence` is already an array of strings with no line constraint.
-- ADR-045, stating that a line break is whitespace for grounding, and why principle 5 survives it.
+- An ADR (the next free number; ADR-045 went to the model comparison), stating that a line
+  break is whitespace for grounding, what an empty quote does, and why principle 5 survives it.
 
 ## 5. What to check
 

@@ -1899,3 +1899,74 @@ above is a claim about bugs somebody wrote for the model to find - the report sa
 total. ADR-026's model comparison is unblocked and was not run; at roughly fourteen minutes cold
 per model it is its own measurement. ADR-041's "the Reviewer does not notice redelivery" is
 superseded by the narrower statement above.
+
+## ADR-045: The model comparison, on a set that can tell models apart (accepted, September 2026)
+
+**Context.** ADR-026 kept `qwen3:30b` because the golden set "can no longer settle it": three of
+four models tied at 1.000. ADR-044 grew the set to seven samples and made it discriminate, and
+its last line left the comparison unrun. This is that run: every installed model but
+`mistral-small3.2`, which ADR-026 already retired, in one invocation so the labels, prompt and
+code are identical across rows. Measured cold, then re-run from cache after the context-line fix
+below, so the table reflects the code as committed.
+
+| Model | precision | recall | calibration | optional | false pos. | cold seconds |
+|---|---|---|---|---|---|---|
+| `qwen3:30b` (default) | **1.000** | 0.500 | 0.875 | **3** | 0 | 830.9 |
+| `qwen3-coder:30b` | 0.750 | 0.400 | 0.833 | 2 | 2 | **165.1** |
+| `qwen3:4b` | 0.857 | 0.500 | 1.000 | 1 | 1 | 1209.8 |
+
+**Decision: keep `qwen3:30b`, now on evidence rather than by default.** It ties the best recall,
+is the only model with no false positive, finds the most optional issues, and is 1.5 times faster
+than the model it ties. The margins are one or two findings each on seven synthetic samples, so
+this is a ranking the set supports, not one it proves; what matters is that no row gives a reason
+to change.
+
+**`qwen3:4b` found what no model had.** It is the first model, in every run on disk, to find
+`sample-02`'s redelivery bug - *"Consumer processes order.placed events without idempotency
+checks"*, filed as `idempotency`, naming the redelivery. Read, not trusted: ADR-044 showed the
+2/2 on that sample can be the atomicity finding in disguise, and here it is not. It lost
+`sample-01`'s publish-before-commit to a quote, and made the set's first scope mistake, both
+below. ADR-026's note that a dense 4B is the slowest thing measured still holds, at 1.5 times the
+default.
+
+**`qwen3-coder:30b` is fast and cannot be the narrator.** Five times faster than the default. But
+both of its false positives are the same claim, "outside of transactional context", made where
+nothing transactional is at stake, and on two of the five samples with something to narrate it
+wrote a step six or seven words over the 60-word cap and could not shrink it under repair - 67,
+67, 66 - so Narrate failed and handed over a `script.rejected.json`. The richer findings ADR-041
+asked for are exactly what makes that cap bite. ADR-026 named it the first candidate to revisit
+for speed; as the Reviewer alone it may still be, and that is a configuration this project does
+not have yet.
+
+**What no model finds**, which is the rubric's business rather than the model's: an
+unauthenticated endpoint that credits money (04), a guard missing only in an unchanged context
+line (06), and a column dropped with its data (05). All three models miss all three.
+
+**The comparison found three things in the pipeline**, which is where ADR-026's comparison also
+paid for itself.
+
+- **A copied prefix on a context line was never recognised - fixed.** ADR-020 peels a copied
+  `12 +` line-number prefix and verifies it against that line. Its pattern knew only `+` and `-`,
+  and a context line's marker is a space. Every golden diff added whole files until sample-06, so
+  no context line had ever been quoted. The pattern now accepts the space marker; the peeled text
+  must still be on the line it names, and a snippet that matches as it stands is never peeled.
+- **A quote of a blank line sinks a correct finding - recorded, not fixed.** `qwen3:4b` quoted
+  sample-01's publish-before-commit with five evidence strings, one of them `21 +`: a blank line,
+  which grounds nothing. Verify requires every quote, so the correct finding was dropped. It is
+  the second observed citation failure, and it belongs to step 14's plan with the first.
+- **Nothing enforces "review only what the change introduces" - recorded, not fixed.** With the
+  prefix fixed, `qwen3:4b`'s *"Controller depends on infrastructure implementation"* reached the
+  eval: an unchanged import, on a context line, which the rubric's first scope rule forbids
+  flagging. Verify has no rule for a finding that touches no added or removed line, and the
+  Verifier agent kept it. Whether it should be dropped deterministically is a policy question -
+  a change can make unchanged code worse - so it is roadmap step 15, not a patch.
+
+**And a limit of ADR-044's near-miss line, seen in use.** `qwen3-coder`'s sample-04 false positive
+is reported "on webhook-signature-not-verified's lines", because that label shares the handler's
+lines - but the finding is about transactions, not signatures. The line names a place, never a
+claim, which is what its wording says; it is worth knowing that the place can belong to a
+different bug.
+
+**Consequences.** ADR-026's decision stands and stops being provisional in its reasons as well as
+its result. `eval.json` for this table is `runs/eval-models-2/`. Supersedes ADR-044's closing
+statement that the comparison was not run.

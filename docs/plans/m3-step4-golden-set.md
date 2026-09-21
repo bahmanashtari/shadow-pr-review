@@ -17,8 +17,8 @@ section 3:
 redelivery bug in any new sample; it did in two of three, filed under the wrong category, and
 section 4's "that is the next rubric or prompt change" was then taken in this step because the
 set could measure it: a category guide in the rubric took recall 0.400 to 0.500 and false
-positives 3 to 0. The `--model` comparison in section 5 was not run. The real samples remain
-owed, so this plan stays open.
+positives 3 to 0. The `--model` comparison in section 5 was run afterwards and kept the
+default on evidence (ADR-045). The real samples remain owed, so this plan stays open.
 
 Read CLAUDE.md, docs/ROADMAP.md, `golden/README.md`, and ADR-025, ADR-026, ADR-036 and ADR-041
 first. **Do not rewrite this plan**; its body is the record of why this step is next.
