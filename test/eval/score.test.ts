@@ -523,6 +523,75 @@ describe("measureScript", () => {
   });
 });
 
+describe("redundancy (step 7)", () => {
+  it("counts two findings on one label as saying it twice - ADR-029's own case", () => {
+    const first = finding({ id: "F01", category: "ddd-boundaries", line_start: 19, line_end: 19 });
+    const second = finding({ id: "F02", category: "ddd-boundaries", line_start: 20, line_end: 20 });
+    const score = scoreReview(
+      review([first, second]),
+      labels({
+        must_find: [
+          required({
+            key: "application-depends-on-orm",
+            category: "ddd-boundaries",
+            min_severity: "medium",
+          }),
+        ],
+      }),
+    );
+    // Precision and recall cannot see it - exactly why it is its own axis.
+    expect(score.precision).toBe(1);
+    expect(score.recall).toBe(1);
+    expect(score.redundant).toEqual([
+      { key: "application-depends-on-orm", finding_ids: ["F01", "F02"] },
+    ]);
+  });
+
+  it("does not call one finding that locates two labels redundant", () => {
+    const broad = finding({ line_start: 19, line_end: 27 });
+    const score = scoreReview(
+      review([broad]),
+      labels({
+        acceptable: [
+          {
+            key: "also-here",
+            file: FILE,
+            line_start: 22,
+            line_end: 26,
+            category: "event-consistency",
+            description: "A second issue on the same lines.",
+          },
+        ],
+      }),
+    );
+    expect(score.redundant).toEqual([]);
+  });
+
+  it("totals the surplus, not the labels: three on one label is two too many", () => {
+    const base = {
+      sample: "s",
+      origin: "synthetic" as const,
+      run_dir: "/tmp/s",
+      cached: false,
+      review: {
+        kept: 3,
+        max_findings: null,
+        within_budget: true,
+        precision: 1,
+        recall: 1,
+        found: [],
+        missed: [],
+        acceptable_found: [],
+        false_positives: [],
+        dropped: [],
+        redundant: [{ key: "k", finding_ids: ["F01", "F02", "F03"] }],
+      },
+      script: { narrated: true },
+    };
+    expect(total([base]).redundant).toBe(2);
+  });
+});
+
 describe("near misses", () => {
   it("names the label a false positive sits on under another category, and keeps it false", () => {
     // sample-05's shape: the redelivery bug described correctly, filed as event-consistency.

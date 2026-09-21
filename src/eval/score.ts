@@ -12,6 +12,7 @@ import type {
   Match,
   Miscalibration,
   OriginTotals,
+  Redundancy,
   ReviewScore,
   ScriptResult,
   SampleResult,
@@ -180,6 +181,17 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
     }));
 
   const placed: PlacedLabel[] = [...labels.must_find, ...labels.acceptable];
+
+  // Two findings on one known issue say it twice. The scorer cannot read them and hear the same
+  // sentence, but it can see them land on one label (ADR-029, roadmap step 7). `locates`, not
+  // `found`: severity has no part in whether something was said twice.
+  const redundant: Redundancy[] = placed
+    .map((label) => ({
+      key: label.key,
+      finding_ids: kept.filter((f) => locates(f, label)).map((f) => f.id),
+    }))
+    .filter((r) => r.finding_ids.length > 1);
+
   const falsePositives: FalsePositive[] = kept
     .filter((f) => !placed.some((label) => locates(f, label)))
     .map((f) => {
@@ -212,6 +224,7 @@ export function scoreReview(review: ReviewResult, labels: GoldenLabels): ReviewS
     calibrated: rate(banded.length - miscalibrated.length, banded.length),
     calibration_scored: banded.length,
     miscalibrated,
+    redundant,
     dropped: droppedByReason(review),
   };
 }
@@ -281,6 +294,8 @@ export function total(samples: readonly SampleResult[]): Totals {
   // findings weighs four times one with a single banded finding.
   let banded = 0;
   let miscalibrated = 0;
+  // Surplus findings: a label located three times contributes two.
+  let redundant = 0;
 
   for (const s of samples) {
     mustFind += s.review.found.length + s.review.missed.length;
@@ -295,6 +310,7 @@ export function total(samples: readonly SampleResult[]): Totals {
     if (!s.review.within_budget) overBudget += 1;
     banded += s.review.calibration_scored ?? 0;
     miscalibrated += s.review.miscalibrated?.length ?? 0;
+    for (const r of s.review.redundant ?? []) redundant += r.finding_ids.length - 1;
   }
 
   return {
@@ -307,6 +323,7 @@ export function total(samples: readonly SampleResult[]): Totals {
     false_positives: falsePositives,
     calibrated: rate(banded - miscalibrated, banded),
     miscalibrated,
+    redundant,
     seconds: Math.round(seconds * 10) / 10,
     narrated,
     narratable,

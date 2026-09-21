@@ -129,6 +129,11 @@
           "items": { "$ref": "#/$defs/Miscalibration" },
           "description": "The matched findings that fell outside their band, named. Direction matters more than count: over-rating and under-rating call for opposite corrections, and until this axis existed only under-rating was visible at all, as a recall gap."
         },
+        "redundant": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Redundancy" },
+          "description": "Labels that more than one kept finding located. Every such finding can be true and there can still be one too many of them - ADR-029's video described two problems in three steps, and precision and recall both read 1.000. A separate axis from precision, like within_budget and calibrated."
+        },
         "calibration_scored": {
           "type": "integer",
           "minimum": 0,
@@ -247,6 +252,11 @@
           "minimum": 0,
           "description": "How many matched findings fell outside their band, over every sample."
         },
+        "redundant": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many kept findings were surplus: for a label located three times, two."
+        },
         "seconds": { "type": "number", "minimum": 0 },
         "narrated": {
           "type": "integer",
@@ -262,6 +272,19 @@
           "type": "integer",
           "minimum": 0,
           "description": "How many samples kept more findings than their max_findings allows."
+        }
+      }
+    },
+    "Redundancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "finding_ids"],
+      "properties": {
+        "key": { "type": "string" },
+        "finding_ids": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string", "pattern": "^F[0-9]{2}$" }
         }
       }
     },

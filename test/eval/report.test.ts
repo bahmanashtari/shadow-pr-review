@@ -192,6 +192,22 @@ describe("formatModel", () => {
   });
 });
 
+describe("redundant findings", () => {
+  it("names the findings that said one thing twice, and counts them in the comparison", () => {
+    const twice = sample({
+      review: {
+        ...sample().review,
+        redundant: [{ key: "application-depends-on-orm", finding_ids: ["F02", "F03"] }],
+      },
+    });
+    expect(formatModel(run({ samples: [twice] })).join("\n")).toContain(
+      "redundant: F02, F03 all on application-depends-on-orm",
+    );
+    const table = formatComparison([run({ samples: [twice] })]).join("\n");
+    expect(table).toContain("dup");
+  });
+});
+
 describe("the origin of the samples", () => {
   function run(samples: SampleResult[]): ModelRun {
     return {

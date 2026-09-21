@@ -2047,3 +2047,27 @@ threshold on these bugs, tipped by any edit, in either direction. A number that 
 under an unrelated edit is a warning about single measurements, not a result; it is also the
 strongest argument yet for the real samples, and for measuring a prompt change against more than
 one cold run before believing it.
+
+## ADR-048: Saying one thing twice is scored, beside precision (accepted, September 2026)
+
+**Context.** Roadmap step 7, taken under Bahman's instruction to continue with whatever could be
+done while the real samples are outstanding; it is eval-only, so it cannot change a review or a
+video. ADR-029 found by listening that `sample-01`'s video described two problems in three steps,
+and that `spr eval` had scored it 1.000 / 1.000 before the fix and after, because every metric
+scores findings one at a time.
+
+**Decision.** Two kept findings that locate the same label are redundant. The scorer cannot read
+two findings and hear the same sentence, but it can see them land on one known issue, using
+`locates` - so severity plays no part, as in precision. Each sample reports the labels located
+more than once with the finding ids; the totals count the surplus (three findings on one label is
+two too many); the report prints a detail line and a `dup` column in the model comparison. It sits
+beside precision and never inside it, in the shape of `within_budget` (ADR-025) and `calibrated`
+(ADR-036): every finding can be true and there can still be one too many. Both schema fields are
+optional, so an older `eval.json` still validates. It cannot see two false positives making the
+same claim, since neither has a label to land on; both are already reported as false positives.
+
+**Checked against everything on disk.** Re-scoring all 99 saved reviews finds exactly one
+redundancy: `runs/eval/`'s `sample-01`, F02 and F03 on `application-depends-on-orm` - the very pair
+ADR-029 heard, written at 17:09 on 16 September, four and a half hours before ADR-029's fix. No
+review since has said anything twice. The axis finds the one case it was built from, and nothing
+else.

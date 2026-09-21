@@ -96,6 +96,10 @@ export interface ReviewScore {
    */
   miscalibrated?: Miscalibration[];
   /**
+   * Labels that more than one kept finding located. Every such finding can be true and there can still be one too many of them - ADR-029's video described two problems in three steps, and precision and recall both read 1.000. A separate axis from precision, like within_budget and calibrated.
+   */
+  redundant?: Redundancy[];
+  /**
    * How many matched findings had a band to be scored against, which is `calibrated`'s denominator. Reported rather than left to be recovered from the rounded rate, so totals across samples add up exactly.
    */
   calibration_scored?: number;
@@ -140,6 +144,13 @@ export interface Miscalibration {
    */
   direction: "over" | "under";
 }
+export interface Redundancy {
+  key: string;
+  /**
+   * @minItems 2
+   */
+  finding_ids: string[];
+}
 export interface ScriptResult {
   /**
    * False when the Narrate stage failed. That is a result, not an error: the sample keeps its review score and the run continues. Null when the verified review kept no findings, so there was nothing to narrate: making no script is the correct outcome for a clean review (ADR-042), and on a restraint sample often the best one, so it is neither a script made nor one that failed.
@@ -170,6 +181,10 @@ export interface Totals {
    * How many matched findings fell outside their band, over every sample.
    */
   miscalibrated?: number;
+  /**
+   * How many kept findings were surplus: for a label located three times, two.
+   */
+  redundant?: number;
   seconds: number;
   /**
    * How many samples the Narrate stage produced a script for.

@@ -143,6 +143,10 @@ export function formatModel(run: ModelRun): string[] {
         detail.push(`  on ${fp.near_miss_key}'s lines, filed under ${fp.category}`);
       }
     }
+    for (const r of s.review.redundant ?? []) {
+      // Said once is enough: the extra findings are extra steps in the video (ADR-029).
+      detail.push(`redundant: ${r.finding_ids.join(", ")} all on ${r.key}`);
+    }
     for (const m of s.review.miscalibrated ?? []) {
       // The direction is the point: over-rating and under-rating call for opposite corrections.
       detail.push(
@@ -175,6 +179,7 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
       padLeft("opt", COLUMNS.fp),
       padLeft("fp", COLUMNS.fp),
       padLeft("over", COLUMNS.fp),
+      padLeft("dup", COLUMNS.fp),
       padLeft("secs", 8),
     ].join(" "),
   ];
@@ -189,6 +194,7 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
         padLeft(String(m.totals.acceptable_found ?? 0), COLUMNS.fp),
         padLeft(String(m.totals.false_positives), COLUMNS.fp),
         padLeft(String(m.totals.over_budget ?? 0), COLUMNS.fp),
+        padLeft(String(m.totals.redundant ?? 0), COLUMNS.fp),
         padLeft(String(m.totals.seconds), 8),
       ].join(" "),
     );
