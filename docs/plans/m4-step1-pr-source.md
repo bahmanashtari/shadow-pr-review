@@ -1,7 +1,17 @@
 # Plan: Milestone 4, step 1 (`--pr`: review a GitHub pull request)
 
-Status: **proposed**, written at the end of the session that finished Milestone 3's steps 2, 3, 7
-and 13 to 15, so the next session can put its questions to Bahman and start rather than
+Status: **approved** by Bahman on 21 September 2026, every recommendation taken. Q1: start
+Milestone 4 now. Q2: a self-hosted runner on a dedicated team machine, running Ollama with the
+default model (the roadmap's Milestone 4 section records it; step 4 builds on it). Q3: `fetch`.
+Q4: public and private repositories from the start. Two facts in the body below turned out wrong
+when checked, and are corrected here rather than rewritten there. A hosted runner for a *private*
+repository has 2 CPUs and 8 GB, not the 16 GB of a public one, which weakens Q2's second option
+further. And `actions/checkout` on a `pull_request` event checks out the test merge commit, not
+the PR's head, so the checkout rule in section 3 is not met by default; the step 4 workflow has to
+ask for `ref: ${{ github.event.pull_request.head.sha }}` (ADR-051).
+
+Originally written as `proposed` at the end of the session that finished Milestone 3's steps 2, 3,
+7 and 13 to 15, so the next session can put its questions to Bahman and start rather than
 reconstruct. Milestone 3 is done apart from two steps that wait on him (4, the real samples; 5,
 a sandboxing decision), and neither blocks this one. **Do not rewrite this plan; amend its status
 when it is approved.** Read CLAUDE.md, docs/ROADMAP.md, ARCHITECTURE sections 1, 2 and 4, and

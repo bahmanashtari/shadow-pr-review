@@ -16,7 +16,14 @@ import {
 } from "./contracts/schemas.js";
 import { validateContract } from "./contracts/validate.js";
 import { buildIngest, readIngest, readRawDiff, summarize, writeIngest } from "./ingest/ingest.js";
-import { fromDiffFile, fromGitRange } from "./ingest/sources.js";
+import {
+  checkoutAt,
+  fromDiffFile,
+  fromGitRange,
+  fromPullRequest,
+  originRepo,
+  type DiffSource,
+} from "./ingest/sources.js";
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
 import { judgeFindings } from "./agents/verifier.js";
 import { readScript, runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
@@ -40,6 +47,7 @@ import { runRecord, summarizeRecord, writeRecord } from "./recorder/record.js";
 import { runCompose, summarizeCompose } from "./composer/compose.js";
 import { readRecord } from "./recorder/record.js";
 import { ContractError, StageError } from "./lib/errors.js";
+import { createGitHubClient } from "./lib/github.js";
 import { createRunFolder } from "./lib/run-folder.js";
 
 const PIPELINE_STAGES = [
@@ -66,6 +74,14 @@ function parseContract(value: string): ContractName {
     throw new InvalidArgumentError(`Expected one of: ${CONTRACT_NAMES.join(", ")}`);
   }
   return value;
+}
+
+/** `--pr 142`: a positive whole number, nothing else. */
+function parsePrNumber(value: string): number {
+  if (!/^[1-9]\d{0,9}$/.test(value)) {
+    throw new InvalidArgumentError(`Expected a pull request number such as 142, got "${value}"`);
+  }
+  return Number(value);
 }
 
 function parseStage(value: string): StageName {
@@ -121,7 +137,7 @@ function validateFile(file: string, forced?: ContractName): boolean {
 interface RunOptions {
   diff?: string;
   git?: string;
-  pr?: string;
+  pr?: number;
   repo?: string;
   title?: string;
   out?: string;
@@ -147,17 +163,14 @@ function report(runDir: string, summary: string): void {
  * Stops with exit code 2 at the first stage that is not built yet.
  */
 async function runPipeline(opts: RunOptions): Promise<void> {
-  if (opts.pr !== undefined) notYet("spr run --pr", "Milestone 4");
-  if ((opts.diff === undefined) === (opts.git === undefined)) {
-    throw new InvalidArgumentError("Pass exactly one of --diff or --git");
+  const given = [opts.diff, opts.git, opts.pr].filter((o) => o !== undefined).length;
+  if (given !== 1) throw new InvalidArgumentError("Pass exactly one of --diff, --git or --pr");
+  if (opts.repo !== undefined && opts.pr === undefined) {
+    throw new InvalidArgumentError("--repo goes with --pr");
   }
 
   const config = loadConfig();
-  const titleOption = opts.title === undefined ? {} : { title: opts.title };
-  const source =
-    opts.diff === undefined
-      ? await fromGitRange(opts.git ?? "", { cwd: process.cwd(), ...titleOption })
-      : fromDiffFile(opts.diff, titleOption);
+  const source = await readSource(opts);
 
   const built = buildIngest({ rawDiff: source.rawDiff, source: source.source, config });
   const runDir = createRunFolder({
@@ -210,6 +223,27 @@ async function runPipeline(opts: RunOptions): Promise<void> {
     `stopped after compose: publish is not implemented yet (Milestone 4, step 2). ` +
       `Run folder: ${runDir}`,
   );
+}
+
+/** Reads the change `spr run` was pointed at: a diff file, a local git range or a pull request. */
+async function readSource(opts: RunOptions): Promise<DiffSource> {
+  const titleOption = opts.title === undefined ? {} : { title: opts.title };
+  if (opts.diff !== undefined) return fromDiffFile(opts.diff, titleOption);
+  if (opts.git !== undefined) {
+    return fromGitRange(opts.git, { cwd: process.cwd(), ...titleOption });
+  }
+
+  const repo = opts.repo ?? (await originRepo(process.cwd()));
+  if (repo === null) {
+    throw new InvalidArgumentError(
+      "Pass --repo owner/name: the working directory has no GitHub origin remote",
+    );
+  }
+  const { pr } = opts;
+  if (pr === undefined) throw new InvalidArgumentError("Pass exactly one of --diff, --git or --pr");
+  const token = readSecrets().githubToken;
+  const github = createGitHubClient(token === undefined ? {} : { token });
+  return fromPullRequest(pr, repo, { github, ...titleOption });
 }
 
 /**
@@ -287,6 +321,16 @@ async function review(
   config: SprConfig,
   tracer: Tracer,
 ): Promise<void> {
+  // Tools that read the repository are offered only on a checkout at the reviewed head
+  // (ADR-051); anywhere else they would describe different code.
+  const headSha = ingest.source.head_sha ?? null;
+  const repoRoot = await checkoutAt(headSha, process.cwd());
+  if (repoRoot === undefined && headSha !== null) {
+    console.log(
+      `no checkout at ${headSha.slice(0, 7)} here: reviewing from the diff alone, ` +
+        "without read_file and grep_repo",
+    );
+  }
   const outcome = await runReview({
     ingest,
     provider: createProvider(config, readSecrets()),
@@ -294,8 +338,7 @@ async function review(
     budget: new Budget(config.budgets),
     tracer,
     cache: createCache(config.cache),
-    // Tools that need a checkout are only offered when this run has one.
-    ...(ingest.source.type === "local_diff" ? {} : { repoRoot: process.cwd() }),
+    ...(repoRoot === undefined ? {} : { repoRoot }),
   });
   writeReview(runDir, outcome.review);
   console.log(summarizeReview(outcome));
@@ -380,9 +423,9 @@ export function buildProgram(): Command {
     .description("Run the full pipeline on a diff")
     .option("--diff <file>", "unified diff file")
     .option("--git <range>", "local git range, for example HEAD~1..HEAD")
-    .option("--pr <number>", "GitHub pull request number")
-    .option("--repo <owner/name>", "GitHub repository")
-    .option("--title <text>", "title for the intro (default: the commit subject)")
+    .option("--pr <number>", "GitHub pull request number", parsePrNumber)
+    .option("--repo <owner/name>", "GitHub repository for --pr (default: the origin remote)")
+    .option("--title <text>", "title of the change (default: the commit subject or PR title)")
     .option("--out <dir>", "run folder (default: runs/<timestamp>-<id>)")
     .option("--force", "write into the run folder even when it already has files")
     .option("--until <stage>", `stop after this stage: ${PIPELINE_STAGES.join(", ")}`, parseStage)

@@ -77,7 +77,8 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestones 1 and 2; Milestone 3 added no new commands):
+Available now (all of Milestones 1 and 2; Milestone 3 added no new commands; Milestone 4 step 1
+added `spr run --pr`):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
@@ -102,6 +103,7 @@ run folder.
 ```
 pnpm spr run --diff change.patch --until compose [--title "..."] [--out runs/x] [--force]
 pnpm spr run --git HEAD~1..HEAD --until ingest      # local commits (A...B diffs from the merge base)
+pnpm spr run --pr 142 --repo owner/name             # a GitHub pull request; --repo defaults to origin
 pnpm spr stage ingest --run runs/<id>               # re-filter diff.raw.patch with current config
 pnpm spr stage review --run runs/<id>               # re-review; free on a cache hit
 pnpm spr stage verify --run runs/<id>               # re-screen review.raw.json; deterministic layer only
@@ -161,29 +163,39 @@ That path is not unit-tested, because recording is real time: `pnpm test` stops 
 file sizes to compare against the last run. Run it before a release and after touching a stage
 boundary. It needs the whole toolchain up at once (a model, the Kokoro container, ffmpeg,
 Chromium) and takes roughly as long as the videos it makes - 2:18 for the original three samples
-on a warm cache. The set now holds nine (ADR-044, ADR-049), so expect longer; the six newer
-samples have not been through it yet, and the restraint samples - 07 and 09, and 03 on some
-runs - keep nothing on the default model, which correctly makes no video.
+on a warm cache, 5:03 for all nine (ADR-051). The restraint samples - 07 and 09, and 03 on some
+runs - keep nothing on the default model and correctly make no video; the script counts that as
+finished ("none" in the table), not as a failure, and clears each sample's `runs/e2e-*` folder
+first so an earlier run's `final.mp4` cannot be mistaken for this one's.
 
 The Composer reports `narration complete, picture N ms short of it`. The first half is a
 checked claim: the final file's sound is compared against the clips and gaps the schedule was
 built from, which nothing in the encode can influence, and a shortfall over 40 ms fails the
 stage (ADR-035). The second half is frame quantization - the picture ends on the last whole
-frame at or before the sound does, 69 to 77 ms at 25 fps - and is printed as a number to watch,
-not as evidence. If Compose fails saying narration is missing, it names which of the two causes
-it is and the command that resumes; the run folder is kept, so nothing is re-reviewed or
-re-spoken.
+frame at or before the sound does, 49 to 79 ms at 25 fps over six videos - and is printed as a
+number to watch, not as evidence. If Compose fails saying narration is missing, it names which
+of the two causes it is and the command that resumes; the run folder is kept, so nothing is
+re-reviewed or re-spoken.
+
+`--pr` reads the pull request and its diff from the GitHub REST API with Node's `fetch` - two
+GET requests, no Octokit (ADR-051). A public repository needs no token; a private one needs
+`GITHUB_TOKEN` (or `GH_TOKEN`) exported in the shell, and a 404 without one says so. A diff too
+large for GitHub to render fails with GitHub's own limit and the exact `--git base...head` command
+that reviews it from a checkout. **`read_file` and `grep_repo` are offered only when the working
+directory is a checkout whose `HEAD` is the reviewed head** - for `--pr` and `--git` alike - and
+the run says `no checkout at <sha> here` when they are withheld. In CI that means
+`actions/checkout` with `ref: ${{ github.event.pull_request.head.sha }}`, because by default it
+checks out the test merge commit.
 
 Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
 
 ```
-pnpm spr run --pr 142 --repo owner/name             # GitHub PR (Milestone 4 step 1)
 pnpm spr stage publish --run runs/<id>              # Milestone 4 step 2
 ```
 
-Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`, first 7
-characters of the diff's sha256 for `--diff`). Ingest writes the first three; the rest follow
-as their stages land:
+Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`,
+`pr<number>-<short head sha>` for `--pr`, first 7 characters of the diff's sha256 for
+`--diff`). Ingest writes the first three; the rest follow as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
 audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, record.json,
 subtitles.srt, final.mp4, trace.jsonl, cost.json`.
@@ -229,7 +241,8 @@ A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` 
   (the library, not the test runner), whose browser is installed separately with
   `pnpm exec playwright install chromium-headless-shell` - the headless shell alone is enough,
   and it brings its own ffmpeg for the WebM (ADR-031).
-- Planned libraries (verify current versions when adding): `@octokit/rest`, `pino`.
+- Planned libraries (verify current versions when adding): `pino`; `@octokit/rest` only if
+  Publish's paginated sticky comment wants it - `--pr` reads GitHub with `fetch` (ADR-051).
   No diff-parsing library (ADR-014).
 - `src/recorder/page/*.js` is browser JavaScript, deliberately outside the TypeScript project:
   it ships to Chromium verbatim and `buildPage` inlines it, so there is no build step between

@@ -37,7 +37,7 @@
         "type": { "enum": ["pull_request", "push", "local_diff"] },
         "repo": { "type": ["string", "null"], "description": "owner/name" },
         "pr_number": { "type": ["integer", "null"], "minimum": 1 },
-        "ref": { "type": ["string", "null"], "description": "Branch name for push events." },
+        "ref": { "type": ["string", "null"], "description": "Branch name: the pushed branch, or a pull request's head branch." },
         "base_sha": { "type": ["string", "null"] },
         "head_sha": { "type": ["string", "null"] },
         "title": { "type": ["string", "null"] }

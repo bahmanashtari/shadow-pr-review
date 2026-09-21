@@ -9,13 +9,23 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildIngest } from "../../src/ingest/ingest.js";
 import {
+  checkoutAt,
   fromDiffFile,
   fromGitRange,
+  fromPullRequest,
+  originRepo,
   parseGitHubRepo,
   parseRange,
 } from "../../src/ingest/sources.js";
 import { StageError } from "../../src/lib/errors.js";
-import { defaultConfig } from "../helpers.js";
+import { GitHubError, parsePullRequest, type GitHubClient } from "../../src/lib/github.js";
+import {
+  defaultConfig,
+  PR_BASE_SHA,
+  PR_HEAD_SHA,
+  pullRequestJson,
+  readGoldenDiff,
+} from "../helpers.js";
 
 const HOSTILE_GIT_CONFIG = [
   "[user]",
@@ -202,5 +212,101 @@ describe("fromDiffFile", () => {
 
   it("fails clearly when the file is missing", () => {
     expect(() => fromDiffFile(path.join(repo, "missing.patch"))).toThrow(StageError);
+  });
+});
+
+/** A client that answers with a pull request and a diff, or fails the way it is told to. */
+function fakeGitHub(diff: string | GitHubError, pr: unknown = pullRequestJson()): GitHubClient {
+  return {
+    getPullRequest: () => Promise.resolve(parsePullRequest(pr)),
+    getPullRequestDiff: () =>
+      typeof diff === "string" ? Promise.resolve(diff) : Promise.reject(diff),
+  };
+}
+
+describe("fromPullRequest", () => {
+  it("gives the same ingest as the same diff from a file, apart from the source", async () => {
+    const diff = readGoldenDiff("sample-01-order-outbox");
+    const source = await fromPullRequest(142, "acme/shop", { github: fakeGitHub(diff) });
+
+    expect(source.source).toEqual({
+      type: "pull_request",
+      repo: "acme/shop",
+      pr_number: 142,
+      ref: "feature/outbox",
+      base_sha: PR_BASE_SHA,
+      head_sha: PR_HEAD_SHA,
+      title: "Publish OrderPlaced through the outbox",
+    });
+    expect(source.id).toBe(`pr142-${PR_HEAD_SHA.slice(0, 7)}`);
+    expect(source.rawDiff).toBe(diff);
+
+    const file = path.join(repo, "pr.patch");
+    writeFileSync(file, diff, "utf8");
+    const local = fromDiffFile(file);
+    const config = defaultConfig();
+    const fromPr = buildIngest({ rawDiff: source.rawDiff, source: source.source, config });
+    const fromFile = buildIngest({ rawDiff: local.rawDiff, source: local.source, config });
+    expect({ ...fromPr.ingest, source: null }).toEqual({ ...fromFile.ingest, source: null });
+    expect(fromPr.keptPatch).toBe(fromFile.keptPatch);
+  });
+
+  it("takes the title from the option when given", async () => {
+    const source = await fromPullRequest(142, "acme/shop", {
+      github: fakeGitHub(""),
+      title: "Mine",
+    });
+    expect(source.source.title).toBe("Mine");
+  });
+
+  it("fails as an ingest error with GitHub's line", async () => {
+    const github: GitHubClient = {
+      getPullRequest: () =>
+        Promise.reject(new GitHubError("Pull request acme/shop#7 was not found.", 404)),
+      getPullRequestDiff: () => Promise.reject(new Error("not reached")),
+    };
+    const error = await fromPullRequest(7, "acme/shop", { github }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StageError);
+    expect((error as StageError).stage).toBe("ingest");
+    expect((error as StageError).message).toBe("Pull request acme/shop#7 was not found.");
+  });
+
+  it("says how to review a diff GitHub will not render, with the exact range", async () => {
+    const tooLarge = new GitHubError("GitHub will not render the diff (406).", 406, true);
+    const error = await fromPullRequest(142, "acme/shop", { github: fakeGitHub(tooLarge) }).catch(
+      (e: unknown) => e,
+    );
+    expect((error as StageError).message).toBe(
+      "GitHub will not render the diff (406). Review it from a checkout instead: " +
+        `git fetch origin pull/142/head, then spr run --git ${PR_BASE_SHA}...${PR_HEAD_SHA}`,
+    );
+  });
+});
+
+describe("originRepo", () => {
+  it("reads owner/name from the origin remote", async () => {
+    expect(await originRepo(repo)).toBe("acme/shop-platform");
+  });
+
+  it("is null outside a repository", async () => {
+    expect(await originRepo(home)).toBeNull();
+  });
+});
+
+describe("checkoutAt", () => {
+  it("is the repository root when HEAD is the head sha, from any folder inside it", async () => {
+    const head = await git("rev-parse", "HEAD");
+    const root = await git("rev-parse", "--show-toplevel");
+    expect(await checkoutAt(head, repo)).toBe(root);
+    expect(await checkoutAt(head, path.join(repo, "src"))).toBe(root);
+  });
+
+  it("is undefined when HEAD is some other commit", async () => {
+    expect(await checkoutAt(baseSha, repo)).toBeUndefined();
+  });
+
+  it("is undefined outside a repository, and without a head sha", async () => {
+    expect(await checkoutAt(baseSha, home)).toBeUndefined();
+    expect(await checkoutAt(null, repo)).toBeUndefined();
   });
 });

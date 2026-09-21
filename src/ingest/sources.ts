@@ -1,11 +1,13 @@
 /**
- * Where a diff comes from: a file on disk (`--diff`) or a local git range (`--git`).
- * GitHub pull requests (`--pr`) arrive in Milestone 4 and must produce the same fields.
+ * Where a diff comes from: a file on disk (`--diff`), a local git range (`--git`) or a GitHub
+ * pull request (`--pr`). All three produce the same fields, so nothing after ingest can tell
+ * them apart except by `source.type`.
  */
 import { readFileSync } from "node:fs";
 import type { Source } from "../contracts/generated/ingest.js";
 import { StageError } from "../lib/errors.js";
 import { run } from "../lib/exec.js";
+import { GitHubError, type GitHubClient } from "../lib/github.js";
 import { sha256 } from "../lib/hash.js";
 
 /** A diff plus everything ingest needs to describe where it came from. */
@@ -19,7 +21,7 @@ export interface DiffSource {
 
 /** Options shared by every source. */
 export interface SourceOptions {
-  /** Overrides the title shown in the intro. */
+  /** Overrides the title the source would give the change (commit subject, PR title). */
   title?: string;
 }
 
@@ -27,6 +29,11 @@ export interface SourceOptions {
 export interface GitSourceOptions extends SourceOptions {
   /** Repository to run git in. */
   cwd: string;
+}
+
+/** Options for {@link fromPullRequest}. */
+export interface PullRequestSourceOptions extends SourceOptions {
+  github: GitHubClient;
 }
 
 /**
@@ -154,4 +161,78 @@ export async function fromGitRange(range: string, options: GitSourceOptions): Pr
     },
     id: headSha.slice(0, ID_LENGTH),
   };
+}
+
+/** The GitHub repository of the `origin` remote in `cwd`, or null when there is none. */
+export async function originRepo(cwd: string): Promise<string | null> {
+  const remote = await tryGit(["remote", "get-url", "origin"], cwd);
+  return remote === null ? null : parseGitHubRepo(remote);
+}
+
+/**
+ * Reads a pull request and its diff from GitHub. The diff is GitHub's own, base...head from the
+ * merge base, which is what `--git base...head` gives on a checkout - so an oversized diff that
+ * GitHub will not render can still be reviewed that way, and the error says how.
+ *
+ * Two requests, one after the other: a push between them would pair the new diff with the old
+ * head sha. In CI a newer push cancels this run anyway (`concurrency`), so the window is not
+ * closed with a third request.
+ * @throws StageError with GitHub's failure in one line.
+ */
+export async function fromPullRequest(
+  number: number,
+  repo: string,
+  options: PullRequestSourceOptions,
+): Promise<DiffSource> {
+  const { github } = options;
+  const pr = await github.getPullRequest(repo, number).catch((cause: unknown) => {
+    throw asStageError(cause);
+  });
+  const rawDiff = await github.getPullRequestDiff(repo, number).catch((cause: unknown) => {
+    const tooLarge = cause instanceof GitHubError && cause.tooLarge;
+    throw asStageError(
+      cause,
+      tooLarge
+        ? ` Review it from a checkout instead: git fetch origin pull/${number}/head, then` +
+            ` spr run --git ${pr.baseSha}...${pr.headSha}`
+        : "",
+    );
+  });
+
+  return {
+    rawDiff,
+    source: {
+      type: "pull_request",
+      repo,
+      pr_number: number,
+      ref: pr.headRef,
+      base_sha: pr.baseSha,
+      head_sha: pr.headSha,
+      title: options.title ?? pr.title,
+    },
+    id: `pr${number}-${pr.headSha.slice(0, ID_LENGTH)}`,
+  };
+}
+
+/** Wraps a GitHub failure for the CLI, which prints a StageError on one line. */
+function asStageError(cause: unknown, advice = ""): StageError {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new StageError("ingest", `${message}${advice}`, { cause });
+}
+
+/**
+ * The root of the checkout in `cwd` when its `HEAD` is exactly `headSha`, otherwise undefined.
+ *
+ * `read_file` reads the working tree and `grep_repo` searches it, so both describe the reviewed
+ * change only when the tree is at that change's head. Anywhere else - another branch, the test
+ * merge commit `actions/checkout` makes for a `pull_request` event, a folder that is not a
+ * repository - they would answer about different code, and the Reviewer would cite it. So the
+ * tools are offered only on this exact match (ADR-051). Uncommitted edits are not detected:
+ * a developer's working tree is theirs to keep clean.
+ */
+export async function checkoutAt(headSha: string | null, cwd: string): Promise<string | undefined> {
+  if (headSha === null) return undefined;
+  const head = await tryGit(["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"], cwd);
+  if (head !== headSha) return undefined;
+  return (await tryGit(["rev-parse", "--show-toplevel"], cwd)) ?? undefined;
 }

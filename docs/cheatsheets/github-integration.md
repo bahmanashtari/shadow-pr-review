@@ -29,6 +29,9 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.draft == false
         && !contains(github.event.pull_request.labels.*.name, 'skip-video-review'))
       || github.event_name == 'push'
+    # The model needs a machine that can hold it: a self-hosted runner on a dedicated team
+    # machine running Ollama (ADR-051). A hosted runner for a private repository has 2 CPUs and
+    # 8 GB. Self-hosted runners are for private repositories only.
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -42,6 +45,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # On pull_request the default is the test merge commit. read_file and grep_repo are
+          # offered only on a checkout at the reviewed head (ADR-051), so ask for the head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Skip push if the branch has an open PR
         if: github.event_name == 'push'
@@ -161,8 +167,9 @@ GitHub's API cannot upload a video attachment to a comment. Options (see ADR-008
 - Use `pull_request`, not `pull_request_target`, when running code from the PR.
   Secrets are not available to workflows from forks under `pull_request`. The pipeline needs
   no API key by default (ADR-015: a local Ollama model), so the job must not require
-  `ANTHROPIC_API_KEY`; where that model runs in CI is Milestone 4's open question
-  (`docs/plans/m4-step1-pr-source.md`, Q2).
+  `ANTHROPIC_API_KEY`; the model runs on a self-hosted runner (ADR-051), and GitHub's advice is
+  to use self-hosted runners only with private repositories, since whoever can change a
+  workflow runs code on that machine.
 - The Reviewer only reads files; it never executes code from the PR.
 - Diff content is untrusted input to the LLM (prompt injection). Prompts must say so, and
   the Verifier's deterministic checks limit the damage.

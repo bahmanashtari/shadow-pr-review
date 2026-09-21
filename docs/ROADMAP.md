@@ -78,8 +78,8 @@ it belongs to. With the rubric defining the categories it reads 1.000 / 0.500, c
 material, so a session should not resume step 4 without it. Steps 13 and 14 have since
 landed and recall reads 0.600 (ADR-046). Step 15 followed (ADR-047), then 7 (ADR-048), 2 (ADR-049) and
 3 (ADR-050). **Two Milestone 3 steps wait on Bahman**: 4 for the real samples, and 5, whose plan
-asks whether the tool may ever execute the reviewed repository's code. Steps 16 and 17 are planned
-without plans. Milestone 4 step 1 is marked next, with its plan at `Status: proposed`.
+asks whether the tool may ever execute the reviewed repository's code. Steps 16 to 18 are planned
+without plans. Milestone 4 has started, on Bahman's approval (ADR-051).
 
 | Step | Scope | Status |
 |---|---|---|
@@ -99,19 +99,22 @@ without plans. Milestone 4 step 1 is marked next, with its plan at `Status: prop
 | 15 | **Findings on unchanged lines.** The rubric's first scope rule had no enforcement, and the first modified-file sample exposed it: `qwen3:4b` flagged an import the pull request never touched, and the Verifier agent kept it (ADR-045). Verify now drops a finding that touches no added or removed line as `out_of_scope`, and the rubric tells the Reviewer to anchor "this change breaks that code" on the changed line that causes it. Approved by Bahman as recommended. The cold run read recall 0.800, and ADR-047 explains why that is not credited to this step. Plan: `docs/plans/m3-step15-unchanged-lines.md` | done |
 | 16 | **One cold run cannot tell a change from a tip.** The model runs at temperature 0, so a run is exact and a repeat is identical - but an unrelated one-sentence prompt edit moved recall from 0.600 to 0.800, and the analyzer move then moved sample-02 back (ADR-047, ADR-049). Every prompt change is currently judged on one cold run. Wants a way to see the spread: the same prompt measured under a few neutral perturbations, or at a small temperature with fixed seeds, reported as a range. No plan yet; it matters most once real samples exist and a prompt change has to be argued for | planned |
 | 17 | **A model per stage.** `qwen3-coder:30b` reviews five times faster than the default but cannot hold the narration word cap under repair (ADR-045). The config has one `llm.model` for every agent, so the fast Reviewer cannot be paired with the default Narrator. A per-stage override, measured with `spr eval` before any default changes. No plan yet | planned |
+| 18 | **Code identifiers in narration.** The first real pull request (ADR-051) narrated `toHaveBeenCalledOnce` and `toHaveBeenCalledTimes(2)`, and `normalizeForSpeech` passed both to Kokoro unchanged - the first camelCase identifier and the first call any narration has held. ADR-046 refused dotted identifiers because the voice read the dot. Listen to `runs/pr-nest-17816/final.mp4` first: if the voice mangles them, the fix is the same shape as step 13, a `checkScript` refusal with the rewrite in its message. No plan yet | planned |
 | 10 | **Orphan subtitle cues.** `cuesForStep` filled lines greedily and paired them, so an odd line count left a trailing cue holding the remainder - "layer." for 415 ms, and 238 ms for "it." on a hand-written fixture. Fixed by taking the cue count from the text's length and splitting the words evenly: 4 cues under 1200 ms became 0, with the same 32 cues over three videos (ADR-040). Plan: `docs/plans/m3-step10-orphan-cues.md` | done |
 
 ## Milestone 4: GitHub integration
 
-**The question that shapes this milestone is open: where the model runs in CI.** The default is a
-local `qwen3:30b` with no API key (ADR-015), and a standard GitHub hosted runner - no GPU, about
-16 GB of memory - cannot hold it. A self-hosted runner, a smaller model, or the opt-in hosted API
-with the team's own key: Bahman's call, asked as Q2 of step 1's plan, and needed before step 4.
+**Where the model runs in CI is decided: a self-hosted runner on a dedicated team machine, running
+Ollama with the default model** (Bahman, answering Q2 of step 1's plan; ADR-051). It keeps ADR-015
+whole. A hosted runner for a private repository has 2 CPUs and 8 GB and no GPU, which cannot hold
+`qwen3:30b` and would make even `qwen3:4b` slow; the hosted API stays opt-in for whoever brings a
+key. GitHub's advice is to use self-hosted runners with private repositories only, because whoever
+can change a workflow runs code on the machine. Step 4 needs the machine to exist.
 
 | Step | Scope | Status |
 |---|---|---|
-| 1 | `--pr` source (same ingest outputs as `--git`): the pull request and its diff from the GitHub API, `read_file` and `grep_repo` only when the working directory is a checkout at the PR's head. Starts with an end-to-end run of all nine golden samples, six of which have never been through the video path. Plan: `docs/plans/m4-step1-pr-source.md` (`Status: proposed`; its Q1 asks whether to start Milestone 4 now) | next |
-| 2 | `spr publish`: sticky PR comment, optional commit comment for pushes | planned |
+| 1 | `--pr` source (same ingest outputs as `--git`): the pull request and its diff from the GitHub REST API over `fetch`, public and private repositories, one clear line per GitHub failure. `read_file` and `grep_repo` only on a checkout whose `HEAD` is the reviewed head, for `--git` too - which in CI needs `actions/checkout` with the head sha, not its default merge commit. The end-to-end run of all nine samples came first: six videos, three correct no-video runs, and two defects in the script that measures it, fixed (ADR-051). Plan: `docs/plans/m4-step1-pr-source.md` | done |
+| 2 | `spr publish`: sticky PR comment, optional commit comment for pushes. **Must not publish a stale video**: `--force` writes into a run folder without clearing it, so a re-run whose review keeps nothing leaves the previous run's `final.mp4` beside a `review.json` with no findings - exactly what misled the end-to-end script (ADR-051). Publish attaches a video only when the current review produced it. No plan yet | next |
 | 3 | Tool Docker image (Playwright Node base + ffmpeg), published to GHCR | planned |
 | 4 | Workflow for service repos (see `docs/cheatsheets/github-integration.md`), trigger policy from ARCHITECTURE.md section 3, fork and draft handling | planned |
 | 5 | Video hosting: Actions artifact first; object storage later (ADR-008) | planned |

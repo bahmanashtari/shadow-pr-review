@@ -10,15 +10,16 @@
  * It spawns the real CLI with no `--until`, because that exact path is the one nothing else
  * exercises: the unit test stops at `direct` (step 4 made recording real-time). Getting all
  * the way through Compose means exiting 2 at `publish`, so that is the expected outcome here,
- * not a failure.
+ * not a failure. So is the other correct ending (ADR-042): a review that keeps no findings
+ * stops after Verify with exit 0 and no video, which the restraint samples are meant to do.
  *
- *   pnpm tsx scripts/end-to-end.ts                       # all three golden samples
+ *   pnpm tsx scripts/end-to-end.ts                       # every golden sample
  *   pnpm tsx scripts/end-to-end.ts sample-03-email-value-object
  *
  * Needs the whole toolchain up at once: `ollama serve` with the configured model, the Kokoro
  * container, ffmpeg, and Playwright's headless shell.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 import { fromRoot } from "../src/lib/paths.js";
@@ -38,6 +39,8 @@ const NOT_IMPLEMENTED = 2;
 interface Row {
   sample: string;
   ok: boolean;
+  /** False for a clean review, which correctly ends without a video (ADR-042). */
+  video: boolean;
   note: string;
   wallMs: number;
   kept: number;
@@ -83,6 +86,10 @@ async function walk(sample: string): Promise<Row> {
   const runDir = fromRoot("runs", `e2e-${sample}`);
   const diff = fromRoot("golden", sample, "diff.patch");
   console.log(`\n=== ${sample} ===`);
+  // Start from an empty folder. `--force` writes over files but does not remove them, so a
+  // sample that used to make a video and now finds nothing would otherwise leave the old
+  // final.mp4 behind, and this script would read it as this run's.
+  rmSync(runDir, { recursive: true, force: true });
 
   const started = Date.now();
   const result = await execa(
@@ -95,6 +102,7 @@ async function walk(sample: string): Promise<Row> {
   const base: Row = {
     sample,
     ok: false,
+    video: false,
     note: "",
     wallMs,
     kept: 0,
@@ -113,6 +121,13 @@ async function walk(sample: string): Promise<Row> {
 
   const finalPath = path.join(runDir, FINAL_FILE);
   if (!existsSync(finalPath)) {
+    const review =
+      result.exitCode === 0 && existsSync(path.join(runDir, "review.json"))
+        ? readReview(runDir)
+        : null;
+    if (review !== null && review.findings.length === 0) {
+      return { ...base, ok: true, note: "no findings", dropped: review.dropped.length };
+    }
     return { ...base, note: `no ${FINAL_FILE} (exit ${String(result.exitCode)})` };
   }
   if (result.exitCode !== NOT_IMPLEMENTED) {
@@ -130,6 +145,7 @@ async function walk(sample: string): Promise<Row> {
   return {
     ...base,
     ok: true,
+    video: true,
     kept: review.findings.length,
     dropped: review.dropped.length,
     steps: script.steps.length,
@@ -168,14 +184,14 @@ function table(rows: readonly Row[]): void {
         : `${String(r.probedVideoMs - r.probedAudioMs)}ms`;
     return [
       r.sample,
-      r.ok ? clock(r.probedVideoMs ?? r.videoMs) : "FAILED",
-      r.ok ? drift : r.note,
+      !r.ok ? "FAILED" : r.video ? clock(r.probedVideoMs ?? r.videoMs) : "none",
+      r.ok && r.video ? drift : r.note,
       String(r.kept),
       String(r.dropped),
       String(r.steps),
       String(r.words),
       r.steps === 0 ? "-" : (r.words / r.steps).toFixed(1),
-      `${String(r.t0Ms)}ms`,
+      r.video ? `${String(r.t0Ms)}ms` : "-",
       String(r.cues),
       (r.bytes / 1024 / 1024).toFixed(1),
       clock(r.wallMs),
@@ -207,5 +223,9 @@ if (failed.length > 0) {
   for (const r of failed) console.error(`  ${r.sample}: ${r.note}`);
   process.exitCode = 1;
 } else {
-  console.log(`\n${String(rows.length)} of ${String(rows.length)} samples produced a video.`);
+  const videos = rows.filter((r) => r.video).length;
+  console.log(
+    `\n${String(rows.length)} of ${String(rows.length)} samples finished: ` +
+      `${String(videos)} with a video, ${String(rows.length - videos)} with nothing to narrate.`,
+  );
 }

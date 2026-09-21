@@ -50,7 +50,7 @@ export interface Source {
   repo?: string | null;
   pr_number?: number | null;
   /**
-   * Branch name for push events.
+   * Branch name: the pushed branch, or a pull request's head branch.
    */
   ref?: string | null;
   base_sha?: string | null;

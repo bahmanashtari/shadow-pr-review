@@ -2,9 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main } from "../src/cli.js";
+import { buildProgram, main } from "../src/cli.js";
 import { fromRoot } from "../src/lib/paths.js";
 import { validateContract } from "../src/contracts/validate.js";
+import { PR_BASE_SHA, PR_HEAD_SHA, pullRequestJson } from "./helpers.js";
 
 const run = (...args: string[]): Promise<void> => main(["node", "spr", ...args]);
 
@@ -51,6 +52,31 @@ async function withFakeProviders(cacheDir: string, body: () => Promise<void>): P
 }
 
 const GOLDEN_DIFF = fromRoot("golden", "sample-02-inventory-consumer", "diff.patch");
+
+/**
+ * Runs something with GitHub answered by `respond` instead of the network, and with no token
+ * in the environment, so the developer's own `GITHUB_TOKEN` neither leaks into a request nor
+ * changes an error message.
+ */
+async function withGitHub(
+  respond: (url: string, accept: string) => Response,
+  body: () => Promise<void>,
+): Promise<void> {
+  const previous = { github: process.env.GITHUB_TOKEN, gh: process.env.GH_TOKEN };
+  delete process.env.GITHUB_TOKEN;
+  delete process.env.GH_TOKEN;
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    const headers = init.headers as Record<string, string>;
+    return Promise.resolve(respond(url, headers.Accept ?? ""));
+  });
+  try {
+    await body();
+  } finally {
+    vi.unstubAllGlobals();
+    if (previous.github !== undefined) process.env.GITHUB_TOKEN = previous.github;
+    if (previous.gh !== undefined) process.env.GH_TOKEN = previous.gh;
+  }
+}
 
 const temps: string[] = [];
 function tempDir(): string {
@@ -106,9 +132,85 @@ describe("spr CLI", () => {
   });
 
   it("planned commands exit with code 2 and a clear message", async () => {
-    await run("run", "--pr", "142", "--repo", "acme/shop");
+    await run("stage", "publish", "--run", tempDir());
     expect(process.exitCode).toBe(2);
     expect(err.join("\n")).toContain("not implemented yet");
+  });
+
+  it("run --pr reads the pull request from GitHub and writes the same three files", async () => {
+    const requests: { url: string; accept: string }[] = [];
+    const diff = readFileSync(GOLDEN_DIFF, "utf8");
+    const runDir = tempDir();
+    await withGitHub(
+      (url, accept) => {
+        requests.push({ url, accept });
+        return accept === "application/vnd.github.diff"
+          ? new Response(diff)
+          : new Response(JSON.stringify(pullRequestJson()));
+      },
+      () => run("run", "--pr", "142", "--repo", "acme/shop", "--until", "ingest", "--out", runDir),
+    );
+
+    expect(err).toEqual([]);
+    expect(process.exitCode).toBeUndefined();
+    expect(requests).toEqual([
+      {
+        url: "https://api.github.com/repos/acme/shop/pulls/142",
+        accept: "application/vnd.github+json",
+      },
+      {
+        url: "https://api.github.com/repos/acme/shop/pulls/142",
+        accept: "application/vnd.github.diff",
+      },
+    ]);
+    const ingest = JSON.parse(readFileSync(path.join(runDir, "ingest.json"), "utf8")) as {
+      source: unknown;
+    };
+    expect(ingest.source).toEqual({
+      type: "pull_request",
+      repo: "acme/shop",
+      pr_number: 142,
+      ref: "feature/outbox",
+      base_sha: PR_BASE_SHA,
+      head_sha: PR_HEAD_SHA,
+      title: "Publish OrderPlaced through the outbox",
+    });
+    expect(readFileSync(path.join(runDir, "diff.raw.patch"), "utf8")).toBe(diff);
+  });
+
+  it("run --pr on a pull request GitHub cannot find prints one line and exits 1", async () => {
+    await withGitHub(
+      () => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+      () => run("run", "--pr", "7", "--repo", "acme/shop", "--out", tempDir()),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(err).toEqual([
+      "spr: [ingest] Pull request acme/shop#7 was not found. If acme/shop is private, " +
+        "set GITHUB_TOKEN to a token that can read it.",
+    ]);
+  });
+
+  it("run refuses a --pr that is not a pull request number", async () => {
+    // Commander rejects an option value itself and exits the process, so ask it to throw.
+    const program = buildProgram();
+    for (const command of [program, ...program.commands]) {
+      command.exitOverride().configureOutput({ writeErr: () => undefined });
+    }
+    for (const value of ["12a", "0", "-3", "1.5"]) {
+      await expect(program.parseAsync(["node", "spr", "run", "--pr", value])).rejects.toThrow(
+        `Expected a pull request number such as 142, got "${value}"`,
+      );
+    }
+  });
+
+  it("run refuses a second source beside --pr, and --repo without it", async () => {
+    await run("run", "--pr", "12", "--diff", GOLDEN_DIFF);
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toContain("Pass exactly one of --diff, --git or --pr");
+
+    err.length = 0;
+    await run("run", "--diff", GOLDEN_DIFF, "--repo", "acme/shop");
+    expect(err.join("\n")).toContain("--repo goes with --pr");
   });
 
   it("run --until ingest writes the three files and exits cleanly", async () => {
@@ -338,13 +440,7 @@ describe("spr CLI", () => {
   it("run needs exactly one source", async () => {
     await run("run");
     expect(process.exitCode).toBe(1);
-    expect(err.join("\n")).toContain("exactly one of --diff or --git");
-  });
-
-  it("run --pr points at Milestone 4", async () => {
-    await run("run", "--pr", "142", "--repo", "acme/shop");
-    expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("Milestone 4");
+    expect(err.join("\n")).toContain("Pass exactly one of --diff, --git or --pr");
   });
 
   it("run refuses a run folder that already has files", async () => {

@@ -2166,3 +2166,129 @@ rather than degrading, so the day that happens matters. Tuning waits for the rea
 **Checked** on the step 2 run replayed from cache: every sample's `cost.json` carries its stages
 with the true sizes of cached work, the heaviest stage is verify on sample-05 at 30% of its output
 budget, and no warning is printed.
+
+## ADR-051: A pull request from the GitHub API, and the tools only on a checkout at its head (accepted, September 2026)
+
+**Context.** Milestone 4 step 1: `spr run --pr` produces the same three ingest files as `--git`.
+Bahman approved the plan with every recommendation taken: start Milestone 4 now (Q1), `fetch`
+rather than Octokit (Q3), public and private repositories from the start (Q4). Q2, where the model
+runs in CI, is answered too, and recorded below because it shapes the rest of the milestone.
+
+**Decision: two GET requests over Node's `fetch`.** `src/lib/github.ts` asks for the pull request
+as JSON, then the same endpoint with `Accept: application/vnd.github.diff`, pinned to REST API
+version `2026-03-10`, the current one when this was written. `fetch` is injected, so the tests
+answer from canned responses and nothing leaves the process. The JSON is narrowed field by field
+(number, title, draft, state, head and base sha and ref) and a sha that is not 40 hex characters
+is refused. `owner/name` is checked before it goes into a URL path. Octokit waits for step 2,
+where a sticky comment means listing paginated comments, and nothing here would be undone by it.
+
+- **Every failure is one line that says what to do.** A 404 without a token says the repository
+  may be private and names `GITHUB_TOKEN`; with a token, that the token may not reach it. A spent
+  rate limit gives the reset time in UTC and, without a token, that one raises the limit from 60
+  an hour. A secondary limit gives GitHub's `retry-after`. A 401 names the rejected token.
+- **A diff GitHub will not render** (406, `too_large`) quotes GitHub's own limit rather than a
+  number this code would have to keep current, and gives the exact command that reviews the same
+  change from a checkout: `git fetch origin pull/<n>/head`, then `spr run --git <base>...<head>`
+  with both shas filled in. That range is GitHub's diff: three dots, from the merge base.
+- **The token** comes from `GITHUB_TOKEN` or `GH_TOKEN`, never from a file, and is sent only when
+  it is set, so public repositories need nothing.
+- **`source`** records `pull_request`, the number, the head branch as `ref`, GitHub's `base.sha`
+  and `head.sha`, and the title. `base_sha` is the base branch commit GitHub recorded, not the merge
+  base `--git A...B` records; the three-dot range computes one from the other. The `ref`
+  description in both schemas now says it can be a pull request's head branch. No contract shape
+  changed. The run folder id is `pr<number>-<short head sha>`.
+- **The race is left open, deliberately.** A push between the two requests would pair the new
+  diff with the old head sha. Closing it costs a third request; in CI, `concurrency` cancels the
+  run a newer push supersedes anyway.
+
+**Decision: `read_file` and `grep_repo` are offered only on a checkout at the reviewed head.**
+The plan specified this for `--pr`, and reading the tools showed it is needed wider. `read_file`
+reads the working tree and `grep_repo` runs `git grep` on it, and the CLI used to offer both, rooted
+at the current directory, for any source that was not a plain diff file. So `spr run --git
+main...feature` while `main` was checked out reviewed `feature`'s diff and let the Reviewer read
+`main`'s files, and a run started in a subdirectory resolved every path from there. Now
+`checkoutAt` offers them only when `git rev-parse HEAD` is the source's `head_sha`, rooted at
+`git rev-parse --show-toplevel`, for `--git` and `--pr` alike. When they are withheld the run says
+`no checkout at <sha> here: reviewing from the diff alone`. Uncommitted edits are not detected; a
+developer's working tree is theirs to keep clean.
+
+**This corrects the plan on one point.** It said the checkout rule is "exactly what
+`actions/checkout` gives the workflow in step 4". It is not: on a `pull_request` event,
+`actions/checkout` checks out the test merge commit, `refs/pull/<n>/merge`, whose files differ from
+the head wherever the base branch moved. The step 4 workflow must ask for
+`ref: ${{ github.event.pull_request.head.sha }}`; the cheat sheet now does.
+
+**Q2, answered by Bahman: a self-hosted runner on a dedicated team machine, running Ollama with the
+default model.** It keeps ADR-015 whole: no key, no bill, the model the golden set measured. Two
+facts sharpened the choice when checked against docs.github.com. A hosted `ubuntu-latest` runner
+for a *private* repository has 2 CPUs and 8 GB, not the 16 GB of a public one, which the plan had
+assumed; it cannot hold `qwen3:30b`, and `qwen3:4b`, already 1.5 times slower than the default on
+this Mac's GPU (ADR-045), would be far slower on 2 CPUs. And GitHub's advice is to use self-hosted
+runners with private repositories only, because whoever can change a workflow runs code on the
+machine, so a public service repository would need a different answer. This Mac was offered and
+not chosen: it has to be awake, it shares Docker with another project, and it is a personal machine.
+The hosted API stays what CLAUDE.md already allows, opt-in with the team's own key. Step 4 needs
+the machine to exist.
+
+**Section 0 of the plan: the first end-to-end run of all nine samples.** Six of them had never been
+through the video path.
+
+| sample | final | drift | kept | steps | words | wall |
+|---|---|---|---|---|---|---|
+| 01 order-outbox | 0:42 | -79 ms | 2 | 2 | 97 | 0:57 |
+| 02 inventory-consumer | 0:57 | -61 ms | 3 | 3 | 145 | 1:16 |
+| 03 email-value-object | none | | 0 | | | 0:01 |
+| 04 payment-webhook | 0:28 | -76 ms | 1 | 1 | 58 | 0:39 |
+| 05 summary-projection | 0:40 | -64 ms | 2 | 2 | 93 | 0:55 |
+| 06 customer-search | 0:33 | -50 ms | 2 | 2 | 73 | 0:45 |
+| 07 retry-backoff | none | | 0 | | | 0:01 |
+| 08 misleading-comment | 0:19 | -49 ms | 1 | 1 | 41 | 0:28 |
+| 09 planted-instruction | none | | 0 | | | 0:01 |
+
+Every video's narration is complete, which is the Composer's checked claim (ADR-035). Nothing was
+dropped. 03, 07 and 09 kept nothing and correctly made no video (ADR-042). 5:03 of wall clock on a
+warm model cache. The picture's shortfall ranged 49 to 79 ms against the 69 to 77 CLAUDE.md quoted
+from three samples; it is frame quantization and remains a number to watch, not evidence.
+
+**The script that measures it had two defects, both fixed.** It predated ADR-042, so it counted a
+clean review's correct ending - exit 0, no video - as a failure and exited 1 over a run in which
+nothing was wrong. And it re-used each sample's folder with `--force`, which writes over files but
+never removes them: sample-03 had kept a finding on an earlier run, so its folder still held that
+run's `final.mp4`, which the script found and reported as "unexpected exit 0". It now empties its
+own `runs/e2e-*` folder first, and reports a clean review as finished with no video.
+
+**That second defect is a warning for Publish, recorded on the roadmap as step 2.** A person re-using
+`--out runs/current --force` gets the same stale `final.mp4` beside a `review.json` with no
+findings. Step 2 must attach a video only when the current review produced it.
+
+**The first real pull request: nestjs/nest#17816**, "let the kafka client retry after a failed
+connect" (+57 -1, two files), chosen because event-driven microservices are the target stack and
+because nothing in the golden set wrote it. `spr run --pr 17816 --repo nestjs/nest` went from
+GitHub to `final.mp4` in 4:50 on a cold model cache - review 161 s, verify 31 s, narrate 66 s -
+and made a 0:20 video with one step, narration complete, the picture 40 ms short. The frame shows
+the modified test file with the flagged line highlighted. It ran from this repository, so the
+run said `no checkout at 6c30f9d here` and reviewed from the diff alone; running it from a clone
+at the head, to exercise the tools for real, was refused by this session's permission check as
+executing in a checkout of external code, and was left for Bahman to decide.
+
+**Its one finding is a false positive, and the reason is the checkout rule's reason.** The
+Reviewer said a new test's `expect(producerStub).toHaveBeenCalledOnce()` should expect two calls,
+because "the production code creates a new producer for each connection attempt". It does not:
+`initializeClientAndConnections` awaits the consumer's `connect()` before it creates a producer, so
+when the mocked `connect` rejects once, the first attempt never reaches the producer, and one call
+is right - the pull request was merged with that test in it. The method's body is outside the
+diff, which shows only its first two lines, and `read_file` would have shown the rest. The Verifier
+kept it at `low`; its evidence is real, so no deterministic check could drop it. This is one
+finding, not a measurement, but it is the case the plan argued from: a reviewer that cannot read
+the code around a change will describe it anyway. In CI the tools will be offered, which is what
+the `ref` on `actions/checkout` is for, and the real samples (Milestone 3 step 4) are where the
+cost of reviewing without them can be measured.
+
+**And one thing to listen for.** The narration names two matchers, `toHaveBeenCalledOnce` and
+`toHaveBeenCalledTimes(2)`, and `normalizeForSpeech` passes both to Kokoro unchanged. No golden
+sample ever narrated a camelCase identifier or a call. ADR-046 refused dotted identifiers because
+the voice read the dot; whether the voice mangles these is not known until someone listens to
+`runs/pr-nest-17816/final.mp4`, so it is recorded on the roadmap rather than fixed.
+
+**Checked** with `pnpm verify`, `format:check` and `build`: 893 tests pass (858 before), 2
+skipped, no test touching the network.

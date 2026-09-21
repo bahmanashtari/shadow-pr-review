@@ -29,7 +29,8 @@ Stages communicate only through files in the run folder. Any stage can be re-run
 ## 2. Stages
 
 ### 1. Ingest
-- Sources: `--diff file`, `--git A..B` or `A...B` (local), `--pr N` (GitHub, Milestone 4),
+- Sources: `--diff file`, `--git A..B` or `A...B` (local), `--pr N` (the GitHub REST API: the
+  pull request, then its diff; ADR-051),
   push event (`before..after`, uses the `--git` path).
 - Outputs: `diff.raw.patch` (input as received), `diff.patch` (kept files only) and
   `ingest.json` (contract: `schemas/ingest.schema.json`). No timestamps, so the output is
@@ -306,7 +307,10 @@ out, so a prompt or model change can be argued about with numbers instead of rea
   the host, or in its own container (official Playwright Node image + ffmpeg).
 - Distribution: the tool is published as a Docker image (and optionally a composite
   GitHub Action), so service repos only add a workflow file.
-- CI: GitHub Actions job with Kokoro as a service container. See the cheat sheet.
+- CI: GitHub Actions job with Kokoro as a service container. See the cheat sheet. The model
+  runs on a self-hosted runner on a dedicated team machine with Ollama (Bahman, ADR-051): a
+  hosted runner for a private repository has 2 CPUs and 8 GB, which cannot hold the default
+  model, and the paid API stays opt-in. Self-hosted runners serve private repositories only.
 - Secrets: `ANTHROPIC_API_KEY` (or none when using Ollama), `GITHUB_TOKEN` (provided).
 
 ## 6. Cost model (estimate; verify current pricing)

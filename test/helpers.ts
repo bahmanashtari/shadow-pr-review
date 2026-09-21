@@ -75,3 +75,26 @@ export const TEST_SOURCE: Source = {
 export function ingestOfDiff(rawDiff: string): IngestResult {
   return buildIngest({ rawDiff, source: { ...TEST_SOURCE }, config: defaultConfig() }).ingest;
 }
+
+/** The head sha of the pull request {@link pullRequestJson} describes. */
+export const PR_HEAD_SHA = "a".repeat(40);
+/** Its base sha. */
+export const PR_BASE_SHA = "b".repeat(40);
+
+/**
+ * GitHub's JSON for pull request acme/shop#142: the fields the client reads, plus a few it
+ * ignores, as the real response carries many more.
+ */
+export function pullRequestJson(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    url: "https://api.github.com/repos/acme/shop/pulls/142",
+    number: 142,
+    state: "open",
+    title: "Publish OrderPlaced through the outbox",
+    draft: false,
+    user: { login: "someone" },
+    head: { ref: "feature/outbox", sha: PR_HEAD_SHA, repo: { full_name: "acme/shop" } },
+    base: { ref: "main", sha: PR_BASE_SHA, repo: { full_name: "acme/shop" } },
+    ...over,
+  };
+}
