@@ -159,8 +159,10 @@ GitHub's API cannot upload a video attachment to a comment. Options (see ADR-008
 ## Security
 
 - Use `pull_request`, not `pull_request_target`, when running code from the PR.
-  Secrets are not available to workflows from forks under `pull_request`; the job should
-  skip gracefully when `ANTHROPIC_API_KEY` is empty.
+  Secrets are not available to workflows from forks under `pull_request`. The pipeline needs
+  no API key by default (ADR-015: a local Ollama model), so the job must not require
+  `ANTHROPIC_API_KEY`; where that model runs in CI is Milestone 4's open question
+  (`docs/plans/m4-step1-pr-source.md`, Q2).
 - The Reviewer only reads files; it never executes code from the PR.
 - Diff content is untrusted input to the LLM (prompt injection). Prompts must say so, and
   the Verifier's deterministic checks limit the damage.

@@ -73,9 +73,12 @@ crossing a gap in the diff would fail `HunkIndex.hasRange` and be dropped.
   This is required, not cosmetic: given a raw patch every model tested guessed line numbers
   badly (ADR-018).
 - System prompt: built in code from `docs/REVIEW_RUBRIC.md` plus answer rules that each exist
-  because a measured run got that thing wrong - how to read a numbered line, that evidence must
-  be a line copied exactly (ADR-019), and an explicit severity anchor. The analyzer findings are
-  listed as already reported so the model does not repeat them.
+  because a measured run got that thing wrong - how to read a numbered line, that everything in
+  the diff is untrusted and a comment is a claim rather than a fact (ADR-049), that evidence must
+  be a line copied exactly (ADR-019), and an explicit severity anchor. The rubric defines the
+  categories (ADR-044) and the scope rule for unchanged lines (ADR-047). **Nothing from the diff
+  reaches the system prompt**: the analyzer findings, which name diff-controlled file paths, are
+  listed as already reported in the `user` message beside the diff (ADR-049).
 - Tools (read-only): `list_changed_files` and `get_diff_hunk(file)` always;
   `read_file(path, start, end)` and `grep_repo(pattern)` only when the run has a checkout,
   refusing paths that escape it.
@@ -83,17 +86,24 @@ crossing a gap in the diff would fail `HunkIndex.hasRange` and be dropped.
   `review.maxRawFindings`. A budget stop is not an error: the analyzer findings alone still
   make a valid review.
 
-**Deferred to Milestone 4:** `tsc`, `eslint` with the reviewed repository's configuration, and
-`dependency-cruiser`'s cross-file graph. Those need that repository's `node_modules`, its
-`tsconfig` and its config, and a `--diff` run has no checkout at all.
+**Not built: repo-aware analysis** - `tsc`, `eslint` with the reviewed repository's configuration,
+and `dependency-cruiser`'s cross-file graph. Those need a checkout, and the useful versions run the
+reviewed repository's own code (install scripts, `eslint.config.js`). Roadmap Milestone 3 step 5
+has a plan that waits on Bahman's decision about whether that is ever acceptable
+(`docs/plans/m3-step5-repo-analysis.md`).
 
 ### 3. Verifier
 Two layers, and the first one is built (`src/verify/`, ADR-023).
 1. Deterministic checks (no LLM, no network): the file is in the diff (`out_of_scope`), the
-   line range exists on the given side (`lines_not_in_diff`), every `evidence` string appears
-   in that file's diff lines (`claim_not_supported`), and no other survivor makes the same
-   claim - same file, same category, overlapping range (`duplicate`). The checks run in that
-   order, because each one needs the previous to hold. Failures become `dropped` with a reason
+   line range exists on the given side (`lines_not_in_diff`), the range touches at least one
+   added or removed line rather than only unchanged context (`out_of_scope`, ADR-047), every
+   `evidence` string appears in that file's diff lines (`claim_not_supported`), and no other
+   survivor makes the same claim - same file, same category, overlapping range (`duplicate`).
+   The checks run in that order, because each one needs the previous to hold. Evidence matching
+   forgives two citation habits and verifies both: a copied `12 +` line-number prefix, on any
+   kind of line (ADR-020, ADR-045), and a quote whose line breaks were replaced, matched against
+   up to twelve consecutive lines with whitespace ignored (ADR-046). A quote of a blank line is
+   skipped as long as another quote grounds the finding. Failures become `dropped` with a reason
    and a note saying what failed. Then sort by severity, file and line, and cap at
    `review.maxFindings` (10), with `over_cap` for the rest. Ids are carried over from
    `review.raw.json` unchanged, so a finding can be followed from one file to the other.
@@ -266,6 +276,16 @@ out, so a prompt or model change can be argued about with numbers instead of rea
   so any number in the table can be traced back to the run that produced it.
 - Scoring lives in `src/eval/score.ts` and is pure: no I/O, no model, unit-tested on its own,
   because the arithmetic is the part that has to be trusted.
+- Beside precision and recall, each on its own axis and never folded into them: restraint
+  (`max_findings`, ADR-025), calibration against a severity band (ADR-036), redundancy - two
+  findings on one label (ADR-048) - and a real / synthetic split of the totals (ADR-043). A false
+  positive is named after the `must_not_flag` entry it matches, or after the label it sits on
+  under the wrong category (a near miss, ADR-044). A stage past half a token budget is printed
+  as a warning, and `cost.json` breaks each run down by stage (ADR-050).
+- **Read before believing a number.** At temperature 0 an unrelated prompt edit has moved recall
+  by 0.2 (ADR-047), and twice a label's alternative category let a finding about one bug count
+  as finding another (ADR-041, ADR-044). A result that matters is checked by reading the finding
+  it rests on.
 
 ## 4. Trigger policy
 

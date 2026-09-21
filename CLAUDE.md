@@ -77,7 +77,7 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestones 1 and 2; Milestone 3 so far has added no new commands):
+Available now (all of Milestones 1 and 2; Milestone 3 added no new commands):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
