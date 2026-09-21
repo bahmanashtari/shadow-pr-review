@@ -70,6 +70,21 @@ committed rather than after.
   steps, words and duration against `script.expected.json` - and records a sample that never
   reached a script. Compare wording and tone by reading, not by scoring.
 
+### Writing `accept_categories`
+
+An alternative category is a hole as well as a courtesy, and this set has fallen through it
+twice. When two labelled bugs share lines, a finding about one of them can match the other's
+label through a category both could be filed under, and the scorer cannot read the finding to
+tell. `sample-02`'s redelivery label accepted `event-consistency` until ADR-041 and `correctness`
+until ADR-044, and each time the model's finding about the neighbouring atomicity bug counted as
+having found redelivery.
+
+So: on lines another label shares, accept only categories that bug could not plausibly be filed
+under, and never the catch-all `correctness`. The categories are defined in
+`docs/REVIEW_RUBRIC.md`, which the Reviewer reads too, so a label and a finding are held to the
+same definitions. A real finding filed under the wrong heading is not lost by being strict: the
+report names the label it sits on as a near miss.
+
 `labels.json` has a schema (`schemas/labels.schema.json`); `pnpm spr validate golden/*/labels.json`
 checks every sample.
 

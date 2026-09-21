@@ -21,9 +21,6 @@
       "line_start": 10,
       "line_end": 17,
       "category": "idempotency",
-      "accept_categories": [
-        "correctness"
-      ],
       "min_severity": "high",
       "max_severity": "high",
       "description": "The projection increments on every delivery and tracks no applied events, so a redelivery or a replay inflates the totals."

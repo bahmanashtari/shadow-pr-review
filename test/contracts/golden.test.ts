@@ -35,6 +35,23 @@ describe("golden set", () => {
     ]);
   });
 
+  // Twice an alternative category on a redelivery label let a finding about a different bug
+  // count as finding redelivery: event-consistency on sample-02 until ADR-041, then correctness
+  // there once the rubric's category guide moved the atomicity finding into it (ADR-044). The
+  // rubric now defines idempotency outright, so these labels accept nothing else, and a real
+  // redelivery finding filed elsewhere is still visible as a near miss.
+  it("lets a redelivery label be matched only by an idempotency finding", () => {
+    const alternatives = GOLDEN_SAMPLES.flatMap((sample) => {
+      const labels = readGoldenJson(sample, "labels.json") as {
+        must_find: { key: string; category: string; accept_categories?: string[] }[];
+      };
+      return labels.must_find
+        .filter((l) => l.category === "idempotency" && (l.accept_categories ?? []).length > 0)
+        .map((l) => `${sample}/${l.key}: ${(l.accept_categories ?? []).join(", ")}`);
+    });
+    expect(alternatives).toEqual([]);
+  });
+
   describe.each(GOLDEN_SAMPLES)("%s", (sample) => {
     it("review.expected.json matches the review schema", () => {
       const result = validateContract("review", readGoldenJson(sample, "review.expected.json"));

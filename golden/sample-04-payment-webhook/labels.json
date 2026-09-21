@@ -18,9 +18,6 @@
       "line_start": 5,
       "line_end": 18,
       "category": "idempotency",
-      "accept_categories": [
-        "correctness"
-      ],
       "min_severity": "high",
       "max_severity": "high",
       "description": "A retried webhook credits the wallet a second time; the eventId in the payload is never used to deduplicate."

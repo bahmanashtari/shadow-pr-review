@@ -48,6 +48,37 @@ one clause, because that is the consequence going unsaid.
 | medium | Incorrect under realistic edge cases, or a design flaw with real cost | Partial updates, missing authorization check on a new endpoint, layer violation |
 | low | Minor risk or maintainability issue | Irreversible `down()`, PII in error text, missing event version |
 
+## Categories
+
+Every finding carries one category. Choose the one that names what goes wrong, not the part of
+the system it happens in: an event handler can have a security problem, and a migration can have
+a correctness one.
+
+- `correctness`: the code does the wrong thing, in a way no other category names.
+- `security`: a caller can do what they should not - injection, a missing or bypassable
+  authentication or authorization check, a committed secret.
+- `privacy`: personal data reaches somewhere it should not - logs, error text, responses, other
+  services.
+- `event-consistency`: the **publishing** side. An event and the state change it describes
+  disagree: published before the commit, published for a write that rolled back, lost when the
+  broker is down, or delivered out of an order the consumer relies on.
+- `idempotency`: the **receiving** side. The same message, event, request or job is processed
+  more than once - through redelivery, a retry or a replay - and the second run changes state
+  again. A handler with no deduplication is `idempotency`, not `event-consistency`, even though
+  events are involved.
+- `ddd-boundaries`: a layer depends on one it should not, or domain logic sits outside the
+  domain.
+- `data-migration`: a schema or data change that fails on deploy, loses or corrupts data, or
+  cannot be rolled back.
+- `api-contract`: a shape other code depends on - a response, an event payload, a DTO - is
+  untyped, unversioned, unvalidated or changed incompatibly.
+- `concurrency`: interleaved work produces a wrong result - a race, a lost update, a missing
+  lock, or several writes that should have been one transaction.
+- `performance`: work that grows where it should not - N+1 queries, an unbounded result set.
+- `error-handling`: a failure is swallowed, misreported, or turned into the wrong response.
+- `testing`: behaviour the change introduces has missing or misleading tests.
+- `maintainability`: the code works but will be expensive to change safely.
+
 ## Domain-Driven Design
 
 - Domain layer (`domain/`) must not import NestJS, the ORM, the broker client, or

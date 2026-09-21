@@ -113,5 +113,5 @@ const HOW_TO_RATE_SEVERITY = `Rate severity by consequence, not by how much the 
 - low: a minor risk or a maintainability problem.
 
 An event published before its transaction commits, a consumer that reprocesses a redelivered
-event, and a migration that fails on a table with rows are all at least high: each one breaks
-in normal operation. Do not rate those medium.`;
+event, and a NOT NULL column added without a default - which fails on any table that already has
+rows - are all at least high: each one breaks in normal operation. Do not rate those medium.`;

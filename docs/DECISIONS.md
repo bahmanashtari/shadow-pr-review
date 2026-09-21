@@ -1781,3 +1781,107 @@ over a partition - so no existing number in ADR-026, ADR-036 or ADR-041 shifts.
 making the field optional, defaulting the absent case, and marking nothing. It was put to Bahman
 with the argument above - the silent failure lands on exactly the sample whose number gets quoted
 - and he took the required enum instead.
+
+## ADR-044: What seven samples say, and the category nobody told the Reviewer (accepted, September 2026)
+
+**Context.** Milestone 3 step 4. The real changes from Bahman's team were not available this
+session, so the plan's fallback was taken: four hand-written samples, marked `synthetic`
+(ADR-043). Three samples now carry a redelivery bug as a `must_find`, deliberately in different
+shapes - a broker consumer (02), an HTTP webhook with the dedupe key unused in its payload (04)
+and a read-model projection that increments on replay (05) - because ADR-041 had one case and
+could not tell a blind spot from an accident.
+
+**The first measurement: the set discriminates again.** qwen3:30b, unchanged prompt, seven
+samples: precision 0.700, recall 0.400 (4/10), calibration 1.000, three false positives. ADR-026's
+complaint was that three models tied at 1.000; this is a set that can be failed.
+
+**Two of the three false positives were the redelivery bug, described correctly.** Sample 04:
+*"Missing idempotency handling for webhook events"*, naming the provider's retries, the double
+credit and the unused event id. Sample 05: *"Event handler lacks idempotency"*, on the right line.
+Both filed under `event-consistency`. So ADR-041's conclusion - that the Reviewer does not notice
+redelivery - was narrower than it read: given a visible dedupe key or an unmistakable increment
+it does notice, and it never once calls it `idempotency`. On sample 02 it still misses the bug
+outright, with no word about redelivery, dedupe or replay anywhere; the neighbouring atomicity
+bug takes its attention.
+
+**Why it misfiled: it was never told.** The rubric explains idempotency under its
+"Event-driven microservices" heading, and nothing anywhere mapped a topic to a category name. The
+model saw an enum in which `event-consistency` sounds like it covers anything involving events.
+
+**Decision 1: a false positive says where it landed, and is not credited.** `near_miss_key` names
+the label a false positive sits on - same file, overlapping lines - under a category that label
+does not accept. The obvious alternative was to treat a wrong category the way ADR-025 treats an
+under-rated severity: precise, but not found. It was proposed, and rejected on building it,
+because ADR-025's argument depends on the category matching - *a finding at the right lines with
+the right category* has spotted the issue. Without the category there is no telling a real bug
+under another heading from a different claim at the same place, and sample 05 had both on
+neighbouring lines: F02 the replay bug misfiled, F01 the false claim that `DROP COLUMN` fails on a
+table with rows. Crediting the first would have credited the second.
+
+**Decision 2: the rubric defines the categories**, in a section the Reviewer reads and the label
+author reads, so a finding and a label are held to one definition. The pair that confused it is
+drawn explicitly: `event-consistency` is the publishing side, `idempotency` the receiving side,
+and a handler with no deduplication is `idempotency` even though events are involved. The guide
+is kept generic on purpose - it does not mention unverified webhooks under security, for
+instance - because the samples it is measured on were written by the same session, and a guide
+that names their bugs would be teaching to the test.
+
+**Decision 3: the severity line that primed the false claim is now specific.** It said *"a
+migration that fails on a table with rows"* is at least high, meaning NOT NULL without a default.
+The model's false claim about `DROP COLUMN` was that sentence nearly verbatim. It now names the
+statement it means.
+
+**The second measurement printed 1.000 / 0.600, and the 0.600 was false.** Sample 02 scored 2/2
+for the first time ever. Its finding was *"Partial stock updates without transaction"* - the
+atomicity bug, now filed as `correctness` and rated high - and the redelivery label still
+accepted `correctness` as an alternative. ADR-041 closed this hole for `event-consistency` and
+left it open for the catch-all. The prediction that this could happen was made before the run
+and checked by reading the finding, which is the only way it can be caught.
+
+**The labels are corrected**, in the direction that lowers the score. Every redelivery label now
+accepts `idempotency` alone, and a test holds that; `partial-decrement` accepts `correctness`,
+because that is a fair heading for a partial update. `golden/README.md` states the rule: on lines
+another label shares, accept only categories the other bug could not plausibly be filed under, and
+never `correctness`.
+
+Both runs, re-scored from the reviews on disk against the corrected labels:
+
+| | unchanged prompt | with the category guide |
+|---|---|---|
+| precision | 0.700 | **1.000** |
+| recall | 0.400 (4/10) | **0.500** (5/10) |
+| calibration | 1.000 (7 scored) | 0.875 (8 scored) |
+| false positives | 3 | **0** |
+| cold seconds | 495.8 (four samples) | 830.9 (seven) |
+
+**What moved, finding by finding**, which is the honest unit here:
+
+- Sample 04's redelivery: found, filed as `idempotency`, anchored on the credit line. The guide.
+- Sample 05's redelivery: filed as `idempotency` - and dropped by Verify as `claim_not_supported`,
+  because its one evidence string glued three lines of a multi-line SQL template literal into
+  one. The category was fixed and the finding lost to a citation. Multi-line SQL in template
+  literals is ordinary in this stack, so this is roadmap step 14 rather than a curiosity.
+- Sample 05's false `DROP COLUMN` claim: gone - but the model said nothing about the migration at
+  all this time, so the data loss went from misdiagnosed to unmentioned. That is not an
+  improvement, and the wording change cannot be credited with it.
+- Sample 02's atomicity finding: now scored against its own label, and correctly shown as
+  over-rated - high, against a band of medium..low that matches the rubric's own severity table.
+  The calibration dip is the scorer reading the run accurately, not the model getting worse.
+
+**What the set now says the Reviewer misses**, none of it visible at three samples: redelivery
+when a louder bug shares its lines (02); an unauthenticated endpoint that credits money (04, never
+mentioned in either run); an authorization gap visible only in an unchanged context line - the
+guard on the route above (06, never mentioned); and a column dropped with its data (05).
+
+**Label changes made after seeing results**, stated plainly because they are exactly the kind
+that can flatter a number: sample 04's redelivery label was widened to start at the unused
+`eventId` line, which its own expected finding had always quoted as evidence; sample 05's
+`must_not_flag` entry was keyed on a category the model did not use, and now attributes by place;
+and the redelivery labels were made strict. Only the first could raise a score, and it is
+justified by the fixture rather than by the result.
+
+**Consequences.** Step 4 stays in progress: the real samples are still owed, and every number
+above is a claim about bugs somebody wrote for the model to find - the report says so under its
+total. ADR-026's model comparison is unblocked and was not run; at roughly fourteen minutes cold
+per model it is its own measurement. ADR-041's "the Reviewer does not notice redelivery" is
+superseded by the narrower statement above.
