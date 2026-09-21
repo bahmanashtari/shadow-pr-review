@@ -2138,3 +2138,31 @@ instances - and the labels had missed it, attributing it to `raw-sql-in-reposito
 that entry matches on the file alone. It is now `raw-rows-typed-as-entities`, acceptable, banded
 low to medium, so the model's `high` is scored as over-rated: a true claim, overstated. The test a
 label added after a result has to pass is whether the claim is independently true, and this one is.
+
+## ADR-050: Where a run's time and tokens went, and a warning before a budget bites (accepted, September 2026)
+
+**Context.** Roadmap step 3, "budget and cache tuning; cost report per run", taken under Bahman's
+instruction to continue while the real samples are outstanding. A cost report already existed:
+`cost.json` summed tokens, calls and dollars - which read 0 on the default local model.
+
+**What the runs on disk say.** Budgets are per agent, not per run: the Reviewer, the Verifier agent
+and the Narrator each get their own, and the output budget is also each call's `max_tokens`. The
+heaviest agent on the current set used 30% of its 20,000 output tokens, on diffs of 20 to 50 lines.
+The cache holds 25 MB in 264 files after every run the project has made. **So nothing is tuned**:
+the cache needs no pruning, and the budgets have headroom on a set that cannot say whether they
+will on a real 300-line change - a call that runs out truncates its JSON and fails validation
+rather than degrading, so the day that happens matters. Tuning waits for the real samples.
+
+**Decision: make the approach visible instead.**
+
+- `cost.json` gains `stages`: for the review, verify and narrate stages, input and output tokens,
+  calls, cached calls, tool calls and seconds. A stage's tokens count cached calls too, because they
+  say how big the work is, which is what a budget measures; the top-level `usage` keeps meaning
+  what this run actually spent. On a local model, the seconds are the cost that matters.
+- `spr eval` records a `budget_warnings` entry for any stage that used more than half of a token
+  budget, and prints it under the sample. On today's set it is silent. The day real samples land it
+  is the first place a budget problem shows, before a run fails on one.
+
+**Checked** on the step 2 run replayed from cache: every sample's `cost.json` carries its stages
+with the true sizes of cached work, the heaviest stage is verify on sample-05 at 30% of its output
+budget, and no warning is printed.

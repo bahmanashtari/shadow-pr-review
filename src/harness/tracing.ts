@@ -44,6 +44,20 @@ export type TraceEntry =
     }
   | { kind: "stopped"; stage: StageName; step: number; reason: string };
 
+/**
+ * One stage's share of a run (roadmap step 3). Its tokens count cached calls too, because they say
+ * how big the stage's work is - which is what a budget is measured against - while the run's
+ * top-level `usage` says what this run actually spent. On a local model the seconds are the cost.
+ */
+export interface StageCost {
+  inputTokens: number;
+  outputTokens: number;
+  llmCalls: number;
+  cachedCalls: number;
+  toolCalls: number;
+  seconds: number;
+}
+
 /** How much of a tool result is kept in the trace. */
 const PREVIEW_CHARS = 400;
 
@@ -56,6 +70,7 @@ export class Tracer {
   private costUnknown = false;
   private calls = 0;
   private toolCalls = 0;
+  private readonly stages = new Map<StageName, StageCost>();
   /** Kept in memory as well as on disk, so tests can assert without reading files. */
   readonly entries: TraceEntry[] = [];
 
@@ -76,6 +91,7 @@ export class Tracer {
       }
     }
     if (entry.kind === "tool_call") this.toolCalls += 1;
+    if (entry.kind === "llm_call" || entry.kind === "tool_call") this.addToStage(entry);
 
     if (this.file !== undefined) {
       try {
@@ -86,18 +102,46 @@ export class Tracer {
     }
   }
 
+  private addToStage(entry: Extract<TraceEntry, { kind: "llm_call" | "tool_call" }>): void {
+    const stage = this.stages.get(entry.stage) ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      llmCalls: 0,
+      cachedCalls: 0,
+      toolCalls: 0,
+      seconds: 0,
+    };
+    if (entry.kind === "llm_call") {
+      stage.llmCalls += 1;
+      if (entry.cached) stage.cachedCalls += 1;
+      stage.inputTokens += entry.usage.inputTokens;
+      stage.outputTokens += entry.usage.outputTokens;
+    } else {
+      stage.toolCalls += 1;
+    }
+    stage.seconds = Math.round((stage.seconds * 1000 + entry.durationMs) / 100) / 10;
+    this.stages.set(entry.stage, stage);
+  }
+
   /** Shortens a tool result for the trace. */
   static preview(text: string): string {
     return text.length <= PREVIEW_CHARS ? text : `${text.slice(0, PREVIEW_CHARS)}...`;
   }
 
   /** The run's totals, with cost "unknown" when any model had no price. */
-  cost(): { usage: LlmUsage; costUsd: number | "unknown"; llmCalls: number; toolCalls: number } {
+  cost(): {
+    usage: LlmUsage;
+    costUsd: number | "unknown";
+    llmCalls: number;
+    toolCalls: number;
+    stages: Partial<Record<StageName, StageCost>>;
+  } {
     return {
       usage: this.usage,
       costUsd: this.costUnknown ? "unknown" : this.costUsd,
       llmCalls: this.calls,
       toolCalls: this.toolCalls,
+      stages: Object.fromEntries(this.stages),
     };
   }
 

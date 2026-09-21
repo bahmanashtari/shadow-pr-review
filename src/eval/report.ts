@@ -143,6 +143,11 @@ export function formatModel(run: ModelRun): string[] {
         detail.push(`  on ${fp.near_miss_key}'s lines, filed under ${fp.category}`);
       }
     }
+    for (const w of s.budget_warnings ?? []) {
+      // The approach, not the collision: a call that runs out truncates and fails (step 3).
+      const share = Math.round((w.used / w.limit) * 100);
+      detail.push(`budget: ${w.stage} used ${w.used} of ${w.limit} ${w.budget} (${share}%)`);
+    }
     for (const r of s.review.redundant ?? []) {
       // Said once is enough: the extra findings are extra steps in the video (ADR-029).
       detail.push(`redundant: ${r.finding_ids.join(", ")} all on ${r.key}`);

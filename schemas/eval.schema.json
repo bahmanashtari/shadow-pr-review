@@ -62,7 +62,12 @@
           "description": "Why the Reviewer stopped early, for example budget:agentSteps. Null when it answered."
         },
         "review": { "$ref": "#/$defs/ReviewScore" },
-        "script": { "$ref": "#/$defs/ScriptResult" }
+        "script": { "$ref": "#/$defs/ScriptResult" },
+        "budget_warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BudgetWarning" },
+          "description": "Each stage that used more than half of a token budget on this sample. Budgets are per agent and a call that runs out truncates its answer rather than degrading, so this is the early warning that a real, larger change will fail where a synthetic one did not (roadmap step 3). Absent when nothing came close."
+        }
       }
     },
     "ReviewScore": {
@@ -273,6 +278,17 @@
           "minimum": 0,
           "description": "How many samples kept more findings than their max_findings allows."
         }
+      }
+    },
+    "BudgetWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "budget", "used", "limit"],
+      "properties": {
+        "stage": { "type": "string" },
+        "budget": { "enum": ["inputTokens", "outputTokens"] },
+        "used": { "type": "integer", "minimum": 0 },
+        "limit": { "type": "integer", "minimum": 1 }
       }
     },
     "Redundancy": {

@@ -210,12 +210,43 @@ describe("Tracer", () => {
     const tracer = new Tracer();
     tracer.write(llmEntry());
     tracer.write(llmEntry({ cached: true, costUsd: 0 }));
-    expect(tracer.cost()).toEqual({
+    expect(tracer.cost()).toMatchObject({
       usage: usage({ inputTokens: 100, outputTokens: 50 }),
       costUsd: 0.5,
       llmCalls: 2,
       toolCalls: 0,
     });
+  });
+
+  it("breaks the run down by stage, counting a cached call's size but not its spend (step 3)", () => {
+    const tracer = new Tracer();
+    tracer.write(llmEntry({ durationMs: 1500 }));
+    tracer.write(llmEntry({ cached: true, costUsd: 0, durationMs: 0 }));
+    tracer.write(llmEntry({ stage: "narrate", usage: usage({ inputTokens: 7, outputTokens: 9 }) }));
+    tracer.write({
+      kind: "tool_call",
+      stage: "review",
+      step: 2,
+      tool: "get_diff_hunk",
+      input: {},
+      ok: true,
+      durationMs: 500,
+      preview: "",
+    });
+
+    const { stages, usage: spent } = tracer.cost();
+    // The cached call is work the stage did, so it is in the stage's tokens...
+    expect(stages.review).toEqual({
+      inputTokens: 200,
+      outputTokens: 100,
+      llmCalls: 2,
+      cachedCalls: 1,
+      toolCalls: 1,
+      seconds: 2,
+    });
+    expect(stages.narrate?.outputTokens).toBe(9);
+    // ...but not in what the run spent.
+    expect(spent.inputTokens).toBe(107);
   });
 
   it("reports the total as unknown when any model had no price", () => {

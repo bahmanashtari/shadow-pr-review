@@ -25,7 +25,14 @@ import { StageError } from "../lib/errors.js";
 import { createProvider } from "../providers/llm/create.js";
 import { runVerify, writeVerifiedReview } from "../verify/verify.js";
 import { judgeFindings } from "../agents/verifier.js";
-import { buildReport, measureScript, scoreReview, total, totalsByOrigin } from "./score.js";
+import {
+  budgetWarnings,
+  buildReport,
+  measureScript,
+  scoreReview,
+  total,
+  totalsByOrigin,
+} from "./score.js";
 
 /** Input for {@link runEval}. */
 export interface RunEvalOptions {
@@ -169,6 +176,7 @@ async function evaluateSample(
 
   const calls = tracer.entries.filter((e) => e.kind === "llm_call");
   tracer.writeCost(runDir);
+  const warnings = budgetWarnings(tracer.cost().stages, config.budgets);
 
   return {
     sample,
@@ -179,6 +187,7 @@ async function evaluateSample(
     stopped: review.stopped,
     review: scoreReview(verified.review, labels),
     script: measureScript(verified.review, script, expectedScript, failure),
+    ...(warnings.length === 0 ? {} : { budget_warnings: warnings }),
   };
 }
 

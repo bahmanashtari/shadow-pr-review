@@ -55,6 +55,10 @@ export interface SampleResult {
   stopped?: string | null;
   review: ReviewScore;
   script: ScriptResult;
+  /**
+   * Each stage that used more than half of a token budget on this sample. Budgets are per agent and a call that runs out truncates its answer rather than degrading, so this is the early warning that a real, larger change will fail where a synthetic one did not (roadmap step 3). Absent when nothing came close.
+   */
+  budget_warnings?: BudgetWarning[];
 }
 export interface ReviewScore {
   kept: number;
@@ -163,6 +167,12 @@ export interface ScriptResult {
   estimated_seconds?: number;
   expected_steps?: number;
   expected_seconds?: number;
+}
+export interface BudgetWarning {
+  stage: string;
+  budget: "inputTokens" | "outputTokens";
+  used: number;
+  limit: number;
 }
 export interface Totals {
   precision: number | null;

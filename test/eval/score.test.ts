@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  budgetWarnings,
   buildReport,
   calibration,
   found,
@@ -520,6 +521,31 @@ describe("measureScript", () => {
     const result = measureScript(review([]), undefined, undefined, "This review kept no findings");
     expect(result.narrated).toBeNull();
     expect(result.failure).toBeNull();
+  });
+});
+
+describe("budgetWarnings (step 3)", () => {
+  const budgets = { inputTokens: 96_000, outputTokens: 20_000 };
+
+  it("is silent at today's heaviest agent, about a third of the output budget", () => {
+    expect(
+      budgetWarnings({ verify: { inputTokens: 9_303, outputTokens: 7_222 } }, budgets),
+    ).toEqual([]);
+  });
+
+  it("names the stage and the budget once a stage passes half", () => {
+    expect(
+      budgetWarnings(
+        {
+          review: { inputTokens: 50_000, outputTokens: 12_000 },
+          narrate: { inputTokens: 2_000, outputTokens: 1_500 },
+        },
+        budgets,
+      ),
+    ).toEqual([
+      { stage: "review", budget: "inputTokens", used: 50_000, limit: 96_000 },
+      { stage: "review", budget: "outputTokens", used: 12_000, limit: 20_000 },
+    ]);
   });
 });
 

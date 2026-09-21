@@ -192,6 +192,17 @@ describe("formatModel", () => {
   });
 });
 
+describe("budget warnings", () => {
+  it("says which stage came close to which budget, and how close", () => {
+    const heavy = sample({
+      budget_warnings: [{ stage: "review", budget: "outputTokens", used: 15_000, limit: 20_000 }],
+    });
+    expect(formatModel(run({ samples: [heavy] })).join("\n")).toContain(
+      "budget: review used 15000 of 20000 outputTokens (75%)",
+    );
+  });
+});
+
 describe("redundant findings", () => {
   it("names the findings that said one thing twice, and counts them in the comparison", () => {
     const twice = sample({

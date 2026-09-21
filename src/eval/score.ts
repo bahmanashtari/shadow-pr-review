@@ -7,6 +7,7 @@
  */
 import { SEVERITY_RANK, countWords } from "../contracts/checks.js";
 import type {
+  BudgetWarning,
   EvalReport,
   FalsePositive,
   Match,
@@ -363,6 +364,31 @@ export function totalsByOrigin(samples: readonly SampleResult[]): OriginTotals[]
   }
 
   return entries;
+}
+
+/** The share of a token budget past which `spr eval` says so. */
+export const BUDGET_WARNING_SHARE = 0.5;
+
+/**
+ * Stages that used more than half of a token budget. Budgets are per agent, and a call that runs
+ * out of output tokens truncates its JSON and fails validation rather than degrading, so the
+ * useful signal is the approach, not the collision (roadmap step 3). Silent on today's set: the
+ * heaviest agent used about a third of its output budget.
+ */
+export function budgetWarnings(
+  stages: Readonly<Record<string, { inputTokens: number; outputTokens: number } | undefined>>,
+  budgets: { inputTokens: number; outputTokens: number },
+): BudgetWarning[] {
+  const warnings: BudgetWarning[] = [];
+  for (const [stage, used] of Object.entries(stages)) {
+    if (used === undefined) continue;
+    for (const budget of ["inputTokens", "outputTokens"] as const) {
+      if (used[budget] > budgets[budget] * BUDGET_WARNING_SHARE) {
+        warnings.push({ stage, budget, used: used[budget], limit: budgets[budget] });
+      }
+    }
+  }
+  return warnings;
 }
 
 /** Builds the report written to `eval.json`. */
