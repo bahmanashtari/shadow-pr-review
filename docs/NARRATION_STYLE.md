@@ -38,6 +38,8 @@ video at all, so there is never anything to say about a clean change.
 
 - Describe code, don't read it. Say "the place order handler", not "PlaceOrderHandler dot ts".
 - Split identifiers into words: `reserved_quantity` -> "the reserved quantity column".
+  An event name is words too: `order.placed` -> "the order placed event". Anything with a dot
+  in it is read aloud as "dot", and the script check refuses it.
 - Never read file paths, extensions, line numbers, brackets or operators. The screen shows them.
 - A very short literal is fine when it matters: "a default of zero".
 - Acronyms: say "Postgres", "Nest", "D T O", "C Q R S" (the TTS stage also normalizes these).

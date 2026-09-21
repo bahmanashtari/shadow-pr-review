@@ -1,8 +1,11 @@
 # Plan: Milestone 3, step 13 (dotted identifiers read aloud)
 
-Status: proposed, written in the session that expanded the golden set (ADR-044). Nothing here is
-built. Read ADR-024, ADR-027 and ADR-038 first, and the two lines of `docs/NARRATION_STYLE.md`
-that already cover this: "Describe code, don't read it" and "Split identifiers into words".
+Status: **done, approved by Bahman as option A, 21 September 2026.** Built as written, with one
+addition section 3 did not foresee: a URL contains a dotted host, so words already reported as a
+file name, path or URL are left out of the dotted scan to keep each one a single problem. The
+section 4 check passed: a cached sample-01 script saying "order.placed" was repaired in one call
+to "the order placed event". Recorded in ADR-046's last paragraph rather than an ADR of its own.
+Read ADR-024, ADR-027 and ADR-038 for the background.
 
 ## 1. What happens
 

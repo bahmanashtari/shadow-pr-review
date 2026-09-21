@@ -1970,3 +1970,43 @@ different bug.
 **Consequences.** ADR-026's decision stands and stops being provisional in its reasons as well as
 its result. `eval.json` for this table is `runs/eval-models-2/`. Supersedes ADR-044's closing
 statement that the comparison was not run.
+
+## ADR-046: A line break is whitespace, and a blank quote is not evidence (accepted, September 2026)
+
+**Context.** Roadmap step 14, approved by Bahman as its plan's option A. Two correct findings had
+been lost to the shape of their quotes rather than to anything they claimed: sample-05's replay
+bug, whose one evidence string joined a SQL template literal's lines into one (ADR-044), and
+sample-01's publish-before-commit under `qwen3:4b`, one of whose five quotes was `21 +` - a
+blank line (ADR-045). Both were dropped as `claim_not_supported` by a check whose job is to stop
+invented code, and neither contained any.
+
+**Decision: `containsSnippet` treats a line break as whitespace, and Verify skips a blank quote.**
+It is ADR-020's move again - forgive a citation habit, but verify it rather than trust it:
+
+- A one-line quote that matches no single line is tried against windows of consecutive lines
+  within one hunk, compared with all whitespace removed. The match must start in the window's
+  first line and end in its last, so it genuinely spans. Every other character must still be in
+  the diff, in order, so a paraphrase or an invented line still fails, and principle 5 holds.
+  The window is at most twelve lines. The plan said five; the case that motivated the step
+  spanned **seven** - the whole `query(...)` call, lines 11 to 17 - so five would have missed the
+  one quote it existed for.
+- A quote that is empty once its copied prefix is taken off grounds nothing and disproves
+  nothing, so it is skipped and removed from the kept finding. At least one real quote is still
+  required (ADR-019), and a finding whose real quote is wrong is dropped exactly as before.
+
+**Measured.** Recall 0.500 to **0.600** on the default model, which is exactly the plan's
+prediction: sample-05's `projection-double-counts-on-replay` is found, and nothing else moved.
+Precision stays 1.000, calibration reads 0.889 with one more banded finding, and every sample
+with something to narrate was narrated (6/6). `runs/eval-steps13-14/`.
+
+**What is deliberately not done.** Option B - sending a grounding failure back to the Reviewer
+as a repair - stays unbuilt: it needs a harness change first, because `runAgent` fails the stage
+when retries run out. A quote that spans a removed and an added line is accepted as the existing
+multi-line match already accepted it, since the index does not keep line kinds; no case of it
+has been seen.
+
+**Also landed with it: roadmap step 13.** `checkScript` refuses a dotted identifier such as
+`order.placed`, which a voice reads as "order dot placed", and the problem message gives the
+rewrite. A re-narration of a sample-01 run whose cached script said "order.placed" was repaired
+in one call to "the order placed event". No ADR of its own, as its plan proposed; the check's
+comment records the accepted false positive on "e.g.".

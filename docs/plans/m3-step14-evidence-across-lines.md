@@ -1,10 +1,12 @@
 # Plan: Milestone 3, step 14 (evidence that spans lines)
 
-Status: proposed, written in the session that expanded the golden set (ADR-044), while its model
-comparison ran. Nothing here is built. Read ADR-019, ADR-020, ADR-044 and CLAUDE.md principle 5
-first. ADR-020 is the precedent that matters: `containsSnippet` already forgives one citation
-habit - a copied `12 +` line-number prefix - and verifies it rather than trusting it. Option A
-below is the same move for a second habit.
+Status: **done, approved by Bahman as option A, 21 September 2026.** Built as written with one
+change: the window is twelve lines, not five, because the quote that motivated the step spans
+seven. Blank quotes are skipped as section 1 proposed. Recall 0.500 to 0.600, exactly as
+section 5 predicted (ADR-046). Written in the session that expanded the golden set (ADR-044).
+ADR-020 is the precedent: `containsSnippet` already forgave one citation habit - a copied `12 +`
+line-number prefix - and verifies it rather than trusting it. Option A is the same move for a
+second habit.
 
 ## 1. What happened
 

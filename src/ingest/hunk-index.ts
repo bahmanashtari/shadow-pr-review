@@ -104,9 +104,65 @@ export class HunkIndex {
     if (matchesConsecutive(entry, parts)) return true;
 
     const peeled = parts.map((part) => peelRenderedPrefix(entry, part));
-    if (peeled.includes(null)) return false;
-    return matchesConsecutive(entry, peeled as string[]);
+    if (!peeled.includes(null) && matchesConsecutive(entry, peeled as string[])) return true;
+
+    // Last, a single quote whose line breaks were replaced by a space or by nothing.
+    const [only] = parts;
+    return parts.length === 1 && only !== undefined && matchesAcrossLines(entry, only);
   }
+}
+
+/**
+ * What a quote says once a copied `12 +` prefix is taken off, without checking that line 12
+ * backs it up. Empty for a quote of a blank line, which grounds nothing: Verify skips such a
+ * quote rather than dropping the finding that carries it (ADR-046).
+ */
+export function quotedText(snippet: string): string {
+  const normalized = normalizeSnippet(snippet);
+  const match = RENDERED_LINE.exec(normalized);
+  return match ? normalizeSnippet(match[2] ?? "") : normalized;
+}
+
+/** The longest run of lines one quote may span; the case that set it spanned seven. */
+const MAX_SPAN = 12;
+
+/** Removes every space, tab and line break. */
+function squeeze(text: string): string {
+  return text.replace(/\s+/g, "");
+}
+
+/**
+ * True when a one-line quote is really several consecutive lines of one hunk joined together.
+ *
+ * Models copy a multi-line statement - a SQL template literal, typically - as one line, joining
+ * the lines with a space or with nothing (sample-05 has both in one quote). Compared with all
+ * whitespace removed, every other character must still be in the diff, in order, so a paraphrase
+ * or an invented line still fails; this is ADR-020's move for a second citation habit. The match
+ * must start in the window's first line and end in its last, so it genuinely spans rather than
+ * sitting inside one line that the single-line check would already have found.
+ */
+function matchesAcrossLines(entry: FileIndex, snippet: string): boolean {
+  const target = squeeze(snippet);
+  if (target === "") return false;
+
+  return entry.hunkTexts.some((texts) => {
+    for (let start = 0; start < texts.length; start += 1) {
+      const first = squeeze(texts[start] ?? "");
+      if (first === "") continue;
+      let joined = first;
+      for (let end = start + 1; end < texts.length && end < start + MAX_SPAN; end += 1) {
+        const last = squeeze(texts[end] ?? "");
+        joined += last;
+        if (last === "") continue;
+        const lastBegins = joined.length - last.length;
+        for (let at = joined.indexOf(target); at !== -1 && at < first.length;) {
+          if (at + target.length > lastBegins) return true;
+          at = joined.indexOf(target, at + 1);
+        }
+      }
+    }
+    return false;
+  });
 }
 
 /** True when `parts` match consecutive diff lines inside one hunk. */

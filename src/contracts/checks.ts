@@ -37,6 +37,15 @@ const MARKDOWN_PATTERN = /[`*#_[\]<>|]|^\s*[-+]\s/m;
 const FILE_REFERENCE_PATTERN =
   /\b[\w-]+\.(ts|tsx|js|mjs|cjs|json|sql|ya?ml|md|patch)\b|\w\/\w+\/|https?:\/\//i;
 
+/**
+ * A dotted identifier - an event name such as `order.placed`, or `module.member` - which a voice
+ * reads as "order dot placed" (roadmap step 13). Both sides must start with a letter, so a decimal
+ * is untouched. The known false positive is "e.g." and "i.e.", which the narration style would
+ * rather hear as "for example" anyway; accepted, as ADR-038 accepted "it is critical that".
+ * A file name matches too, and is reported as a file name instead, never twice.
+ */
+const DOTTED_IDENTIFIER_PATTERN = /\b[A-Za-z_]\w*\.[A-Za-z_]\w*\b/g;
+
 /** Counts spoken words (whitespace separated). */
 export function countWords(text: string): number {
   const trimmed = text.trim();
@@ -202,6 +211,19 @@ export function checkScript(
       problems.push(`${at}: text contains markdown or code characters`);
     if (FILE_REFERENCE_PATTERN.test(s.text))
       problems.push(`${at}: text reads out a file name, path or URL`);
+    // Words already reported as a file name, path or URL are left out, so `https://example.com`
+    // and `email.ts` are one problem each rather than two.
+    const spoken = s.text
+      .split(/\s+/)
+      .filter((word) => !FILE_REFERENCE_PATTERN.test(word))
+      .join(" ");
+    for (const token of new Set(spoken.match(DOTTED_IDENTIFIER_PATTERN) ?? [])) {
+      problems.push(
+        `${at}: reads out "${token}", which is spoken as "${token.replace(/\./g, " dot ")}". ` +
+          `Describe it in words instead - an event name like this is ` +
+          `"the ${token.replace(/\./g, " ")} event".`,
+      );
+    }
   });
 
   for (const f of review.findings) {

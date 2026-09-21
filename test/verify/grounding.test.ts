@@ -85,6 +85,31 @@ describe("checkGrounded", () => {
     expect(rejection?.reason).toBe("claim_not_supported");
   });
 
+  it("skips a quote of a blank line rather than dropping the finding (ADR-046)", () => {
+    // qwen3:4b quoted sample-01's publish-before-commit with five lines, one of them blank, and
+    // lost a correct finding for it.
+    const withBlank = finding({ evidence: [`19 + ${TRANSACTION}`, "21 +      "] });
+    expect(checkGrounded(index, withBlank)).toBeNull();
+
+    const screened = screenFindings({ index, findings: [withBlank], maxFindings: 10 });
+    expect(screened.kept[0]?.evidence).toEqual([`19 + ${TRANSACTION}`]);
+  });
+
+  it("still needs one quote that is not blank", () => {
+    const rejection = checkGrounded(index, finding({ evidence: ["21 +", "   "] }));
+    expect(rejection?.reason).toBe("claim_not_supported");
+    expect(rejection?.note).toContain("none of the 2 evidence strings");
+  });
+
+  it("still drops a finding whose one real quote is wrong, blank quotes or not", () => {
+    const rejection = checkGrounded(
+      index,
+      finding({ evidence: ["21 +", "this.outbox.save(event);"] }),
+    );
+    expect(rejection?.reason).toBe("claim_not_supported");
+    expect(rejection?.note).toContain("evidence 2 of 2");
+  });
+
   it("keeps evidence quoted from outside the claimed range", () => {
     // sample-01 F02 points at lines 19-20 and quotes the import on line 2, which is exactly
     // how that claim should be supported. Evidence is checked against the file, not the range.

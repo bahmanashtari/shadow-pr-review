@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildIngest } from "../../src/ingest/ingest.js";
-import { HunkIndex, normalizeSnippet } from "../../src/ingest/hunk-index.js";
+import { HunkIndex, normalizeSnippet, quotedText } from "../../src/ingest/hunk-index.js";
 import type { Source } from "../../src/contracts/generated/ingest.js";
 import { defaultConfig, readDiffFixture, readGoldenDiff } from "../helpers.js";
 
@@ -97,6 +97,68 @@ describe("HunkIndex", () => {
     expect(search.containsSnippet(controller, `4 ${imported}`)).toBe(false);
     // And a snippet that happens to start with a number is not changed when it matches as-is.
     expect(search.containsSnippet(controller, "@Get(':id')")).toBe(true);
+  });
+
+  describe("a quote whose line breaks were replaced (ADR-046)", () => {
+    const projection = indexOf(readGoldenDiff("sample-05-summary-projection"));
+    const PROJECTION =
+      "services/reporting-service/src/infrastructure/projections/order-summary.projection.ts";
+
+    it("matches the quote that lost sample-05's replay finding, seven lines joined into one", () => {
+      // Exactly what qwen3:30b wrote: "query(" and "`UPDATE" joined with nothing, the rest
+      // with single spaces.
+      const quoted =
+        "    await this.dataSource.query(`UPDATE order_summary SET orders = orders + 1, revenue = " +
+        "revenue + $2 WHERE customer_id = $1`, [event.customerId, event.total],);";
+      expect(projection.containsSnippet(PROJECTION, quoted)).toBe(true);
+    });
+
+    it("accepts a join with a space and a join with nothing alike", () => {
+      expect(
+        projection.containsSnippet(PROJECTION, "`UPDATE order_summary SET orders = orders + 1,"),
+      ).toBe(true);
+      expect(
+        projection.containsSnippet(PROJECTION, "`UPDATE order_summarySET orders = orders + 1,"),
+      ).toBe(true);
+    });
+
+    it("still refuses a paraphrase, however close", () => {
+      expect(
+        projection.containsSnippet(PROJECTION, "`UPDATE order_summary SET orders = orders + 2,"),
+      ).toBe(false);
+    });
+
+    it("does not join lines across two hunks", () => {
+      const twoHunks = indexOf(readDiffFixture("multi-hunk.patch"));
+      expect(twoHunks.containsSnippet("src/service.ts", "export class Service {")).toBe(true);
+      expect(
+        twoHunks.containsSnippet(
+          "src/service.ts",
+          "export class Service { async run(): Promise<void> {",
+        ),
+      ).toBe(false);
+    });
+
+    it("does not span more than twelve lines", () => {
+      // The whole 19-line handler of sample-05, joined: real text, but no longer a quote.
+      const everything = readGoldenDiff("sample-05-summary-projection")
+        .split("\n")
+        .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+        .slice(0, 19)
+        .map((line) => line.slice(1))
+        .join(" ");
+      expect(projection.containsSnippet(PROJECTION, everything)).toBe(false);
+    });
+  });
+
+  it("reads a quote without its prefix, and a blank quote as empty", () => {
+    expect(quotedText("19 +    await this.dataSource.transaction(async (manager) => {")).toBe(
+      "await this.dataSource.transaction(async (manager) => {",
+    );
+    // qwen3:4b's third quote on sample-01: line 21 is blank.
+    expect(quotedText("21 +      ")).toBe("");
+    expect(quotedText("   ")).toBe("");
+    expect(quotedText("return order.id;")).toBe("return order.id;");
   });
 
   it("indexes both sides of a modified file", () => {

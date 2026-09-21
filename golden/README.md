@@ -37,6 +37,46 @@ business. What must survive is the shape of the code, because that is what is be
 This repository is public, and git keeps what it is given, so a sample is reviewed before it is
 committed rather than after.
 
+## Contributing a real sample
+
+The seven samples here are synthetic, so they only say whether the Reviewer finds bugs that were
+written for it. A real sample says whether it finds the bugs a team actually writes, which is the
+claim this tool exists to make. Nobody needs to write JSON to contribute one.
+
+**What to supply**: a diff and a few lines of notes. The four files in the sample folder are
+written from those, and the notes' author checks `labels.json`, because the ground truth has to
+be theirs.
+
+**Where to find one**, in a service repository on the target stack:
+
+```bash
+git log --oneline -i -E --grep="fix|hotfix|revert|bug" --since="1 year ago"
+```
+
+Each hit is a fix, and the sample is the change that **introduced** the bug, not the fix. `git
+blame <fix-sha>^ -- path/to/file.ts` shows which commit last wrote the lines the fix changed.
+Pull requests where a reviewer caught a bug before merge are as good - the diff before the review
+fix is the sample - and so are reverted commits. One or two changes where nothing was wrong are
+worth having too, because restraint is scored. Most wanted: anything where a message, event,
+webhook or job was processed twice; then migrations, authorization and money.
+
+**Exporting it**: `git show <sha> > ~/spr-incoming/01-refund-consumer.patch` for a commit, or
+add `.diff` to a GitHub pull request's URL. Keep it under about 300 changed lines; lockfiles and
+generated files are filtered out anyway.
+
+**The notes**, beside it as `01-refund-consumer.txt`:
+
+```
+Bug: RefundRequested consumer refunds without checking for an existing refund.
+     After a pod restart the broker redelivered it and we refunded twice (incident).
+Where: refund-requested.consumer.ts, the handle() method.
+Severity: critical - money went out twice.
+Also: someone might flag the missing DTO validation; that's real but minor.
+```
+
+**Keep both outside this repository** until they are anonymised - see the anonymisation rules
+above. The repository is public, and git keeps what it is given.
+
 ## How to score
 
 `spr eval` implements exactly this; ADR-025 records the rulings the original wording left open.

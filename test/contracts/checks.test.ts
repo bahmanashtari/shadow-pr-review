@@ -169,6 +169,32 @@ describe("checkScript", () => {
     expect(problems).toContain("/steps/2 (S02): text reads out a file name, path or URL");
   });
 
+  it("refuses a dotted identifier, and says what to write instead", () => {
+    // Roadmap step 13: sample-01's narration said "order.placed", read as "order dot placed".
+    const { review, script } = loadGolden("sample-02-inventory-consumer");
+    step(script, 0).text = "When order.placed arrives twice, stock is decremented twice.";
+    const problems = checkScript(script, review);
+    expect(problems).toContain(
+      '/steps/0 (S00): reads out "order.placed", which is spoken as "order dot placed". ' +
+        'Describe it in words instead - an event name like this is "the order placed event".',
+    );
+  });
+
+  it("leaves decimals alone, and reports a file name or URL once, as what it is", () => {
+    const { review, script } = loadGolden("sample-02-inventory-consumer");
+    step(script, 0).text = "It waits 1.5 seconds before the retry.";
+    step(script, 1).text = "The create method in email.ts leaks the address.";
+    step(script, 2).text = "See https://example.com for details.";
+    const problems = checkScript(script, review);
+    expect(problems.filter((p) => p.startsWith("/steps/0"))).toEqual([]);
+    expect(problems.filter((p) => p.startsWith("/steps/1"))).toEqual([
+      "/steps/1 (S01): text reads out a file name, path or URL",
+    ]);
+    expect(problems.filter((p) => p.startsWith("/steps/2"))).toEqual([
+      "/steps/2 (S02): text reads out a file name, path or URL",
+    ]);
+  });
+
   it("honors a custom word limit", () => {
     const { review, script } = loadGolden("sample-03-email-value-object");
     expect(checkScript(script, review, { maxWordsPerStep: 20 })).toContain(

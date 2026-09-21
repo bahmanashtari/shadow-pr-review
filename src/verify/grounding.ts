@@ -7,7 +7,7 @@
  */
 import { compareFindings, SEVERITY_RANK } from "../contracts/checks.js";
 import type { DroppedFinding, Finding } from "../contracts/generated/review.js";
-import type { HunkIndex } from "../ingest/hunk-index.js";
+import { quotedText, type HunkIndex } from "../ingest/hunk-index.js";
 
 /** Why a finding did not survive. The values the review contract allows. */
 export type DropReason = DroppedFinding["reason"];
@@ -62,8 +62,17 @@ export function checkGrounded(index: HunkIndex, finding: Finding): Rejection | n
     };
   }
 
+  // A quote of a blank line proves nothing and disproves nothing, so it is skipped rather than
+  // allowed to sink the finding; at least one real quote is still required (ADR-019, ADR-046).
   const total = finding.evidence.length;
+  if (finding.evidence.every((snippet) => quotedText(snippet) === "")) {
+    return {
+      reason: "claim_not_supported",
+      note: `none of the ${total} evidence strings quotes any code`,
+    };
+  }
   for (const [i, snippet] of finding.evidence.entries()) {
+    if (quotedText(snippet) === "") continue;
     if (!index.containsSnippet(finding.file, snippet)) {
       return {
         reason: "claim_not_supported",
@@ -73,6 +82,12 @@ export function checkGrounded(index: HunkIndex, finding: Finding): Rejection | n
   }
 
   return null;
+}
+
+/** The finding as kept: a blank quote was allowed through, not worth carrying downstream. */
+function withoutBlankQuotes(finding: Finding): Finding {
+  const evidence = finding.evidence.filter((snippet) => quotedText(snippet) !== "");
+  return evidence.length === finding.evidence.length ? finding : { ...finding, evidence };
 }
 
 /**
@@ -120,7 +135,7 @@ export function screenFindings(options: ScreenOptions): Screening {
   for (const finding of findings) {
     const rejection = checkGrounded(index, finding);
     if (rejection) dropped.push({ finding, rejection });
-    else grounded.push(finding);
+    else grounded.push(withoutBlankQuotes(finding));
   }
 
   const unique: Finding[] = [];
