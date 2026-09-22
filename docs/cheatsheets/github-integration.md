@@ -127,13 +127,16 @@ use it from a short workflow, so services need no Node setup for the tool:
       - name: Video review
         run: |
           docker run --rm --network host \
+            --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp \
             -e ANTHROPIC_API_KEY -e GITHUB_TOKEN \
-            -v "$PWD:/repo" -w /repo \
+            -v "$PWD:/repo" \
             ghcr.io/<your-org>/shadow-pr-review:<version> \
             run --pr ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --out runs/current
 ```
 
-`--network host` lets the container reach the Kokoro service on `localhost:8880`.
+`--network host` lets the container reach the Kokoro service on `localhost:8880`. The image's
+working directory is already `/repo`; `--user` keeps the run folder owned by the runner, and
+Chromium needs `--ipc=host --shm-size=1g` (ADR-053).
 A composite or reusable workflow (`workflow_call`) can wrap all of this later.
 
 ## Sticky comment

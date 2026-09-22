@@ -1,0 +1,16 @@
+# Keep the build context small and free of anything a run produced.
+.git
+node_modules
+dist
+runs
+.cache
+coverage
+test
+golden
+docs
+!docs/REVIEW_RUBRIC.md
+!docs/NARRATION_STYLE.md
+scripts
+.github
+*.log
+.DS_Store

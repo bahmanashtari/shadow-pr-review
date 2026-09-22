@@ -1,0 +1,97 @@
+# Builds the tool's Docker image, proves it by running the whole pipeline inside it, and
+# publishes it to GHCR (ADR-053). A pull request builds and smoke-tests but publishes nothing,
+# so a broken Dockerfile fails the pull request rather than the release.
+# Action versions checked September 2026; verify current majors before bumping.
+name: image
+
+on:
+  pull_request:
+    paths:
+      - docker/Dockerfile
+      - .dockerignore
+      - src/**
+      - config/**
+      - schemas/**
+      - docs/REVIEW_RUBRIC.md
+      - docs/NARRATION_STYLE.md
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/image.yml
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=edge,branch=main
+            type=sha,prefix=sha-
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+
+      # Built into the local daemon first, so the smoke test runs before anything is published.
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          tags: shadow-pr-review:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The whole pipeline with no model and no Kokoro (ADR-053): this exercises the parts of
+      # the image that can be wrong - the prompt files, the schemas, the page assets, Chromium
+      # and ffmpeg - and produces a real final.mp4 and comment.md.
+      - name: Smoke test the image
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g \
+            -e HOME=/tmp -e SPR_LLM_PROVIDER=fake -e SPR_TTS_PROVIDER=fake \
+            -v "$PWD:/repo" \
+            shadow-pr-review:ci \
+            run --diff golden/sample-01-order-outbox/diff.patch --out runs/image-smoke --force
+          test -s runs/image-smoke/final.mp4
+          test -s runs/image-smoke/comment.md
+          ls -lh runs/image-smoke/final.mp4
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The layers are already in the cache, so this re-uses them and only pushes.
+      - name: Publish
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

@@ -4,7 +4,10 @@ Status: **approved** by Bahman on 21 September 2026, every recommendation taken.
 `spr run` renders `comment.md` and never posts. Q2: a fresh `spr run --force` clears the
 pipeline's own named outputs first. Q3: commit comments wait for step 4. Q4: Bahman makes the
 first real post himself, on a throwaway pull request in his repository. `fetch` stays. Built
-the same day (ADR-052); the first real post is what remains.
+the same day (ADR-052). **Q4 was then overtaken**: Bahman said he has no time to run commands or
+check pull requests, so the first real post moves to step 4, where GitHub Actions supplies the
+token and the workflow posts unattended. The branch `spr-publish-test` is pushed and kept as that
+test's fixture. Step 2 is otherwise done.
 
 Written as `proposed` straight after step 1 landed (ADR-051), in the same session. Read
 CLAUDE.md, docs/ROADMAP.md, ARCHITECTURE section 2.9 and 4, ADR-008, ADR-042 and ADR-051, and

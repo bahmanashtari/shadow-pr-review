@@ -113,6 +113,15 @@ export async function runCompose(options: RunComposeOptions): Promise<ComposeOut
   const srtPath = path.join(runDir, SUBTITLES_FILE);
   if (subtitles !== "off") writeFileSync(srtPath, buildSrt(timeline, script), "utf8");
 
+  // How long the picture may be, stated rather than inferred (ADR-053). Playwright's webm
+  // always outruns the schedule - by 1.6 to 2.1 s on this project's runs - and `-shortest`
+  // used to absorb that, until the same run inside the tool's own image, on ffmpeg 5.1 rather
+  // than 9.0, left 1.2 s of picture past the end of the sound and failed the sync check.
+  // Correctness must not turn on which ffmpeg is installed, so the narration's own length is
+  // passed in. A recording shorter than this still ends where it ends, and the two checks
+  // below still catch it.
+  const narrationMs = expectedAudioMs(manifest, timeline.gap_ms);
+
   await ffmpeg(
     [
       "-y",
@@ -133,6 +142,8 @@ export async function runCompose(options: RunComposeOptions): Promise<ComposeOut
       // string to escape for a parser with its own quoting rules. The single quotes the
       // cheat sheet shows are shell syntax, and `src/lib/exec.ts` runs without a shell.
       ...(subtitles === "burn" ? ["-vf", `subtitles=${SUBTITLES_FILE}`] : []),
+      "-t",
+      (narrationMs / 1000).toFixed(3),
       ...ENCODE,
       FINAL_FILE,
     ],

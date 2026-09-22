@@ -187,6 +187,23 @@ number to watch, not as evidence. If Compose fails saying narration is missing, 
 of the two causes it is and the command that resumes; the run folder is kept, so nothing is
 re-reviewed or re-spoken.
 
+The tool also ships as a Docker image, which is how a service repository will run it (ADR-053):
+`docker/Dockerfile` builds it, `.github/workflows/image.yml` smoke-tests the whole pipeline inside
+it with both fakes and then publishes to `ghcr.io/<owner>/shadow-pr-review`. Locally:
+
+```
+docker build -f docker/Dockerfile -t shadow-pr-review:dev .
+docker run --rm --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp \
+  -e SPR_LLM_PROVIDER=fake -e SPR_TTS_PROVIDER=fake -v "$PWD:/repo" \
+  shadow-pr-review:dev run --diff golden/sample-01-order-outbox/diff.patch --out runs/smoke --force
+```
+
+Chromium needs `--ipc=host --shm-size=1g`; `--user` keeps the run folder owned by the caller. The
+image has no model and no token in it: both arrive as environment variables, and Kokoro stays a
+service it talks to over HTTP. **When a file the tool reads at run time moves, the Dockerfile has
+to move with it** - `config/`, `schemas/`, the two prompt documents and `src/recorder/page/` are
+each copied by name, because `tsc` copies none of them.
+
 `--pr` reads the pull request and its diff from the GitHub REST API with Node's `fetch` - two
 GET requests, no Octokit (ADR-051). A public repository needs no token; a private one needs
 `GITHUB_TOKEN` (or `GH_TOKEN`) exported in the shell, and a 404 without one says so. A diff too

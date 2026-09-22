@@ -2364,5 +2364,68 @@ run's calls in a re-used folder.
 **Checked.** `pnpm verify`, `format:check` and `build`: 937 tests pass, 2 skipped, none touching
 the network. `comment.md` rendered from the nine end-to-end run folders and nestjs/nest#17816, and
 read: the real pull request's comment links its finding at `6c30f9d`, and the three clean samples
-read "No findings". **The first real post is outstanding** (Q4): Bahman runs it on a throwaway
-pull request in his repository, and this ADR is amended with what it showed.
+read "No findings".
+
+**The first real post is outstanding, and is no longer Q4's answer.** Q4 said Bahman would run it
+himself on a throwaway pull request; he then said he has no time to run commands, open pull
+requests or check them, and asked for everything to be finished without him. This session cannot
+post either: it has no GitHub token of its own, and the one in his keychain is not the session's
+to use. So the first real post moves to **step 4**, where GitHub Actions provides a token with
+`pull-requests: write` and the workflow posts on a real pull request without anybody doing
+anything by hand - which is both the proof and the intended way this runs. The branch
+`spr-publish-test` (sample-02's change, flagged without a model) is pushed and kept as the fixture
+for that test. Until then, what is proven is every path a fake client can exercise, which is all
+of them but the network itself.
+
+## ADR-053: The tool as an image, and the tail ffmpeg used to absorb (accepted, September 2026)
+
+**Context.** Milestone 4 step 3: publish the tool as a Docker image, so a service repository needs
+a workflow file and nothing else - no Node, no pnpm, no Playwright install, no apt. Bahman took
+every recommendation: a slim base rather than the official Playwright image (Q1); pull requests
+build but publish nothing, `main` publishes `:edge` and `:sha-<short>`, a version tag publishes
+`:vX.Y.Z`, `:vX.Y` and `:latest` (Q2); `linux/amd64` only for now (Q3); and the image proves
+itself by running the whole pipeline inside it (Q4).
+
+**Decision: `node:22-bookworm-slim`, plus ffmpeg from apt and Chromium's headless shell.** Two
+stages: a builder that installs with pnpm and runs `tsc`, and a runtime that takes `dist/`, the
+production `node_modules`, and the files the tool reads from its package root at run time -
+`config/`, `schemas/`, `docs/REVIEW_RUBRIC.md` and `docs/NARRATION_STYLE.md` (the Reviewer's and
+Narrator's prompts are built from them), and `src/recorder/page/` (browser JavaScript, inlined
+into the page at run time and deliberately never compiled). `tsc` copies none of those, so each is
+a separate `COPY` and a separate way to ship a broken image; the smoke test is what catches it.
+It runs as the `node` user, with `ENTRYPOINT ["node", "/app/dist/cli.js"]` and `WORKDIR /repo`,
+which is where a workflow mounts the checkout. **Measured: 1.67 GB, 2:27 to build cold**, of which
+768 MB is the one layer that installs ffmpeg and the browser's shared libraries. That is the
+number a service repository pays per cold pull, and the reason to revisit this is size, not
+correctness.
+
+**`pnpm-workspace.yaml` has to be in the image's build context.** pnpm 12 refuses an install whose
+build scripts were never approved, and this repository's approval for `esbuild` lives in that
+file; without it the build fails with `ERR_PNPM_IGNORED_BUILDS`. It was the first thing the
+Dockerfile got wrong.
+
+**What containerizing found: the Composer's picture length depended on which ffmpeg was
+installed.** Playwright's webm always outruns its schedule - 1.6 to 2.1 s on every run on disk,
+on this Mac as much as in the container - because the recording keeps going for a moment after the
+timeline ends. `-shortest` absorbed that on ffmpeg 9.0.1, so the final file's picture ended with
+its sound, 50 to 79 ms of frame quantization aside (ADR-035, ADR-051). Debian bookworm ships
+ffmpeg 5.1.9, where the same arguments left **1.2 s of picture past the end of the narration**,
+and `assertInSync` correctly failed the stage. The picture's length is now *stated* rather than
+inferred: `-t` on the output, set to the narration's own length, which the stage already computes
+for its checks. Correctness no longer turns on the installed ffmpeg's handling of `-shortest`,
+which stays as a second line. A recording that is *shorter* than the narration still ends where it
+ends, and both existing checks still catch it. On this Mac the drift went from -79 ms to **0 ms**,
+and the container's run reads `narration complete, picture 0 ms short of it`.
+
+**The smoke test is the whole pipeline, with both fakes.**
+`SPR_LLM_PROVIDER=fake SPR_TTS_PROVIDER=fake spr run --diff golden/sample-01-order-outbox/diff.patch`
+inside the container produces `final.mp4` and `comment.md` with no model and no Kokoro container,
+and exercises exactly what an image can get wrong: the prompt files, the schemas, the page assets,
+Chromium and ffmpeg. It runs in `.github/workflows/image.yml` before anything is published, so a
+broken image cannot reach GHCR. The container needs `--ipc=host --shm-size=1g` for Chromium,
+`-e HOME=/tmp` and `--user "$(id -u):$(id -g)"` so it writes the run folder into a mounted
+checkout as the caller rather than as uid 1000.
+
+**Consequences.** `docker run ghcr.io/<owner>/shadow-pr-review:<tag> run --pr N --repo o/n` is
+step 4's building block. The image carries no GitHub token and no model: both arrive as
+environment variables, and Kokoro stays a service the container talks to over HTTP.
