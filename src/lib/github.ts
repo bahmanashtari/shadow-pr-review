@@ -1,11 +1,11 @@
 /**
  * The GitHub REST calls this tool makes, over Node's own `fetch` (ADR-051).
  *
- * Two GET requests do not need Octokit. `fetch` is injected, so tests hand in canned responses
- * and never touch the network (CLAUDE.md). Every failure becomes one {@link GitHubError} whose
- * message says what to do about it: set a token, wait for the rate limit, or check out the pull
- * request and use `--git`. Step 2's sticky comment is where pagination starts, and where Octokit
- * may start to pay; nothing here would have to be undone for it.
+ * Five calls - read a pull request and its diff (ADR-051), then list, create and update its
+ * comments (ADR-052) - do not need Octokit. `fetch` is injected, so tests hand in canned
+ * responses and never touch the network (CLAUDE.md). Every failure becomes one
+ * {@link GitHubError} whose message says what to do about it: set a token, grant a permission,
+ * wait for the rate limit, or check out the pull request and use `--git`.
  */
 
 /** Where the REST API lives. GitHub Enterprise Server is not supported yet. */
@@ -16,6 +16,9 @@ export const GITHUB_API_VERSION = "2026-03-10";
 
 /** How long one request may take before it is abandoned. */
 const TIMEOUT_MS = 30_000;
+
+/** Most pages of comments read while looking for ours: 100 a page, so 5,000 comments. */
+const MAX_COMMENT_PAGES = 50;
 
 /** The subset of `fetch` the client uses, so a test can supply its own. */
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -41,27 +44,46 @@ export interface PullRequest {
   baseRef: string;
 }
 
-/** What the tool reads from GitHub. */
+/** A comment on a pull request's conversation. */
+export interface IssueComment {
+  id: number;
+  body: string;
+  /** Where it can be seen, for the CLI to print. */
+  htmlUrl: string;
+}
+
+/** What the tool reads from GitHub, and the one thing it writes. */
 export interface GitHubClient {
   /** @throws GitHubError with a message that says what to do. */
   getPullRequest(repo: string, number: number): Promise<PullRequest>;
   /** The pull request's diff, base...head, as GitHub renders it. @throws GitHubError */
   getPullRequestDiff(repo: string, number: number): Promise<string>;
+  /** Every comment on the pull request's conversation, oldest first. @throws GitHubError */
+  listIssueComments(repo: string, number: number): Promise<IssueComment[]>;
+  /** @throws GitHubError */
+  createIssueComment(repo: string, number: number, body: string): Promise<IssueComment>;
+  /** @throws GitHubError */
+  updateIssueComment(repo: string, commentId: number, body: string): Promise<IssueComment>;
 }
 
 /** A GitHub request that failed, with a message meant to be printed as it is. */
 export class GitHubError extends Error {
   override readonly name = "GitHubError";
 
+  /** GitHub refused to render the diff because of its size. */
+  readonly tooLarge: boolean;
+  /** A primary or secondary rate limit stopped the request; trying something else will not help. */
+  readonly rateLimited: boolean;
+
   constructor(
     message: string,
     /** The HTTP status, or null when GitHub was never reached. */
     readonly status: number | null,
-    /** GitHub refused to render the diff because of its size. */
-    readonly tooLarge = false,
-    options?: { cause?: unknown },
+    details: { tooLarge?: boolean; rateLimited?: boolean; cause?: unknown } = {},
   ) {
-    super(message, options);
+    super(message, details.cause === undefined ? undefined : { cause: details.cause });
+    this.tooLarge = details.tooLarge ?? false;
+    this.rateLimited = details.rateLimited ?? false;
   }
 }
 
@@ -108,6 +130,7 @@ async function failure(
   what: string,
   repo: string,
   hasToken: boolean,
+  writing: boolean,
 ): Promise<GitHubError> {
   const { status, headers } = response;
   const { message, tooLarge } = githubMessage(await response.text().catch(() => ""));
@@ -131,6 +154,7 @@ async function failure(
       return new GitHubError(
         `GitHub's secondary rate limit stopped ${what}; wait ${retryAfter} seconds and run again.`,
         status,
+        { rateLimited: true },
       );
     }
     if (headers.get("x-ratelimit-remaining") === "0") {
@@ -139,11 +163,23 @@ async function failure(
       const hint = hasToken
         ? ""
         : " Without GITHUB_TOKEN the limit is 60 requests an hour; set it for more.";
-      return new GitHubError(`GitHub's rate limit is used up.${when}${hint}`, status);
+      return new GitHubError(`GitHub's rate limit is used up.${when}${hint}`, status, {
+        rateLimited: true,
+      });
+    }
+    if (writing) {
+      return new GitHubError(
+        `GitHub refused to write ${what} (${said}). The token needs pull-requests: write - in ` +
+          "Actions, `permissions: pull-requests: write` - and a pull request from a fork only " +
+          "ever gets a read-only one.",
+        status,
+      );
     }
   }
   if (tooLarge || status === 406) {
-    return new GitHubError(`GitHub will not render the diff of ${what} (${said}).`, status, true);
+    return new GitHubError(`GitHub will not render the diff of ${what} (${said}).`, status, {
+      tooLarge: true,
+    });
   }
   return new GitHubError(`GitHub answered ${said} for ${what}.`, status);
 }
@@ -196,14 +232,64 @@ export function parsePullRequest(json: unknown): PullRequest {
   };
 }
 
+/** Narrows one comment from GitHub's JSON, or fails saying what was missing. */
+export function parseIssueComment(json: unknown): IssueComment {
+  const comment = (typeof json === "object" && json !== null ? json : {}) as Record<
+    string,
+    unknown
+  >;
+  if (typeof comment.id !== "number" || !Number.isInteger(comment.id)) {
+    throw new GitHubError("GitHub's comment response has no id.", null);
+  }
+  return {
+    id: comment.id,
+    // A comment's body can be empty, and GitHub then sends null.
+    body: typeof comment.body === "string" ? comment.body : "",
+    htmlUrl: typeof comment.html_url === "string" ? comment.html_url : "",
+  };
+}
+
+/** The `rel="next"` URL of a `Link` header, when there is one. */
+export function nextPage(link: string | null): string | null {
+  if (link === null) return null;
+  const match = /<([^>]+)>;\s*rel="next"/.exec(link);
+  return match?.[1] ?? null;
+}
+
+/** Parses a JSON body, or fails naming what it was for. */
+function jsonOf(body: string, what: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch (cause) {
+    throw new GitHubError(`GitHub's answer for ${what} is not JSON.`, null, { cause });
+  }
+}
+
+/** One request to the REST API. */
+interface Request {
+  method?: "GET" | "POST" | "PATCH";
+  /** Must start with {@link GITHUB_API}: the token is never sent anywhere else. */
+  url: string;
+  accept?: string;
+  /** Names the thing asked for, in error messages: "pull request acme/shop#7". */
+  what: string;
+  repo: string;
+  body?: unknown;
+}
+
 /** Builds a client for the public GitHub REST API. */
 export function createGitHubClient(options: GitHubClientOptions = {}): GitHubClient {
   const { token } = options;
   const doFetch: Fetch = options.fetch ?? ((url, init) => fetch(url, init));
 
-  async function get(repo: string, path: string, accept: string, what: string): Promise<string> {
+  /** Sends one request and returns the response when it succeeded. @throws GitHubError */
+  async function send(request: Request): Promise<Response> {
+    const { method = "GET", url, accept = "application/vnd.github+json", what, repo } = request;
     if (!isRepoName(repo)) {
       throw new GitHubError(`Expected a repository as owner/name, got "${repo}".`, null);
+    }
+    if (!url.startsWith(`${GITHUB_API}/`)) {
+      throw new GitHubError(`Refusing to send a request outside ${GITHUB_API}: ${url}`, null);
     }
     const headers: Record<string, string> = {
       Accept: accept,
@@ -211,48 +297,88 @@ export function createGitHubClient(options: GitHubClientOptions = {}): GitHubCli
       "User-Agent": "shadow-pr-review",
     };
     if (token !== undefined) headers.Authorization = `Bearer ${token}`;
+    if (request.body !== undefined) headers["Content-Type"] = "application/json";
 
     let response: Response;
     try {
-      response = await doFetch(`${GITHUB_API}/repos/${repo}${path}`, {
+      response = await doFetch(url, {
+        method,
         headers,
+        ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (cause) {
       const reason =
         cause instanceof Error && cause.name === "TimeoutError"
-          ? `no answer within ${TIMEOUT_MS / 1000} s`
+          ? `no answer within ${String(TIMEOUT_MS / 1000)} s`
           : cause instanceof Error
             ? cause.message
             : String(cause);
-      throw new GitHubError(`Cannot reach GitHub for ${what} (${reason}).`, null, false, {
-        cause,
-      });
+      throw new GitHubError(`Cannot reach GitHub for ${what} (${reason}).`, null, { cause });
     }
-    if (!response.ok) throw await failure(response, what, repo, token !== undefined);
-    return response.text();
+    if (!response.ok) {
+      throw await failure(response, what, repo, token !== undefined, method !== "GET");
+    }
+    return response;
   }
+
+  const repoUrl = (repo: string, path: string): string => `${GITHUB_API}/repos/${repo}${path}`;
 
   return {
     async getPullRequest(repo, number) {
-      const what = `pull request ${repo}#${number}`;
-      const body = await get(repo, `/pulls/${number}`, "application/vnd.github+json", what);
-      let json: unknown;
-      try {
-        json = JSON.parse(body);
-      } catch (cause) {
-        throw new GitHubError(`GitHub's answer for ${what} is not JSON.`, null, false, { cause });
-      }
-      return parsePullRequest(json);
+      const what = `pull request ${repo}#${String(number)}`;
+      const response = await send({ url: repoUrl(repo, `/pulls/${String(number)}`), what, repo });
+      return parsePullRequest(jsonOf(await response.text(), what));
     },
 
-    getPullRequestDiff(repo, number) {
-      return get(
+    async getPullRequestDiff(repo, number) {
+      const response = await send({
+        url: repoUrl(repo, `/pulls/${String(number)}`),
+        accept: "application/vnd.github.diff",
+        what: `pull request ${repo}#${String(number)}`,
         repo,
-        `/pulls/${number}`,
-        "application/vnd.github.diff",
-        `pull request ${repo}#${number}`,
-      );
+      });
+      return response.text();
+    },
+
+    async listIssueComments(repo, number) {
+      const what = `pull request ${repo}#${String(number)}`;
+      const comments: IssueComment[] = [];
+      let url: string | null = repoUrl(repo, `/issues/${String(number)}/comments?per_page=100`);
+      for (let page = 0; url !== null && page < MAX_COMMENT_PAGES; page += 1) {
+        const response = await send({ url, what, repo });
+        const json = jsonOf(await response.text(), what);
+        if (!Array.isArray(json)) {
+          throw new GitHubError(`GitHub's comment list for ${what} is not a list.`, null);
+        }
+        comments.push(...json.map(parseIssueComment));
+        url = nextPage(response.headers.get("link"));
+      }
+      return comments;
+    },
+
+    async createIssueComment(repo, number, body) {
+      const what = `a comment on pull request ${repo}#${String(number)}`;
+      const response = await send({
+        method: "POST",
+        url: repoUrl(repo, `/issues/${String(number)}/comments`),
+        what,
+        repo,
+        body: { body },
+      });
+      return parseIssueComment(jsonOf(await response.text(), what));
+    },
+
+    async updateIssueComment(repo, commentId, body) {
+      const what = `comment ${String(commentId)} on ${repo}`;
+      const response = await send({
+        method: "PATCH",
+        url: repoUrl(repo, `/issues/comments/${String(commentId)}`),
+        what,
+        repo,
+        body: { body },
+      });
+      return parseIssueComment(jsonOf(await response.text(), what));
     },
   };
 }

@@ -49,6 +49,7 @@ import { readRecord } from "./recorder/record.js";
 import { ContractError, StageError } from "./lib/errors.js";
 import { createGitHubClient } from "./lib/github.js";
 import { createRunFolder } from "./lib/run-folder.js";
+import { isVideoUrl, runPublish, summarizePublish } from "./publish/publish.js";
 
 const PIPELINE_STAGES = [
   "ingest",
@@ -64,14 +65,17 @@ const PIPELINE_STAGES = [
 
 type StageName = (typeof PIPELINE_STAGES)[number];
 
-/** Thrown for commands that are planned but not built yet. */
-class NotImplementedError extends Error {
-  override readonly name = "NotImplementedError";
-}
-
 function parseContract(value: string): ContractName {
   if (!isContractName(value)) {
     throw new InvalidArgumentError(`Expected one of: ${CONTRACT_NAMES.join(", ")}`);
+  }
+  return value;
+}
+
+/** `--video-url`: an https URL that can sit in a markdown link as it is. */
+function parseVideoUrl(value: string): string {
+  if (!isVideoUrl(value)) {
+    throw new InvalidArgumentError(`Expected an https URL for the video, got "${value}"`);
   }
   return value;
 }
@@ -89,10 +93,6 @@ function parseStage(value: string): StageName {
     throw new InvalidArgumentError(`Expected one of: ${PIPELINE_STAGES.join(", ")}`);
   }
   return value as StageName;
-}
-
-function notYet(what: string, milestone: string): never {
-  throw new NotImplementedError(`${what} is not implemented yet (${milestone}).`);
 }
 
 /** Schema errors, plus the file-local cross-field checks where they exist. */
@@ -145,6 +145,13 @@ interface RunOptions {
   until?: StageName;
 }
 
+/** Options of `spr stage`, as Commander hands them over. */
+interface StageOptions {
+  run: string;
+  videoUrl?: string;
+  dryRun?: boolean;
+}
+
 /** Options of `spr eval`, as Commander hands them over (`--no-cache` arrives as `cache: false`). */
 interface EvalOptions {
   model: string[];
@@ -159,8 +166,8 @@ function report(runDir: string, summary: string): void {
 }
 
 /**
- * `spr run`: reads the diff, writes the run folder, then walks the pipeline.
- * Stops with exit code 2 at the first stage that is not built yet.
+ * `spr run`: reads the diff, writes the run folder, then walks the pipeline to `comment.md`.
+ * It never posts: that is `spr stage publish`, deliberately a command of its own (ADR-052).
  */
 async function runPipeline(opts: RunOptions): Promise<void> {
   const given = [opts.diff, opts.git, opts.pr].filter((o) => o !== undefined).length;
@@ -197,6 +204,8 @@ async function runPipeline(opts: RunOptions): Promise<void> {
     // outcome, and Publish will post the review without a video.
     if (verified === 0) {
       console.log("no findings survived verification: nothing to narrate, so no video was made");
+      // The comment still says so: a pull request whose findings were fixed must stop showing them.
+      if (opts.until === undefined || opts.until === "publish") await publish(runDir, false);
       return;
     }
 
@@ -219,10 +228,27 @@ async function runPipeline(opts: RunOptions): Promise<void> {
   await compose(runDir, config);
 
   if (opts.until === "compose") return;
-  throw new NotImplementedError(
-    `stopped after compose: publish is not implemented yet (Milestone 4, step 2). ` +
-      `Run folder: ${runDir}`,
-  );
+  await publish(runDir, false);
+}
+
+/**
+ * Runs the Publish stage over an existing run folder: renders `comment.md`, and posts it on the
+ * pull request only when `post` is set. The token is read here, and only a client with one is
+ * handed over, so a missing token is reported by the stage in its own words.
+ */
+async function publish(
+  runDir: string,
+  post: boolean,
+  options: { videoUrl?: string } = {},
+): Promise<void> {
+  const token = readSecrets().githubToken;
+  const outcome = await runPublish({
+    runDir,
+    post,
+    ...(options.videoUrl === undefined ? {} : { videoUrl: options.videoUrl }),
+    ...(token === undefined ? {} : { github: createGitHubClient({ token }) }),
+  });
+  console.log(summarizePublish(outcome));
 }
 
 /** Reads the change `spr run` was pointed at: a diff file, a local git range or a pull request. */
@@ -436,8 +462,13 @@ export function buildProgram(): Command {
     .description("Re-run a single stage on an existing run folder")
     .argument("<name>", `one of: ${PIPELINE_STAGES.join(", ")}`)
     .requiredOption("--run <dir>", "existing run folder")
-    .action(async (name: string, opts: { run: string }) => {
+    .option("--video-url <url>", "publish: where the video was uploaded", parseVideoUrl)
+    .option("--dry-run", "publish: write comment.md without posting it")
+    .action(async (name: string, opts: StageOptions) => {
       const stage = parseStage(name);
+      if (stage !== "publish" && (opts.videoUrl !== undefined || opts.dryRun !== undefined)) {
+        throw new InvalidArgumentError("--video-url and --dry-run go with publish");
+      }
       if (stage === "ingest") {
         reingest(opts.run);
         return;
@@ -489,7 +520,14 @@ export function buildProgram(): Command {
         await compose(runDir, config);
         return;
       }
-      if (stage !== "review") notYet(`spr stage ${stage}`, "Milestone 4");
+      if (stage === "publish") {
+        const runDir = path.resolve(opts.run);
+        report(runDir, opts.dryRun === true ? "rendering the comment" : "publishing");
+        await publish(runDir, opts.dryRun !== true, {
+          ...(opts.videoUrl === undefined ? {} : { videoUrl: opts.videoUrl }),
+        });
+        return;
+      }
       const config = loadConfig();
       const runDir = path.resolve(opts.run);
       const tracer = new Tracer(runDir);
@@ -574,9 +612,6 @@ export async function main(argv: readonly string[] = process.argv): Promise<void
     } else if (error instanceof ContractError) {
       console.error(`spr: ${error.message}`);
       process.exitCode = 1;
-    } else if (error instanceof NotImplementedError) {
-      console.error(`spr: ${error.message}`);
-      process.exitCode = 2;
     } else if (error instanceof InvalidArgumentError) {
       console.error(`spr: ${error.message}`);
       process.exitCode = 1;

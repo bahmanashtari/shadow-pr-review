@@ -33,7 +33,8 @@ export interface GitSourceOptions extends SourceOptions {
 
 /** Options for {@link fromPullRequest}. */
 export interface PullRequestSourceOptions extends SourceOptions {
-  github: GitHubClient;
+  /** Only the reading half: ingest never writes to GitHub. */
+  github: Pick<GitHubClient, "getPullRequest" | "getPullRequestDiff">;
 }
 
 /**

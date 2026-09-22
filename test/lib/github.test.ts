@@ -8,6 +8,8 @@ import {
   GITHUB_API_VERSION,
   GitHubError,
   isRepoName,
+  nextPage,
+  parseIssueComment,
   parsePullRequest,
   type Fetch,
 } from "../../src/lib/github.js";
@@ -18,14 +20,21 @@ const BASE = PR_BASE_SHA;
 
 interface Call {
   url: string;
+  method: string;
   headers: Record<string, string>;
+  body: unknown;
 }
 
 /** A fetch that records each request and answers from the list, in order. */
 function fakeFetch(...responses: (() => Response)[]): { fetch: Fetch; calls: Call[] } {
   const calls: Call[] = [];
   const fetch: Fetch = (url, init) => {
-    calls.push({ url, headers: { ...(init.headers as Record<string, string>) } });
+    calls.push({
+      url,
+      method: init.method ?? "GET",
+      headers: { ...(init.headers as Record<string, string>) },
+      body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+    });
     const next = responses[calls.length - 1];
     if (next === undefined) throw new Error(`unexpected request ${url}`);
     return Promise.resolve(next());
@@ -172,6 +181,96 @@ describe("createGitHubClient", () => {
     const error = await failureOf(createGitHubClient({ fetch }).getPullRequest("acme/shop", 7));
     expect(error.message).toBe("Cannot reach GitHub for pull request acme/shop#7 (fetch failed).");
     expect(error.status).toBeNull();
+  });
+});
+
+describe("comments", () => {
+  const apiComment = (id: number, body: string | null) => ({
+    id,
+    body,
+    html_url: `https://github.com/acme/shop/pull/7#issuecomment-${String(id)}`,
+    user: { login: "github-actions[bot]" },
+  });
+
+  it("lists every page by following the Link header", async () => {
+    const next = "https://api.github.com/repositories/1/issues/7/comments?per_page=100&page=2";
+    const { fetch, calls } = fakeFetch(
+      json([apiComment(1, "first")], 200, { link: `<${next}>; rel="next", <${next}>; rel="last"` }),
+      json([apiComment(2, null)]),
+    );
+    const comments = await createGitHubClient({ fetch }).listIssueComments("acme/shop", 7);
+
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.github.com/repos/acme/shop/issues/7/comments?per_page=100",
+      next,
+    ]);
+    expect(comments).toEqual([
+      { id: 1, body: "first", htmlUrl: "https://github.com/acme/shop/pull/7#issuecomment-1" },
+      { id: 2, body: "", htmlUrl: "https://github.com/acme/shop/pull/7#issuecomment-2" },
+    ]);
+  });
+
+  it("never follows a Link header off the API host, where the token would go too", async () => {
+    const { fetch, calls } = fakeFetch(
+      json([apiComment(1, "x")], 200, { link: '<https://evil.example/steal>; rel="next"' }),
+    );
+    const error = await failureOf(
+      createGitHubClient({ fetch, token: "t" }).listIssueComments("acme/shop", 7),
+    );
+    expect(error.message).toBe(
+      "Refusing to send a request outside https://api.github.com: https://evil.example/steal",
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it("creates and updates with the body as JSON", async () => {
+    const { fetch, calls } = fakeFetch(
+      json(apiComment(5, "hello"), 201),
+      json(apiComment(5, "again")),
+    );
+    const client = createGitHubClient({ fetch, token: "t" });
+    expect((await client.createIssueComment("acme/shop", 7, "hello")).id).toBe(5);
+    expect((await client.updateIssueComment("acme/shop", 5, "again")).body).toBe("again");
+
+    expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
+      ["POST", "https://api.github.com/repos/acme/shop/issues/7/comments", { body: "hello" }],
+      ["PATCH", "https://api.github.com/repos/acme/shop/issues/comments/5", { body: "again" }],
+    ]);
+    expect(calls[0]?.headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("names the permission a refused write needs", async () => {
+    const { fetch } = fakeFetch(json({ message: "Resource not accessible by integration" }, 403));
+    const error = await failureOf(
+      createGitHubClient({ fetch, token: "t" }).createIssueComment("acme/shop", 7, "x"),
+    );
+    expect(error.message).toBe(
+      "GitHub refused to write a comment on pull request acme/shop#7 (403: Resource not " +
+        "accessible by integration). The token needs pull-requests: write - in Actions, " +
+        "`permissions: pull-requests: write` - and a pull request from a fork only ever gets " +
+        "a read-only one.",
+    );
+    expect(error.rateLimited).toBe(false);
+  });
+
+  it("marks a rate limit as one, so nobody retries into it", async () => {
+    const { fetch } = fakeFetch(json({ message: "slow down" }, 403, { "retry-after": "30" }));
+    const error = await failureOf(
+      createGitHubClient({ fetch, token: "t" }).updateIssueComment("acme/shop", 5, "x"),
+    );
+    expect(error.rateLimited).toBe(true);
+  });
+
+  it("reads a Link header's next page, and none when there is none", () => {
+    expect(nextPage('<https://api.github.com/x?page=3>; rel="next"')).toBe(
+      "https://api.github.com/x?page=3",
+    );
+    expect(nextPage('<https://api.github.com/x?page=1>; rel="prev"')).toBeNull();
+    expect(nextPage(null)).toBeNull();
+  });
+
+  it("refuses a comment with no id", () => {
+    expect(() => parseIssueComment({ body: "x" })).toThrow("no id");
   });
 });
 

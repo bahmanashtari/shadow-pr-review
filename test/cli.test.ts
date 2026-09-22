@@ -59,20 +59,23 @@ const GOLDEN_DIFF = fromRoot("golden", "sample-02-inventory-consumer", "diff.pat
  * changes an error message.
  */
 async function withGitHub(
-  respond: (url: string, accept: string) => Response,
+  respond: (url: string, accept: string, method: string) => Response,
   body: () => Promise<void>,
+  token?: string,
 ): Promise<void> {
   const previous = { github: process.env.GITHUB_TOKEN, gh: process.env.GH_TOKEN };
   delete process.env.GITHUB_TOKEN;
   delete process.env.GH_TOKEN;
+  if (token !== undefined) process.env.GITHUB_TOKEN = token;
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     const headers = init.headers as Record<string, string>;
-    return Promise.resolve(respond(url, headers.Accept ?? ""));
+    return Promise.resolve(respond(url, headers.Accept ?? "", init.method ?? "GET"));
   });
   try {
     await body();
   } finally {
     vi.unstubAllGlobals();
+    delete process.env.GITHUB_TOKEN;
     if (previous.github !== undefined) process.env.GITHUB_TOKEN = previous.github;
     if (previous.gh !== undefined) process.env.GH_TOKEN = previous.gh;
   }
@@ -131,10 +134,106 @@ describe("spr CLI", () => {
     expect(err.join("\n")).toContain("FAIL");
   });
 
-  it("planned commands exit with code 2 and a clear message", async () => {
-    await run("stage", "publish", "--run", tempDir());
-    expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("not implemented yet");
+  it("stage publish --dry-run renders comment.md and posts nothing", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "verify", "--out", runDir),
+    );
+    out.length = 0;
+    await run("stage", "publish", "--run", runDir, "--dry-run");
+
+    expect(err).toEqual([]);
+    expect(process.exitCode).toBeUndefined();
+    expect(out.join("\n")).toContain(`comment: ${path.join(runDir, "comment.md")} (2 findings)`);
+    expect(readFileSync(path.join(runDir, "comment.md"), "utf8")).toMatch(
+      /^<!-- shadow-pr-review -->\n/,
+    );
+  });
+
+  it("stage publish without a token says so and keeps the comment", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run("run", "--diff", GOLDEN_DIFF, "--until", "verify", "--out", runDir),
+    );
+    err.length = 0;
+    await withGitHub(
+      () => new Response("unexpected", { status: 500 }),
+      () => run("stage", "publish", "--run", runDir),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(err).toEqual([
+      `spr: [publish] This run reviewed a local diff, not a pull request, so there is nothing ` +
+        `to post to. The comment is in ${path.join(runDir, "comment.md")}.`,
+    ]);
+  });
+
+  it("stage publish posts the comment on the pull request the run reviewed", async () => {
+    const runDir = tempDir();
+    const diff = readFileSync(GOLDEN_DIFF, "utf8");
+    const writes: string[] = [];
+    await withGitHub(
+      (url, accept, method) => {
+        if (url.endsWith("/pulls/142")) {
+          return accept === "application/vnd.github.diff"
+            ? new Response(diff)
+            : new Response(JSON.stringify(pullRequestJson()));
+        }
+        if (method === "GET") return new Response("[]");
+        writes.push(`${method} ${url}`);
+        return new Response(
+          JSON.stringify({
+            id: 9,
+            body: "x",
+            html_url: "https://github.com/acme/shop/pull/142#c9",
+          }),
+          { status: 201 },
+        );
+      },
+      async () => {
+        await withFakeProvider(() =>
+          run("run", "--pr", "142", "--repo", "acme/shop", "--until", "verify", "--out", runDir),
+        );
+        out.length = 0;
+        await run(
+          "stage",
+          "publish",
+          "--run",
+          runDir,
+          "--video-url",
+          "https://github.com/acme/shop/actions/runs/1/artifacts/2",
+        );
+      },
+      "test-token",
+    );
+
+    expect(err).toEqual([]);
+    expect(writes).toEqual(["POST https://api.github.com/repos/acme/shop/issues/142/comments"]);
+    expect(out.join("\n")).toContain("posted: created https://github.com/acme/shop/pull/142#c9");
+    // --until verify made no video, so the URL is not linked to a video this review lacks.
+    expect(out.join("\n")).toContain("--video-url ignored");
+  });
+
+  it("stage refuses publish's options on other stages", async () => {
+    await run("stage", "direct", "--run", tempDir(), "--dry-run");
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toContain("--video-url and --dry-run go with publish");
+  });
+
+  it("a clean run renders the no-findings comment and exits 0 without a video", async () => {
+    const runDir = tempDir();
+    await withFakeProvider(() =>
+      run(
+        "run",
+        "--diff",
+        fromRoot("golden", "sample-03-email-value-object", "diff.patch"),
+        "--out",
+        runDir,
+      ),
+    );
+    expect(err).toEqual([]);
+    expect(process.exitCode).toBeUndefined();
+    expect(readFileSync(path.join(runDir, "comment.md"), "utf8")).toContain("**No findings**.");
+    expect(existsSync(path.join(runDir, "final.mp4"))).toBe(false);
   });
 
   it("run --pr reads the pull request from GitHub and writes the same three files", async () => {
@@ -485,14 +584,6 @@ describe("spr CLI", () => {
     // The source survives a re-run; only the filtering is redone.
     expect(ingest.source.type).toBe("local_diff");
     expect(ingest.skipped).toHaveLength(1);
-  });
-
-  it("stage points at the milestone for stages that are not built", async () => {
-    // Every stage of Milestone 2 is built now, so publish is the only one left to point at.
-    await run("stage", "publish", "--run", tempDir());
-    expect(process.exitCode).toBe(2);
-    expect(err.join("\n")).toContain("spr stage publish is not implemented yet");
-    expect(err.join("\n")).toContain("Milestone 4");
   });
 
   it("eval scores the golden set and writes a report", async () => {

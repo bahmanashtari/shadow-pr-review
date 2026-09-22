@@ -16,9 +16,10 @@ import {
   originRepo,
   parseGitHubRepo,
   parseRange,
+  type PullRequestSourceOptions,
 } from "../../src/ingest/sources.js";
 import { StageError } from "../../src/lib/errors.js";
-import { GitHubError, parsePullRequest, type GitHubClient } from "../../src/lib/github.js";
+import { GitHubError, parsePullRequest } from "../../src/lib/github.js";
 import {
   defaultConfig,
   PR_BASE_SHA,
@@ -216,7 +217,10 @@ describe("fromDiffFile", () => {
 });
 
 /** A client that answers with a pull request and a diff, or fails the way it is told to. */
-function fakeGitHub(diff: string | GitHubError, pr: unknown = pullRequestJson()): GitHubClient {
+function fakeGitHub(
+  diff: string | GitHubError,
+  pr: unknown = pullRequestJson(),
+): PullRequestSourceOptions["github"] {
   return {
     getPullRequest: () => Promise.resolve(parsePullRequest(pr)),
     getPullRequestDiff: () =>
@@ -260,7 +264,7 @@ describe("fromPullRequest", () => {
   });
 
   it("fails as an ingest error with GitHub's line", async () => {
-    const github: GitHubClient = {
+    const github: PullRequestSourceOptions["github"] = {
       getPullRequest: () =>
         Promise.reject(new GitHubError("Pull request acme/shop#7 was not found.", 404)),
       getPullRequestDiff: () => Promise.reject(new Error("not reached")),
@@ -272,7 +276,9 @@ describe("fromPullRequest", () => {
   });
 
   it("says how to review a diff GitHub will not render, with the exact range", async () => {
-    const tooLarge = new GitHubError("GitHub will not render the diff (406).", 406, true);
+    const tooLarge = new GitHubError("GitHub will not render the diff (406).", 406, {
+      tooLarge: true,
+    });
     const error = await fromPullRequest(142, "acme/shop", { github: fakeGitHub(tooLarge) }).catch(
       (e: unknown) => e,
     );

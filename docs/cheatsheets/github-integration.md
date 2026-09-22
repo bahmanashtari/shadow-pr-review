@@ -112,7 +112,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
-        run: pnpm spr publish --pr ${{ github.event.pull_request.number }} --run runs/current --video-url "$ARTIFACT_URL"
+        # The pull request comes from runs/current/review.json. Without a video (a clean review),
+        # the URL is ignored and the comment says there were no findings (ADR-052).
+        run: pnpm spr stage publish --run runs/current --video-url "$ARTIFACT_URL"
 ```
 
 ## Running it from your service repositories
@@ -140,14 +142,21 @@ Put a hidden marker in the body, find it on each run, and update instead of post
 
 ```text
 <!-- shadow-pr-review -->
-### Video review
-**3 findings** (1 high, 1 medium, 1 low) · [Watch the walkthrough](ARTIFACT_URL) · 2m 10s
-| Severity | File | Summary |
+### shadow-pr-review
+
+**3 findings** on `6c30f9d`: 1 high, 1 medium, 1 low. [Watch the walkthrough](ARTIFACT_URL) (0:42).
+
+Reviewed 1 file.
+
+| Severity | Where | Finding |
 |---|---|---|
-| high | order-service/.../place-order.handler.ts#L19-L27 | Event published before commit |
+| high | [place-order.handler.ts#L19-L27](permalink at the head sha) | Event published before commit |
+
+<details><summary>high · Event published before commit</summary> ... rationale, suggested fix
 ```
 
-REST calls (the `spr publish` command wraps these):
+REST calls (`spr stage publish` wraps these; ADR-052 matches a comment only when its body
+*starts* with the marker, so a quoted marker is never updated):
 - List: `GET /repos/{owner}/{repo}/issues/{pr}/comments` (find the marker)
 - Create: `POST /repos/{owner}/{repo}/issues/{pr}/comments`
 - Update: `PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}`

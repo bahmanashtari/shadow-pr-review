@@ -77,8 +77,8 @@ shadow-pr-review/
 
 ## Commands (keep this section in sync with package.json and src/cli.ts)
 
-Available now (all of Milestones 1 and 2; Milestone 3 added no new commands; Milestone 4 step 1
-added `spr run --pr`):
+Available now (all of Milestones 1 and 2; Milestone 3 added no new commands; Milestone 4 added
+`spr run --pr` and `spr stage publish`):
 
 ```
 nvm use                                    # .nvmrc pins 22; an older default node cannot run pnpm 12
@@ -95,10 +95,9 @@ pnpm spr validate <files...> [--schema ingest|review|script|audio-manifest|timel
 pnpm spr config [--file extra.json]        # resolved config; secrets shown only as set/missing
 ```
 
-Every stage through compose runs for real: ingest, review, verify, narrate, tts, direct,
-record and compose. `--until <stage>` exits 0 after that
-stage; without it the run stops at the first stage that is not built and exits 2, keeping the
-run folder.
+Every stage runs for real: ingest, review, verify, narrate, tts, direct, record, compose and
+publish. `--until <stage>` exits 0 after that stage. `--force` re-uses a run folder, clearing the
+pipeline's own outputs from the earlier run first and nothing else (ADR-052).
 
 ```
 pnpm spr run --diff change.patch --until compose [--title "..."] [--out runs/x] [--force]
@@ -112,6 +111,8 @@ pnpm spr stage tts --run runs/<id>                  # re-speak script.json; free
 pnpm spr stage direct --run runs/<id>               # re-schedule script + manifest; no model, offline
 pnpm spr stage record --run runs/<id>               # re-record video.webm; runs in real time
 pnpm spr stage compose --run runs/<id>              # re-mux and re-encode final.mp4; needs ffmpeg
+pnpm spr stage publish --run runs/<id> --dry-run    # render comment.md only
+pnpm spr stage publish --run runs/<id> [--video-url https://...]   # post it; needs GITHUB_TOKEN
 pnpm tsx scripts/preview-page.ts runs/<id>          # build the diff page and print its path, to look at it
 pnpm tsx scripts/end-to-end.ts                      # every golden sample, bare `spr run`, then a table
 pnpm tsx scripts/end-to-end.ts sample-03-email-value-object   # just one of them
@@ -147,15 +148,24 @@ When the Narrator cannot produce narration that passes the checks, the stage fai
 `spr validate script.json`, or change a budget, `docs/NARRATION_STYLE.md` or the model and
 re-run `spr stage narrate` (ADR-024).
 
-A bare `spr run` walks the whole pipeline and produces `final.mp4`, then exits 2 at `publish`,
-which is the only stage left unbuilt. It records in real time, so it takes about as long as the
-video it makes. **A review with no kept findings stops after Verify and exits 0 with no video**:
-a video exists to explain issues that were found, and one step per finding - no intro, no
-outro, no card - is the whole format (ADR-042).
+A bare `spr run` walks the whole pipeline, produces `final.mp4`, renders the pull request
+comment into `comment.md`, and exits 0. It records in real time, so it takes about as long as the
+video it makes. **A review with no kept findings stops after Verify with no video**, rendering
+the comment that says so: a video exists to explain issues that were found, and one step per
+finding - no intro, no outro, no card - is the whole format (ADR-042).
 
 ```
-pnpm spr run --diff change.patch                    # ingest ... compose, then exits 2 at publish
+pnpm spr run --diff change.patch                    # ingest ... compose, then comment.md; exit 0
 ```
+
+**`spr run` never posts.** Posting is `spr stage publish`, a command of its own, because it is
+the only thing the tool does that other people see, and because in CI the artifact upload that
+yields the video's URL runs between the two (ADR-052). It finds the comment an earlier run posted
+- the newest whose body starts with `<!-- shadow-pr-review -->` - and updates it, or creates one.
+It needs `GITHUB_TOKEN` with `pull-requests: write`, refuses a run that did not review a pull
+request, and leaves `comment.md` behind on every failure. The comment carries every finding's
+reasoning and fix as text, with permalinks at the head commit; model-written text in it is made
+inert first - no mentions, HTML, images or links outside code spans.
 
 That path is not unit-tested, because recording is real time: `pnpm test` stops at `direct`
 (ADR-034). `scripts/end-to-end.ts` is what exercises it - it spawns the real CLI with no
@@ -187,18 +197,12 @@ the run says `no checkout at <sha> here` when they are withheld. In CI that mean
 `actions/checkout` with `ref: ${{ github.event.pull_request.head.sha }}`, because by default it
 checks out the test merge commit.
 
-Registered in `src/cli.ts` but not built yet, so each of these exits with code 2:
-
-```
-pnpm spr stage publish --run runs/<id>              # Milestone 4 step 2
-```
-
 Each run writes to `runs/<UTC timestamp>-<id>/` (id: short head sha for `--git`,
 `pr<number>-<short head sha>` for `--pr`, first 7 characters of the diff's sha256 for
 `--diff`). Ingest writes the first three; the rest follow as their stages land:
 `diff.raw.patch, diff.patch, ingest.json, review.raw.json, review.json, script.json,
 audio/S00.wav..., audio/manifest.json, timeline.json, page.html, video.webm, record.json,
-subtitles.srt, final.mp4, trace.jsonl, cost.json`.
+subtitles.srt, final.mp4, comment.md, trace.jsonl, cost.json`.
 Compose also leaves its ffmpeg scratch in `audio/`: `full.wav` (the clips and gaps joined),
 `gap.wav` and `list.txt`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes

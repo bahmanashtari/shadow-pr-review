@@ -252,10 +252,14 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
   whole pipeline's accumulated timing error; it measured 8 ms on the first real compose.
 
 ### 9. Publish
-See `docs/cheatsheets/github-integration.md`. Summary:
-- PR events: one sticky PR comment (updated on each push) with summary, findings table,
-  and video link.
-- Push events on branches without an open PR: commit comment (optional, off by default).
+See `docs/cheatsheets/github-integration.md` and ADR-052. Summary:
+- Renders `comment.md` from `review.json`, `ingest.json` and, when there is a video, the
+  timeline; `spr run` stops there. `spr stage publish` posts it.
+- PR events: one sticky PR comment, updated in place on each push: a findings table with
+  permalinks at the head commit, every finding's reasoning and fix in a collapsed section, and
+  the video link. A clean review updates it to say so. Model-written text is made inert first.
+- Push events on branches without an open PR: commit comment (optional, off by default;
+  Milestone 4 step 4).
 - Video storage: GitHub Actions artifact by default; object storage (S3-compatible) optional.
 
 ## 3. Evaluation (`spr eval`)

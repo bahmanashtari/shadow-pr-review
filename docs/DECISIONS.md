@@ -2292,3 +2292,77 @@ the voice read the dot; whether the voice mangles these is not known until someo
 
 **Checked** with `pnpm verify`, `format:check` and `build`: 893 tests pass (858 before), 2
 skipped, no test touching the network.
+
+## ADR-052: Publish renders a comment, and only `spr stage publish` posts it (accepted, September 2026)
+
+**Context.** Milestone 4 step 2: post the review on the pull request as one sticky comment.
+Bahman approved the plan with every recommendation taken: a bare `spr run` never posts (Q1); a
+forced run clears its own earlier outputs (Q2); commit comments for pushes wait for step 4 (Q3);
+and the first real post is his to run, because this session has no token of its own and posting
+is an outward-facing act (Q4). `fetch` stays, as ADR-051 left open.
+
+**Decision: rendering and posting are separate, and `spr run` only renders.** The publish stage
+writes `comment.md` into the run folder; `spr run` stops there and exits 0, which ends the exit
+code 2 that every complete run used to finish with. `spr stage publish --run <dir>` posts it,
+`--dry-run` renders only, and `--video-url` links the uploaded video. A developer trying the tool
+on a colleague's pull request comments on nothing by accident, and CI needs the split anyway: the
+workflow uploads `final.mp4` between `spr run` and publishing, and only then knows its URL. Every
+failure leaves `comment.md` behind and says so, so the exact text survives for a person
+(ADR-024's shape): no token, a run that did not review a pull request, GitHub refusing.
+
+**Decision: the comment is the review in text, not a pointer to the video.**
+
+- A status line - how many findings on which commit, by severity, and the video's link and
+  length, or where the video is when it was not uploaded.
+- What was reviewed: the file count, what was skipped and why, and whether the diff was cut to its
+  riskiest files (ARCHITECTURE section 4 asks for that; with no intro, the comment is the only
+  place left to say it, ADR-042).
+- A table - severity, a permalink, the summary - then each finding's rationale and suggested fix
+  in a collapsed `<details>`. A reviewer who will not watch forty seconds for a one-line issue
+  still gets the reasoning and the fix, which is what ADR-041 made the Reviewer write.
+- Permalinks point at the head commit for added lines and the base commit for removed ones,
+  under a renamed file's old path, so they keep pointing at the reviewed lines after the next
+  push.
+- A Verifier downgrade is stated with the severity the Reviewer gave.
+- **A clean review still updates the comment**, to "No findings", because a pull request whose
+  findings were fixed must stop showing them.
+- **The review's own `summary` is left out**: it is prose that has asserted a severity the
+  `severity` field did not (ADR-038), and the table says the same from the fields.
+
+**Decision: model-written text is made inert before it is posted.** Summaries, rationales and
+suggestions are model output written after reading a diff that anyone opening a pull request
+controls (ADR-049), and the comment goes out under the team's name. Outside code spans, `@` gets
+a zero-width space so nothing mentions anyone, `<` and `>` are escaped so nothing renders as
+HTML or forges the marker, and `[` and `]` are escaped so nothing links or loads an image. Table
+cells lose line breaks and escape `|`. Code spans are left alone, since GitHub neither mentions
+nor renders HTML in them - but a span counts only when this code is sure GitHub will see one:
+equal backtick runs, on one line, in text with no escaped backtick. The first version split on
+a looser pattern, and reading it against CommonMark showed three ways to smuggle a tag through: an
+uneven run, an escaped backtick, and a span broken across a line that starts an HTML block. Each
+is now a test. A bare URL is still auto-linked by GitHub; it is visible as what it is, and was
+accepted. The video URL is checked before it goes into a link: https, and none of `()<>` or
+whitespace. The body is capped at 60,000 characters, under GitHub's observed 65,536 - which the
+schema's caps (ten findings, 1,200 characters a field) keep far from anyway.
+
+**Decision: finding the sticky comment.** List the comments 100 to a page, following the `Link`
+header, and update the newest whose body *starts* with `<!-- shadow-pr-review -->`, so a person
+quoting it is never matched. With none, create one. An update refused with 403 or 404 - the
+comment was deleted, or belongs to an account the token is not - becomes a new comment, reported
+as `replaced`; a rate limit does not, because a second request meets the same limit, so
+`GitHubError` now says which failures were rate limits. The client never sends a request, and so
+never the token, anywhere but `https://api.github.com` - a `Link` header pointing elsewhere is
+refused. A refused write names the permission: `pull-requests: write`, and a fork's pull request
+only ever gets a read-only token.
+
+**Decision (Q2): a forced run clears the pipeline's own outputs first.** `createRunFolder` with
+`--force` removes the files on one list - `RUN_OUTPUTS`, every name a stage writes, held to the
+stages' own constants by a test - and never the folder or anything not on the list. A folder now
+always describes one run, for every reader. `spr stage <name>` still re-uses a folder as it
+always did. This also stops `trace.jsonl`, which is appended to, from accumulating every earlier
+run's calls in a re-used folder.
+
+**Checked.** `pnpm verify`, `format:check` and `build`: 937 tests pass, 2 skipped, none touching
+the network. `comment.md` rendered from the nine end-to-end run folders and nestjs/nest#17816, and
+read: the real pull request's comment links its finding at `6c30f9d`, and the three clean samples
+read "No findings". **The first real post is outstanding** (Q4): Bahman runs it on a throwaway
+pull request in his repository, and this ADR is amended with what it showed.

@@ -1,8 +1,18 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { createRunFolder, runTimestamp } from "../../src/lib/run-folder.js";
+import { createRunFolder, RUN_OUTPUTS, runTimestamp } from "../../src/lib/run-folder.js";
+import { INGEST_FILES } from "../../src/ingest/ingest.js";
+import { REVIEW_RAW_FILE } from "../../src/agents/reviewer.js";
+import { REVIEW_FILE } from "../../src/verify/verify.js";
+import { REJECTED_SCRIPT_FILE, SCRIPT_FILE } from "../../src/agents/narrator.js";
+import { AUDIO_DIR } from "../../src/tts/speak.js";
+import { TIMELINE_FILE } from "../../src/director/direct.js";
+import { PAGE_FILE } from "../../src/recorder/page.js";
+import { RECORD_FILE, VIDEO_FILE } from "../../src/recorder/record.js";
+import { FINAL_FILE, SUBTITLES_FILE } from "../../src/composer/compose.js";
+import { COMMENT_FILE } from "../../src/publish/comment.js";
 import { StageError } from "../../src/lib/errors.js";
 
 const temps: string[] = [];
@@ -45,6 +55,40 @@ describe("createRunFolder", () => {
     expect(() => createRunFolder({ runsDir: "runs", id: "x", out })).toThrow(StageError);
     expect(() => createRunFolder({ runsDir: "runs", id: "x", out })).toThrow("is not empty");
     expect(createRunFolder({ runsDir: "runs", id: "x", out, force: true })).toBe(out);
+  });
+
+  it("clears an earlier run's outputs when forced, and nothing else", () => {
+    const out = tempDir();
+    for (const name of ["review.json", "final.mp4", "trace.jsonl", "notes.txt"]) {
+      writeFileSync(path.join(out, name), "old", "utf8");
+    }
+    mkdirSync(path.join(out, "audio"));
+    writeFileSync(path.join(out, "audio", "S00.wav"), "old");
+    mkdirSync(path.join(out, "mine"));
+
+    createRunFolder({ runsDir: "runs", id: "x", out, force: true });
+    expect(readdirSync(out).sort()).toEqual(["mine", "notes.txt"]);
+  });
+
+  it("names every file each stage writes", () => {
+    const stageFiles = [
+      ...Object.values(INGEST_FILES),
+      REVIEW_RAW_FILE,
+      REVIEW_FILE,
+      SCRIPT_FILE,
+      REJECTED_SCRIPT_FILE,
+      AUDIO_DIR,
+      TIMELINE_FILE,
+      PAGE_FILE,
+      VIDEO_FILE,
+      RECORD_FILE,
+      SUBTITLES_FILE,
+      FINAL_FILE,
+      COMMENT_FILE,
+      "trace.jsonl",
+      "cost.json",
+    ];
+    expect([...RUN_OUTPUTS].sort()).toEqual([...new Set(stageFiles)].sort());
   });
 
   it("accepts an existing but empty folder", () => {

@@ -8,10 +8,10 @@
  * prints is a row of numbers worth comparing against the last run rather than a pass or fail.
  *
  * It spawns the real CLI with no `--until`, because that exact path is the one nothing else
- * exercises: the unit test stops at `direct` (step 4 made recording real-time). Getting all
- * the way through Compose means exiting 2 at `publish`, so that is the expected outcome here,
- * not a failure. So is the other correct ending (ADR-042): a review that keeps no findings
- * stops after Verify with exit 0 and no video, which the restraint samples are meant to do.
+ * exercises: the unit test stops at `direct` (step 4 made recording real-time). A complete run
+ * ends at `publish`, which renders `comment.md` and posts nothing (ADR-052), with exit 0. So does
+ * the other correct ending (ADR-042): a review that keeps no findings stops after Verify with no
+ * video, and still renders the comment that says so.
  *
  *   pnpm tsx scripts/end-to-end.ts                       # every golden sample
  *   pnpm tsx scripts/end-to-end.ts sample-03-email-value-object
@@ -31,9 +31,7 @@ import { readTimeline } from "../src/director/direct.js";
 import { readRecord } from "../src/recorder/record.js";
 import { streamDurationMs } from "../src/composer/ffmpeg.js";
 import { FINAL_FILE, SUBTITLES_FILE } from "../src/composer/compose.js";
-
-/** The exit code `spr run` uses for a stage that is not built yet - here, `publish`. */
-const NOT_IMPLEMENTED = 2;
+import { COMMENT_FILE } from "../src/publish/comment.js";
 
 /** What one sample's run produced, all of it read back off disk. */
 interface Row {
@@ -120,6 +118,9 @@ async function walk(sample: string): Promise<Row> {
   };
 
   const finalPath = path.join(runDir, FINAL_FILE);
+  if (!existsSync(path.join(runDir, COMMENT_FILE))) {
+    return { ...base, note: `no ${COMMENT_FILE} (exit ${String(result.exitCode)})` };
+  }
   if (!existsSync(finalPath)) {
     const review =
       result.exitCode === 0 && existsSync(path.join(runDir, "review.json"))
@@ -130,9 +131,7 @@ async function walk(sample: string): Promise<Row> {
     }
     return { ...base, note: `no ${FINAL_FILE} (exit ${String(result.exitCode)})` };
   }
-  if (result.exitCode !== NOT_IMPLEMENTED) {
-    // 0 would mean publish exists now, which is a real change rather than a failure - but it
-    // means this script's expectation is stale, so say so instead of quietly passing.
+  if (result.exitCode !== 0) {
     return { ...base, note: `unexpected exit ${String(result.exitCode)}` };
   }
 
