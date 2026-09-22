@@ -2426,6 +2426,92 @@ broken image cannot reach GHCR. The container needs `--ipc=host --shm-size=1g` f
 `-e HOME=/tmp` and `--user "$(id -u):$(id -g)"` so it writes the run folder into a mounted
 checkout as the caller rather than as uid 1000.
 
+**Published and checked**: `ghcr.io/bahmanashtari/shadow-pr-review` carries `edge` and
+`sha-3a17955`, and an anonymous token lists them, so a service repository needs no registry
+credentials. Being amd64 only (Q3) has one visible cost already: pulling it on this Apple Silicon
+Mac needs `--platform linux/amd64` and emulation, so if the self-hosted runner ends up being an
+Apple Silicon machine, arm64 goes into the build matrix.
+
 **Consequences.** `docker run ghcr.io/<owner>/shadow-pr-review:<tag> run --pr N --repo o/n` is
 step 4's building block. The image carries no GitHub token and no model: both arrive as
 environment variables, and Kokoro stays a service the container talks to over HTTP.
+
+## ADR-054: The checkout did not fix the false positive, because the Reviewer never looked (accepted, September 2026)
+
+**Context.** ADR-051 recorded the tool's first false positive on a real pull request
+(nestjs/nest#17816): the Reviewer claimed a test should expect two producer calls, reasoning about
+a method body the diff does not show. The run had no checkout, so `read_file` and `grep_repo` were
+withheld, and the ADR's explanation was that in CI the tools *would* be offered - which is what
+the head-sha checkout in the step 4 workflow is for. Bahman approved re-running it from a real
+checkout to confirm that, which needed a permission this session had been refused for running
+inside a clone of external code; running the built `dist/cli.js` rather than `tsx` removes the
+reason for that refusal, since nothing then reads the clone's own configuration.
+
+**What happened.** The repository was cloned at exactly the pull request's head
+(`6c30f9def8800`), so `checkoutAt` offered both tools and the run printed no withholding line.
+The Reviewer **made no tool calls at all** - `toolCalls: 0` in `cost.json`, and nothing in
+`trace.jsonl` - and produced the same finding, on the same line, with the same wrong claim:
+"the producer is created in every connection attempt (twice)". 189 seconds, one model call.
+
+**So the diagnosis in ADR-051 was half right.** Withholding the tools is correct and stays
+correct, and the head-sha checkout still belongs in the workflow. But offering them is not what
+fixes this: the model had the means to read the file it was making claims about and did not
+reach for them. The cost of reviewing without a checkout is therefore unmeasured rather than
+measured - this run says nothing about it - and the real gap is that nothing obliges the Reviewer
+to look at code it asserts the behaviour of, or to say that it did not.
+
+**Decision: record it as roadmap step 19 rather than patch the prompt now.** The obvious edit -
+"read the file before claiming what unchanged code does" - is exactly the kind of one-sentence
+prompt change ADR-047 showed can move recall by 0.2 in either direction for reasons unrelated to
+its wording. It needs the golden set and a comparison, and preferably the spread-measuring work of
+step 16, not a single cold run on one pull request. The complementary idea, a Verifier that drops
+a finding whose claim rests on code outside the diff, is recorded with it: the Verifier has the
+same tools available and the same habit of not using them, which is worth measuring before it is
+trusted.
+
+**Consequences.** ADR-051's closing hope that CI's checkout would remove this class of finding is
+superseded: it will not, on its own. The false positive stands as the one real-world data point
+this project has, and step 19 is where it gets addressed.
+
+## ADR-055: A camelCase identifier is several words to a listener (accepted, September 2026)
+
+**Context.** Roadmap step 18, from ADR-051: the first real pull request's narration said
+`toHaveBeenCalledOnce` and `toHaveBeenCalledTimes(2)`, the first camelCase identifiers any
+narration has carried, and `normalizeForSpeech` passed both to Kokoro unchanged. The step was
+recorded as "listen first", which is a job for a person - and Bahman has no time to listen.
+
+**It did not need listening.** Kokoro-FastAPI exposes `/dev/phonemize`, which returns the phonemes
+a piece of text will be spoken as. That turns "how does this sound" into something this session can
+read:
+
+| text | phonemes |
+|---|---|
+| `toHaveBeenCalledOnce` | `təhˌævbˌɪnkˈɔldwˈʌns` |
+| `to have been called once` | `tə hæv bɪn kˈɔld wˈʌns` |
+| `toHaveBeenCalledTimes(2)` | `tə həvbɪn kˈɔld tˈImz(tˈu)` |
+
+So the identifier is **intelligible, not garbled**: the same sounds, run together as one word with
+no boundaries and one stress. Nothing is spelled out, and `(2)` is read "two". This is a
+prosody problem, not the failure ADR-046's dotted identifier was.
+
+**Decision: put the boundary back for the voice, and only for the voice.** `normalizeForSpeech`
+now splits at each lowercase-to-uppercase step, after the pronunciation map so `NestJS` is already
+`Nest J S`. A run of capitals is left whole, so `TypeORM` becomes `Type ORM` rather than
+`Type O R M`. The script and the subtitles keep the identifier exactly as the Narrator wrote it -
+a reader wants `toHaveBeenCalledOnce`, a listener wants the words - which is how the map has always
+worked for `DTO`. Checked through the phonemizer afterwards: `tə hˌæv bˌɪn kˈɔld wˈʌns hˈɪɹ`.
+
+**No `checkScript` refusal**, unlike ADR-046. A dotted identifier was refused because the narration
+could say the same thing better in words; a camelCase identifier often *is* the clearest name for
+the thing being discussed, and now it is spoken properly. The cost is that clips whose text holds
+one lose their cache entry, once.
+
+**An aside worth recording.** The same endpoint gives `order.placed` as `ˌɔɹdəɹplˈAst` - the dot
+is silent, not read aloud as "dot". ADR-046 refused dotted identifiers on the grounds that the
+voice reads the dot, which this Kokoro build does not do; the refusal still earns its place,
+because "the order placed event" is better narration than a bare identifier, but its stated cause
+is version-specific and should not be quoted as fact.
+
+**Method, for next time.** Judging a voice by reading phonemes is cheaper than listening, needs
+nobody's ears, and can be asserted in a test. It is the right tool for any future question about
+how the narration sounds.

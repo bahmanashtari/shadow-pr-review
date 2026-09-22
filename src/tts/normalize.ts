@@ -52,6 +52,17 @@ export const PRONUNCIATIONS: readonly Pronunciation[] = [
   spelled("CQRS"),
 ];
 
+/**
+ * A camelCase identifier is one word to the voice and several to a listener. Kokoro's
+ * phonemizer turns `toHaveBeenCalledOnce` into `təhˌævbˌɪnkˈɔldwˈʌns` - the right sounds with
+ * no word boundaries - where `to have been called once` gives `tə hæv bɪn kˈɔld wˈʌns`. So the
+ * boundary is put back for the voice only, at each lowercase-to-uppercase step: the subtitle
+ * and the script keep the identifier as it is written (ADR-055).
+ *
+ * Runs of capitals are left alone, so `TypeORM` becomes `Type ORM` rather than `Type O R M`.
+ */
+const CAMEL_CASE = /([a-z0-9])([A-Z])/g;
+
 /** Backticks are silent to a reader and noise to a voice; the words between them survive. */
 const BACKTICKS = /`/g;
 
@@ -65,7 +76,8 @@ const WHITESPACE = /\s+/g;
  * Turns a script step's spoken text into what the engine should receive.
  *
  * Whitespace is collapsed last and always: a clip must not miss its cache because the model
- * wrapped a line differently.
+ * wrapped a line differently. The camelCase split runs after the pronunciation map, so
+ * `NestJS` is already `Nest J S` and never becomes `Nest JS`.
  *
  * @param text one step's `text` from `script.json`.
  * @returns the text to synthesize, and to hash into the cache key.
@@ -75,5 +87,5 @@ export function normalizeForSpeech(text: string): string {
   for (const { pattern, replacement } of PRONUNCIATIONS) {
     out = out.replace(pattern, replacement);
   }
-  return out.replace(SLASH, " slash ").replace(WHITESPACE, " ").trim();
+  return out.replace(CAMEL_CASE, "$1 $2").replace(SLASH, " slash ").replace(WHITESPACE, " ").trim();
 }

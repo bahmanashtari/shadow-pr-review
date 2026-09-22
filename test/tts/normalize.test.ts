@@ -15,6 +15,26 @@ describe("normalizeForSpeech", () => {
     expect(normalizeForSpeech(input)).toBe(expected);
   });
 
+  it("puts word boundaries back into a camelCase identifier", () => {
+    // Kokoro phonemizes the identifier as one run-together word; spaced, it reads as words
+    // with their own stress (ADR-055). Runs of capitals stay whole.
+    expect(normalizeForSpeech("The test calls toHaveBeenCalledOnce here.")).toBe(
+      "The test calls to Have Been Called Once here.",
+    );
+    expect(normalizeForSpeech("TypeORM maps the OrderPlaced event.")).toBe(
+      "Type ORM maps the Order Placed event.",
+    );
+    expect(normalizeForSpeech("the `reservedQuantity` column")).toBe(
+      "the reserved Quantity column",
+    );
+  });
+
+  it("leaves an identifier with no case step alone", () => {
+    expect(normalizeForSpeech("the stock_item table and the ORM")).toBe(
+      "the stock_item table and the ORM",
+    );
+  });
+
   it("keeps a plural audible instead of gluing it to the last letter", () => {
     // "D T OS" gets read as a word; a separated "s" is read "ess", which is the plural.
     expect(normalizeForSpeech("the other DTOs are not")).toBe("the other D T O s are not");
@@ -37,7 +57,7 @@ describe("normalizeForSpeech", () => {
   });
 
   it("is idempotent, so normalizing twice cannot change a cache key", () => {
-    const once = normalizeForSpeech("The NestJS DTOs use PostgreSQL and CQRS.");
+    const once = normalizeForSpeech("The NestJS DTOs use PostgreSQL, CQRS and toHaveBeenCalled.");
     expect(normalizeForSpeech(once)).toBe(once);
   });
 });
