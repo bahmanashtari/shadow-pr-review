@@ -259,8 +259,8 @@ See `docs/cheatsheets/github-integration.md` and ADR-052. Summary:
 - PR events: one sticky PR comment, updated in place on each push: a findings table with
   permalinks at the head commit, every finding's reasoning and fix in a collapsed section, and
   the video link. A clean review updates it to say so. Model-written text is made inert first.
-- Push events on branches without an open PR: commit comment (optional, off by default;
-  Milestone 4 step 4).
+- Push events on branches without an open PR: a commit comment, the same body through the same
+  find-or-update path, behind `--commit-comment` because it needs `contents: write` (ADR-056).
 - Video storage: GitHub Actions artifact by default; object storage (S3-compatible) optional.
 
 ## 3. Evaluation (`spr eval`)

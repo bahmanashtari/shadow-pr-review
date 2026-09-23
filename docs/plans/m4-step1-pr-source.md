@@ -1,8 +1,9 @@
 # Plan: Milestone 4, step 1 (`--pr`: review a GitHub pull request)
 
-Status: **approved** by Bahman on 21 September 2026, every recommendation taken. Q1: start
-Milestone 4 now. Q2: a self-hosted runner on a dedicated team machine, running Ollama with the
-default model (the roadmap's Milestone 4 section records it; step 4 builds on it). Q3: `fetch`.
+Status: **done** on 21 September 2026 (ADR-051), approved by Bahman with every recommendation
+taken. Q1: start Milestone 4 now. Q2: a self-hosted runner on a dedicated team machine, running
+Ollama with the default model (the roadmap's Milestone 4 section records it; step 4 built on it).
+Q3: `fetch`.
 Q4: public and private repositories from the start. Two facts in the body below turned out wrong
 when checked, and are corrected here rather than rewritten there. A hosted runner for a *private*
 repository has 2 CPUs and 8 GB, not the 16 GB of a public one, which weakens Q2's second option

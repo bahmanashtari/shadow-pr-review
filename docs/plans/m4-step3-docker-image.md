@@ -1,7 +1,7 @@
 # Plan: Milestone 4, step 3 (the tool's Docker image, published to GHCR)
 
-Status: **approved** by Bahman on 22 September 2026, every recommendation taken, and **built**
-the same day (ADR-053): slim base, publish from `main` and tags only, `linux/amd64`, and a smoke
+Status: **done** on 22 September 2026 (ADR-053), approved by Bahman with every recommendation
+taken: slim base, publish from `main` and tags only, `linux/amd64`, and a smoke
 test that runs the whole pipeline inside the image. It found one defect outside the image - the
 Composer depended on the installed ffmpeg's `-shortest` behaviour - which ADR-053 records.
 

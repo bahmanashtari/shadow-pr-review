@@ -1,10 +1,11 @@
 # Plan: Milestone 4, step 4 (the workflow service repositories add)
 
 Status: **done** on 23 September 2026 (ADR-056), including the live post: a push to
-`spr-live-post-check` posted a commit comment through the real API as `github-actions[bot]`. Bahman had said to carry on without him and
-interrupted the question, so the four decisions were taken on this plan's own recommendations,
-with one change to Q3: rather than anyone opening a pull request, the commit-comment path proves
-Publish against the live API, because a push needs no one to open anything.
+`spr-live-post-check` posted a commit comment through the real API as `github-actions[bot]`.
+Bahman had said to carry on without him and interrupted the question, so the four decisions were
+taken on this plan's own recommendations, with one change to Q3: rather than anyone opening a
+pull request, the commit-comment path proves Publish against the live API, because a push needs
+no one to open anything.
 
 Written straight after step 3 (ADR-053). Read CLAUDE.md, docs/ROADMAP.md,
 ARCHITECTURE sections 4 and 5, `docs/cheatsheets/github-integration.md`, and ADR-051 to ADR-053

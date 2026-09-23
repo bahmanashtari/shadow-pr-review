@@ -1,6 +1,6 @@
 # Plan: Milestone 3, step 20 (evidence that quotes no code)
 
-Status: **built** on 23 September 2026 (ADR-058), written and taken in one go under Bahman's
+Status: **done** on 23 September 2026 (ADR-058), written and taken in one go under Bahman's
 standing instruction to finish whatever can be finished without him. The rule it adds was settled
 by counting, not by preference.
 

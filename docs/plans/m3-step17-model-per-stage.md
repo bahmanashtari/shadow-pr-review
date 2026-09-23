@@ -1,6 +1,6 @@
 # Plan: Milestone 3, step 17 (a model per stage)
 
-Status: **built** on 23 September 2026 (ADR-057), written and taken in one go under Bahman's
+Status: **done** on 23 September 2026 (ADR-057), written and taken in one go under Bahman's
 standing instruction to carry on with whatever can be finished without him. The decision it
 records is a measurement, not a preference, so it needed no question.
 

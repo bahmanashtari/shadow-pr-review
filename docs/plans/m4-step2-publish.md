@@ -1,13 +1,15 @@
 # Plan: Milestone 4, step 2 (`spr publish`: the sticky pull request comment)
 
-Status: **approved** by Bahman on 21 September 2026, every recommendation taken. Q1: a bare
-`spr run` renders `comment.md` and never posts. Q2: a fresh `spr run --force` clears the
-pipeline's own named outputs first. Q3: commit comments wait for step 4. Q4: Bahman makes the
-first real post himself, on a throwaway pull request in his repository. `fetch` stays. Built
-the same day (ADR-052). **Q4 was then overtaken**: Bahman said he has no time to run commands or
-check pull requests, so the first real post moves to step 4, where GitHub Actions supplies the
-token and the workflow posts unattended. The branch `spr-publish-test` is pushed and kept as that
-test's fixture. Step 2 is otherwise done.
+Status: **done** on 21 September 2026 (ADR-052), approved by Bahman with every recommendation
+taken. Q1: a bare `spr run` renders `comment.md` and never posts. Q2: a fresh `spr run --force`
+clears the pipeline's own named outputs first. Q3: commit comments wait for step 4. Q4: Bahman
+makes the first real post himself, on a throwaway pull request in his repository. `fetch` stays.
+
+**Q4 was then overtaken twice.** Bahman said he has no time to run commands or check pull
+requests, so the first real post moved to step 4 - and there it happened without a pull request
+at all: a push to `spr-live-post-check` posted a commit comment through the live API as
+`github-actions[bot]` (ADR-056). The `spr-publish-test` branch this plan left waiting was never
+needed and is deleted.
 
 Written as `proposed` straight after step 1 landed (ADR-051), in the same session. Read
 CLAUDE.md, docs/ROADMAP.md, ARCHITECTURE section 2.9 and 4, ADR-008, ADR-042 and ADR-051, and
