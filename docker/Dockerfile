@@ -42,13 +42,23 @@ COPY docs/REVIEW_RUBRIC.md docs/NARRATION_STYLE.md ./docs/
 COPY src/recorder/page ./src/recorder/page
 
 # ffmpeg and ffprobe for the Composer; the Debian package is built with libass, so burned-in
-# subtitles work here (ADR-033). Then the headless shell and its shared libraries.
+# subtitles work here (ADR-033). git because `--git` shells out to it, and because `checkoutAt`
+# asks git whether the working directory is the reviewed head - without it the repository tools
+# are withheld in every container, silently (ADR-056). Then the headless shell and its libraries.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg git \
     && node node_modules/playwright/cli.js install --with-deps chromium-headless-shell \
     && apt-get purge -y --auto-remove \
     && rm -rf /var/lib/apt/lists/* \
     && chmod -R a+rX /ms-playwright
+
+# git refuses to work in a repository it sees as owned by somebody else, and the mounted
+# checkout's owner depends on the host and on the --user the caller passes. Inside this
+# container the mount is exactly the repository the caller asked to review, and every git
+# command the tool runs is read-only, so the check protects nothing here (ADR-056).
+ENV GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0=*
 
 # The pipeline writes its run folder and cache under the working directory, which a workflow
 # mounts. Nothing needs root, so nothing runs as root.

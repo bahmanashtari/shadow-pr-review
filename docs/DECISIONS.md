@@ -2558,6 +2558,27 @@ provides - the same client, the same marker, the same find-or-update path as a p
 comment. Whether the pull request path posts identically is then one genuine pull request away,
 and nothing has to be arranged for it.
 
+**The first run found two defects in the image, both invisible to step 3's smoke test.** That
+test used `--diff`, which touches no repository; the workflow's push path uses `--git`, which
+shells out to git.
+
+- **There was no git in the image.** `node:22-bookworm-slim` has none, so the Review step failed
+  outright. Worse than the failure it caused: `checkoutAt` also asks git whether the working
+  directory is the reviewed head, and with no git it answers "no" every time - so `read_file` and
+  `grep_repo` would have been withheld in every containerised run, silently, which is exactly the
+  condition ADR-051 built the head-sha checkout to avoid.
+- **git refuses a repository it sees as owned by somebody else.** The mounted checkout's owner
+  depends on the host and on the `--user` the caller passes, and a mismatch stops every git
+  command with "dubious ownership". The image now sets `safe.directory=*` through
+  `GIT_CONFIG_COUNT`: inside an ephemeral container the mount is precisely the repository the
+  caller asked to review, and every git command the tool runs is read-only, so the check protects
+  nothing there.
+
+Both were found by running the workflow's own command against a real clone, after the job's logs
+turned out to need repository-admin rights to read - which is worth knowing: **from outside, a
+failed run gives only its annotations**, so the way to diagnose one is to reproduce its exact
+command locally.
+
 **Q2: this repository proves the workflow with `llm-provider: fake`.** There is no self-hosted
 runner here, and the analyzers alone still produce findings, a video and a comment - which is all
 the workflow orchestrates. What the model finds is `spr eval`'s business, not this workflow's.
