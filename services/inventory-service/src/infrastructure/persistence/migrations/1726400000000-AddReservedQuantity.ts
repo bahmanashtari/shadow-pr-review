@@ -9,3 +9,5 @@ export class AddReservedQuantity1726400000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {}
 }
+
+// touched to re-trigger the live publish check
