@@ -64,9 +64,30 @@ function fakeAnswer(schema: Record<string, unknown> | undefined): string {
 /** Default Ollama endpoint when the config leaves `llm.baseUrl` out. */
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
-/** Builds the provider for a run. */
-export function createProvider(config: SprConfig, secrets: Secrets = {}): LlmProvider {
-  const { provider, model, baseUrl, effort, think } = config.llm;
+/** The stages that call a model, and may each name their own (ADR-057). */
+export type ModelStage = "review" | "verify" | "narrate";
+
+/**
+ * The model a stage runs on: its own override when the configuration names one, otherwise
+ * `llm.model`. One model everywhere remains the default, and a comparison is what should
+ * change that (ADR-057).
+ */
+export function modelFor(config: SprConfig, stage?: ModelStage): string {
+  const override = stage === undefined ? undefined : config.llm.models?.[stage];
+  return override ?? config.llm.model;
+}
+
+/**
+ * Builds the provider for a stage. Without a stage it uses `llm.model`, which is what the
+ * fake provider and the tests want.
+ */
+export function createProvider(
+  config: SprConfig,
+  secrets: Secrets = {},
+  stage?: ModelStage,
+): LlmProvider {
+  const { provider, baseUrl, effort, think } = config.llm;
+  const model = modelFor(config, stage);
 
   switch (provider) {
     case "ollama":

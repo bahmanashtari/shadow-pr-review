@@ -21,7 +21,9 @@ export const ENV_OVERRIDES: readonly {
 }[] = [
   { env: "SPR_LLM_PROVIDER", path: "llm.provider", type: "string" },
   { env: "SPR_LLM_MODEL", path: "llm.model", type: "string" },
-  { env: "SPR_LLM_VERIFIER_MODEL", path: "llm.verifierModel", type: "string" },
+  { env: "SPR_LLM_MODEL_REVIEW", path: "llm.models.review", type: "string" },
+  { env: "SPR_LLM_MODEL_VERIFY", path: "llm.models.verify", type: "string" },
+  { env: "SPR_LLM_MODEL_NARRATE", path: "llm.models.narrate", type: "string" },
   { env: "SPR_LLM_BASE_URL", path: "llm.baseUrl", type: "string" },
   { env: "SPR_LLM_EFFORT", path: "llm.effort", type: "string" },
   { env: "SPR_LLM_THINK", path: "llm.think", type: "boolean" },

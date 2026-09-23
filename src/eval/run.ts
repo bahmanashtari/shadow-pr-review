@@ -22,7 +22,7 @@ import { Tracer } from "../harness/tracing.js";
 import { buildIngest, writeIngest } from "../ingest/ingest.js";
 import { fromDiffFile } from "../ingest/sources.js";
 import { StageError } from "../lib/errors.js";
-import { createProvider } from "../providers/llm/create.js";
+import { createProvider, modelFor } from "../providers/llm/create.js";
 import { runVerify, writeVerifiedReview } from "../verify/verify.js";
 import { judgeFindings } from "../agents/verifier.js";
 import {
@@ -79,9 +79,15 @@ function readFixture(goldenDir: string, sample: string, file: string): unknown {
   return existsSync(full) ? JSON.parse(readFileSync(full, "utf8")) : undefined;
 }
 
-/** The same configuration with a different model, so one run can score several. */
+/**
+ * The same configuration with a different model, so one run can score several. `--model` names
+ * one model for the whole pipeline, so any per-stage override (ADR-057) is dropped: a row of the
+ * table has to mean one model, or it cannot be compared with the next row.
+ */
 function withModel(config: SprConfig, model: string): SprConfig {
-  return { ...config, llm: { ...config.llm, model } };
+  const llm = { ...config.llm, model };
+  delete llm.models;
+  return { ...config, llm };
 }
 
 /**
@@ -115,7 +121,10 @@ async function evaluateSample(
   });
 
   const tracer = new Tracer(runDir);
-  const provider = createProvider(config, secrets);
+  // One provider per stage, so a per-stage model (ADR-057) is measured the way it runs.
+  const reviewer = createProvider(config, secrets, "review");
+  const verifier = createProvider(config, secrets, "verify");
+  const narrator = createProvider(config, secrets, "narrate");
   const started = Date.now();
 
   const built = buildIngest({ rawDiff: source.rawDiff, source: source.source, config });
@@ -123,7 +132,7 @@ async function evaluateSample(
 
   const review = await runReview({
     ingest: built.ingest,
-    provider,
+    provider: reviewer,
     config,
     budget: new Budget(config.budgets),
     tracer,
@@ -141,7 +150,7 @@ async function evaluateSample(
       judgeFindings({
         findings,
         ingest: built.ingest,
-        provider,
+        provider: verifier,
         config,
         budget: new Budget(config.budgets),
         tracer,
@@ -159,7 +168,7 @@ async function evaluateSample(
     try {
       const narrated = await runNarrate({
         review: verified.review,
-        provider,
+        provider: narrator,
         config,
         budget: new Budget(config.budgets),
         tracer,
@@ -197,19 +206,35 @@ function narration(result: SampleResult): string {
   return result.script.narrated ? "narrated" : "not narrated";
 }
 
+/**
+ * What to call this row: the model, or every stage's model when they differ (ADR-057), so a
+ * table can never show two different pipelines under one name.
+ */
+export function modelLabel(config: SprConfig): string {
+  const stages = ["review", "verify", "narrate"] as const;
+  const used = stages.map((stage) => modelFor(config, stage));
+  const [first] = used;
+  if (first !== undefined && used.every((model) => model === first)) return first;
+  return stages.map((stage, i) => `${stage} ${used[i] ?? ""}`).join(", ");
+}
+
 /** Scores every sample for every model and returns the report. */
 export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
   const { goldenDir, outDir, config } = options;
   const secrets = options.secrets ?? {};
   const noCache = options.noCache ?? false;
-  const models = options.models?.length ? options.models : [config.llm.model];
+  // With no --model the configuration runs as it stands, per-stage overrides included; each
+  // --model names one model for the whole pipeline, so the rows can be compared (ADR-057).
+  const named = options.models ?? [];
+  const runsToDo: { model: string; config: SprConfig }[] = named.length
+    ? named.map((model) => ({ model, config: withModel(config, model) }))
+    : [{ model: modelLabel(config), config }];
 
   const samples = goldenSamples(goldenDir);
   if (samples.length === 0) throw new StageError("eval", `No samples found in ${goldenDir}`);
 
   const runs: ModelRun[] = [];
-  for (const model of models) {
-    const modelConfig = withModel(config, model);
+  for (const { model, config: modelConfig } of runsToDo) {
     const cache = cacheFor(modelConfig, noCache);
     const results: SampleResult[] = [];
     let failed: string | undefined;

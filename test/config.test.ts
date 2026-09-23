@@ -28,6 +28,15 @@ describe("loadConfig", () => {
     expect(config.tts.baseUrl).toBe("http://kokoro:8880");
   });
 
+  it("gives a stage its own model from the environment, leaving the others alone", () => {
+    const config = loadConfig({
+      env: { SPR_LLM_MODEL_REVIEW: "qwen3-coder:30b", SPR_LLM_MODEL_NARRATE: "qwen3:4b" },
+    });
+    expect(config.llm.models).toEqual({ review: "qwen3-coder:30b", narrate: "qwen3:4b" });
+    expect(config.llm.model).toBe("qwen3:30b");
+    expect(loadConfig({ env: {} }).llm.models).toBeUndefined();
+  });
+
   it("reads boolean overrides in the spellings people actually use", () => {
     for (const on of ["true", "1", "YES", "on"]) {
       expect(loadConfig({ env: { SPR_CACHE_ENABLED: on } }).cache.enabled).toBe(true);

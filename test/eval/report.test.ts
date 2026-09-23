@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { formatComparison, formatModel, formatReport } from "../../src/eval/report.js";
 import type { ModelRun, SampleResult } from "../../src/contracts/generated/eval.js";
 import { buildReport, total, totalsByOrigin } from "../../src/eval/score.js";
+import { modelLabel } from "../../src/eval/run.js";
+import { defaultConfig } from "../helpers.js";
 
 const FILE = "services/order-service/src/application/commands/place-order.handler.ts";
 
@@ -275,5 +277,17 @@ describe("formatReport", () => {
 
     const two = formatReport(buildReport("golden", [run(), run({ model: "qwen3:4b" })]));
     expect(two.join("\n")).toContain("comparison");
+  });
+});
+
+describe("modelLabel", () => {
+  it("is the model when every stage runs the same one", () => {
+    expect(modelLabel(defaultConfig())).toBe("qwen3:30b");
+  });
+
+  it("names every stage when they differ, so two rows cannot look alike", () => {
+    const base = defaultConfig();
+    const config = { ...base, llm: { ...base.llm, models: { review: "qwen3-coder:30b" } } };
+    expect(modelLabel(config)).toBe("review qwen3-coder:30b, verify qwen3:30b, narrate qwen3:30b");
   });
 });

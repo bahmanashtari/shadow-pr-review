@@ -361,7 +361,7 @@ async function review(
   }
   const outcome = await runReview({
     ingest,
-    provider: createProvider(config, readSecrets()),
+    provider: createProvider(config, readSecrets(), "review"),
     config,
     budget: new Budget(config.budgets),
     tracer,
@@ -380,7 +380,7 @@ async function review(
 async function narrate(runDir: string, config: SprConfig, tracer: Tracer): Promise<void> {
   const outcome = await runNarrate({
     review: readReview(runDir),
-    provider: createProvider(config, readSecrets()),
+    provider: createProvider(config, readSecrets(), "narrate"),
     config,
     budget: new Budget(config.budgets),
     tracer,
@@ -414,7 +414,7 @@ async function verify(
             judgeFindings({
               findings,
               ingest,
-              provider: createProvider(config, readSecrets()),
+              provider: createProvider(config, readSecrets(), "verify"),
               config,
               budget: new Budget(config.budgets),
               tracer,

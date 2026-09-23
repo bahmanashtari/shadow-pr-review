@@ -14,7 +14,16 @@
       "properties": {
         "provider": { "enum": ["anthropic", "ollama", "fake"] },
         "model": { "type": "string", "minLength": 1 },
-        "verifierModel": { "type": "string", "minLength": 1 },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-stage overrides of llm.model (ADR-057). A stage with no entry uses llm.model, so one model everywhere stays the default.",
+          "properties": {
+            "review": { "type": "string", "minLength": 1 },
+            "verify": { "type": "string", "minLength": 1 },
+            "narrate": { "type": "string", "minLength": 1 }
+          }
+        },
         "baseUrl": { "type": "string" },
         "effort": {
           "enum": ["low", "medium", "high", "xhigh", "max"],

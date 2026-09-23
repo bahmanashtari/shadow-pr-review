@@ -4,7 +4,7 @@ import {
   anthropicModelInfo,
   type AnthropicLike,
 } from "../../src/providers/llm/anthropic.js";
-import { createProvider } from "../../src/providers/llm/create.js";
+import { createProvider, modelFor } from "../../src/providers/llm/create.js";
 import { FakeLlmProvider, fakeText } from "../../src/providers/llm/fake.js";
 import {
   OllamaProvider,
@@ -296,6 +296,21 @@ describe("createProvider", () => {
     const provider = createProvider(defaultConfig(), {});
     expect(provider.name).toBe("ollama");
     expect(provider.model).toBe("qwen3:30b");
+  });
+
+  it("gives a stage its own model, and llm.model to every stage without one", () => {
+    const base = defaultConfig();
+    const config = {
+      ...base,
+      llm: { ...base.llm, models: { review: "qwen3-coder:30b", narrate: "qwen3:4b" } },
+    };
+    expect(modelFor(config, "review")).toBe("qwen3-coder:30b");
+    expect(modelFor(config, "narrate")).toBe("qwen3:4b");
+    expect(modelFor(config, "verify")).toBe(base.llm.model);
+    expect(modelFor(config)).toBe(base.llm.model);
+    expect(createProvider(config, {}, "review").model).toBe("qwen3-coder:30b");
+    expect(createProvider(config, {}, "verify").model).toBe(base.llm.model);
+    expect(createProvider(base, {}, "review").model).toBe(base.llm.model);
   });
 
   it("builds the hosted provider only when a key is present", () => {

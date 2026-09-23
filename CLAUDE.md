@@ -265,6 +265,11 @@ A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` 
   `SPR_LLM_PROVIDER=anthropic SPR_LLM_MODEL=claude-opus-5 pnpm spr run ...`.
   When a local model is too weak for a job, compare the installed Ollama models on the golden
   set and recommend a better local one to pull, rather than reaching for the paid API.
+- A stage may run its own model: `llm.models.review`, `.verify`, `.narrate`, or
+  `SPR_LLM_MODEL_REVIEW`, `SPR_LLM_MODEL_VERIFY`, `SPR_LLM_MODEL_NARRATE`. A stage with no
+  override uses `llm.model`, which is still one model everywhere by default (ADR-057). `spr eval`
+  with no `--model` scores the configuration as it stands and labels the row by stage when they
+  differ; each `--model` means one model for the whole pipeline.
 - Model output and TTS audio are cached on disk across runs (`cache.dir`, default
   `.cache/spr`, git-ignored; `SPR_CACHE_DIR`, `SPR_CACHE_ENABLED`). See ADR-017. Audio is keyed
   on the *normalized* spoken text, so a clip survives an edit that changes nothing audible.

@@ -11,7 +11,14 @@ export interface SprConfig {
   llm: {
     provider: "anthropic" | "ollama" | "fake";
     model: string;
-    verifierModel?: string;
+    /**
+     * Per-stage overrides of llm.model (ADR-057). A stage with no entry uses llm.model, so one model everywhere stays the default.
+     */
+    models?: {
+      review?: string;
+      verify?: string;
+      narrate?: string;
+    };
     baseUrl?: string;
     /**
      * Reasoning effort. Only the hosted Anthropic provider uses this; Ollama ignores it.
