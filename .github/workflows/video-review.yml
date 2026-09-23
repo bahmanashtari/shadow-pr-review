@@ -46,9 +46,11 @@ on:
         description: Only for llm-provider "anthropic". The pipeline needs no key by default.
         required: false
 
-permissions:
-  contents: read
-  pull-requests: write
+# No `permissions` block on purpose: a called workflow's own block caps what its jobs get, and
+# capping `contents` at read here would make the commit comment impossible for every caller
+# (ADR-056). Without one, the job takes the caller's permissions, which is where that decision
+# belongs: `pull-requests: write` to comment on a pull request, and `contents: write` as well
+# for `commit-comments`.
 
 jobs:
   review:
@@ -141,11 +143,13 @@ jobs:
             fi
             SOURCE=(run --git "$BEFORE..${{ github.sha }}")
           fi
+          # stderr joins stdout so that a failure explains itself in the job summary, which
+          # anyone can read; the job's log needs admin rights on the repository (ADR-056).
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp \
             -e GITHUB_TOKEN -e ANTHROPIC_API_KEY -e SPR_LLM_PROVIDER \
             -v "$PWD:/repo" "$IMAGE" \
-            "${SOURCE[@]}" --out runs/current --force
+            "${SOURCE[@]}" --out runs/current --force 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the video
         id: upload
@@ -178,4 +182,4 @@ jobs:
           fi
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" -e HOME=/tmp -e GITHUB_TOKEN \
-            -v "$PWD:/repo" "$IMAGE" "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+            -v "$PWD:/repo" "$IMAGE" "${ARGS[@]}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

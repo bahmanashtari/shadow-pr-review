@@ -305,6 +305,12 @@ out, so a prompt or model change can be argued about with numbers instead of rea
 
 `concurrency` with `cancel-in-progress` ensures only the latest push on a PR is rendered.
 
+Every row of that table is implemented in `.github/workflows/video-review.yml` (ADR-056): the
+first, fourth and fifth in the job's `if`, the second by a step that asks the API whether the
+branch has an open pull request, the third by the `commit-comments` input, and the last by
+ingest's own size cap, which the comment reports. A fork's pull request is reviewed and uploaded
+but not posted, because its token is read-only.
+
 ## 5. Deployment
 
 - Local: `docker/compose.yml` runs Kokoro-FastAPI (CPU). The tool runs with Node/pnpm on

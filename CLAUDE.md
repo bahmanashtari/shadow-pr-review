@@ -113,6 +113,7 @@ pnpm spr stage record --run runs/<id>               # re-record video.webm; runs
 pnpm spr stage compose --run runs/<id>              # re-mux and re-encode final.mp4; needs ffmpeg
 pnpm spr stage publish --run runs/<id> --dry-run    # render comment.md only
 pnpm spr stage publish --run runs/<id> [--video-url https://...]   # post it; needs GITHUB_TOKEN
+pnpm spr stage publish --run runs/<id> --commit-comment            # a push run: comment on the commit
 pnpm tsx scripts/preview-page.ts runs/<id>          # build the diff page and print its path, to look at it
 pnpm tsx scripts/end-to-end.ts                      # every golden sample, bare `spr run`, then a table
 pnpm tsx scripts/end-to-end.ts sample-03-email-value-object   # just one of them
@@ -187,6 +188,14 @@ number to watch, not as evidence. If Compose fails saying narration is missing, 
 of the two causes it is and the command that resumes; the run folder is kept, so nothing is
 re-reviewed or re-spoken.
 
+Two workflows use all of this (ADR-056). `.github/workflows/video-review.yml` is reusable
+(`workflow_call`): a service repository copies a caller of ten lines and gets the published image
+run on its pull requests - the head checked out at the pull request's head sha, Kokoro as a
+service container, the video uploaded as an artifact, and the sticky comment posted with that
+artifact's URL. `.github/workflows/self-review.yml` is this repository calling it with
+`llm-provider: fake`, which is what proves the plumbing here. A push with no pull request behind
+it gets a commit comment instead, when the caller turns `commit-comments` on.
+
 The tool also ships as a Docker image, which is how a service repository will run it (ADR-053):
 `docker/Dockerfile` builds it, `.github/workflows/image.yml` smoke-tests the whole pipeline inside
 it with both fakes and then publishes to `ghcr.io/<owner>/shadow-pr-review`. Locally:
@@ -200,7 +209,10 @@ docker run --rm --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp
 
 Chromium needs `--ipc=host --shm-size=1g`; `--user` keeps the run folder owned by the caller. The
 image has no model and no token in it: both arrive as environment variables, and Kokoro stays a
-service it talks to over HTTP. **When a file the tool reads at run time moves, the Dockerfile has
+service it talks to over HTTP. It carries `git`, because `--git` shells out to it and because the
+checkout rule asks git what `HEAD` is - without it the repository tools would be withheld in every
+container, silently - and it sets `safe.directory=*`, since git otherwise refuses a mounted
+checkout whose owner does not match the container's user (ADR-056). **When a file the tool reads at run time moves, the Dockerfile has
 to move with it** - `config/`, `schemas/`, the two prompt documents and `src/recorder/page/` are
 each copied by name, because `tsc` copies none of them.
 
