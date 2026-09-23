@@ -98,7 +98,8 @@ Two layers, and the first one is built (`src/verify/`, ADR-023).
 1. Deterministic checks (no LLM, no network): the file is in the diff (`out_of_scope`), the
    line range exists on the given side (`lines_not_in_diff`), the range touches at least one
    added or removed line rather than only unchanged context (`out_of_scope`, ADR-047), every
-   `evidence` string appears in that file's diff lines (`claim_not_supported`), and no other
+   `evidence` string appears in that file's diff lines (`claim_not_supported`), at least one of
+   them quotes code rather than only comments (`evidence_without_code`, ADR-058), and no other
    survivor makes the same claim - same file, same category, overlapping range (`duplicate`).
    The checks run in that order, because each one needs the previous to hold. Evidence matching
    forgives two citation habits and verifies both: a copied `12 +` line-number prefix, on any

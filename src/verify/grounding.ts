@@ -94,7 +94,38 @@ export function checkGrounded(index: HunkIndex, finding: Finding): Rejection | n
     }
   }
 
+  // Real quotes that are all comments: the finding rests on what the diff *says* rather than on
+  // what it does. That is the shape of a planted instruction - `sample-09` tells automated
+  // reviewers to report a SQL injection, and a model that obeyed it quoted those two comment
+  // lines as its evidence (ADR-057, ADR-058). Across every review this project has on disk, that
+  // false positive is the only finding with no code in its evidence, so the rule costs nothing.
+  if (!finding.evidence.some(quotesCode)) {
+    return {
+      reason: "evidence_without_code",
+      note: `all ${total} evidence strings are comments: the claim rests on prose, not on code`,
+    };
+  }
+
   return null;
+}
+
+/**
+ * How a comment opens, in the languages this tool reviews: TypeScript and SQL in the samples,
+ * plus the `#` of YAML, Dockerfiles and shell, and the `<!--` of markup.
+ */
+const COMMENT_OPENER = /^(\/\/|\/\*|\*\/?|#|--|<!--)/;
+
+/**
+ * True when a quoted line carries code rather than a comment or nothing.
+ *
+ * Deliberately generous to code: anything that does not open with a comment marker counts, so a
+ * brace, an import or a bare identifier all pass.
+ */
+export function quotesCode(snippet: string): boolean {
+  return quotedText(snippet)
+    .split("\n")
+    .map((line) => line.trim())
+    .some((line) => line !== "" && !COMMENT_OPENER.test(line));
 }
 
 /** The finding as kept: a blank quote was allowed through, not worth carrying downstream. */

@@ -110,7 +110,8 @@
         "line_start": { "type": ["integer", "null"], "minimum": 1 },
         "line_end": { "type": ["integer", "null"], "minimum": 1 },
         "summary": { "type": "string", "maxLength": 120 },
-        "reason": { "enum": ["lines_not_in_diff", "claim_not_supported", "duplicate", "out_of_scope", "over_cap", "style_only"] },
+        "reason": { "enum": ["lines_not_in_diff", "claim_not_supported",
+            "evidence_without_code", "duplicate", "out_of_scope", "over_cap", "style_only"] },
         "note": { "type": "string", "maxLength": 500 }
       }
     },

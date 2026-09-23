@@ -98,6 +98,7 @@ export interface DroppedFinding {
   reason:
     | "lines_not_in_diff"
     | "claim_not_supported"
+    | "evidence_without_code"
     | "duplicate"
     | "out_of_scope"
     | "over_cap"
