@@ -137,19 +137,20 @@ jobs:
             SOURCE=(run --pr "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}")
           else
             BEFORE="${{ github.event.before }}"
-            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-              # A new branch: review what it adds to the default branch.
+            # A new branch has no `before`, and a force-push names one this clone does not have,
+            # so both fall back to what the branch adds to the default branch.
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
               BEFORE="$(git merge-base "origin/${{ github.event.repository.default_branch }}" HEAD)"
             fi
             SOURCE=(run --git "$BEFORE..${{ github.sha }}")
           fi
-          # stderr joins stdout so that a failure explains itself in the job summary, which
-          # anyone can read; the job's log needs admin rights on the repository (ADR-056).
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp \
             -e GITHUB_TOKEN -e ANTHROPIC_API_KEY -e SPR_LLM_PROVIDER \
             -v "$PWD:/repo" "$IMAGE" \
-            "${SOURCE[@]}" --out runs/current --force 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            "${SOURCE[@]}" --out runs/current --force > spr.log 2>&1 || CODE=$?
+          "$GITHUB_WORKSPACE/.github/report-tool-output.sh" spr.log "${CODE:-0}"
 
       - name: Upload the video
         id: upload
@@ -182,4 +183,5 @@ jobs:
           fi
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" -e HOME=/tmp -e GITHUB_TOKEN \
-            -v "$PWD:/repo" "$IMAGE" "${ARGS[@]}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            -v "$PWD:/repo" "$IMAGE" "${ARGS[@]}" > spr-publish.log 2>&1 || CODE=$?
+          "$GITHUB_WORKSPACE/.github/report-tool-output.sh" spr-publish.log "${CODE:-0}"
