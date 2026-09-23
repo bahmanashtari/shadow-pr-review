@@ -150,6 +150,7 @@ interface StageOptions {
   run: string;
   videoUrl?: string;
   dryRun?: boolean;
+  commitComment?: boolean;
 }
 
 /** Options of `spr eval`, as Commander hands them over (`--no-cache` arrives as `cache: false`). */
@@ -239,13 +240,14 @@ async function runPipeline(opts: RunOptions): Promise<void> {
 async function publish(
   runDir: string,
   post: boolean,
-  options: { videoUrl?: string } = {},
+  options: { videoUrl?: string; commitComment?: boolean } = {},
 ): Promise<void> {
   const token = readSecrets().githubToken;
   const outcome = await runPublish({
     runDir,
     post,
     ...(options.videoUrl === undefined ? {} : { videoUrl: options.videoUrl }),
+    ...(options.commitComment === undefined ? {} : { commitComment: options.commitComment }),
     ...(token === undefined ? {} : { github: createGitHubClient({ token }) }),
   });
   console.log(summarizePublish(outcome));
@@ -464,10 +466,16 @@ export function buildProgram(): Command {
     .requiredOption("--run <dir>", "existing run folder")
     .option("--video-url <url>", "publish: where the video was uploaded", parseVideoUrl)
     .option("--dry-run", "publish: write comment.md without posting it")
+    .option("--commit-comment", "publish: for a push, comment on the commit (contents: write)")
     .action(async (name: string, opts: StageOptions) => {
       const stage = parseStage(name);
-      if (stage !== "publish" && (opts.videoUrl !== undefined || opts.dryRun !== undefined)) {
-        throw new InvalidArgumentError("--video-url and --dry-run go with publish");
+      const publishOnly = [opts.videoUrl, opts.dryRun, opts.commitComment].some(
+        (o) => o !== undefined,
+      );
+      if (stage !== "publish" && publishOnly) {
+        throw new InvalidArgumentError(
+          "--video-url, --dry-run and --commit-comment go with publish",
+        );
       }
       if (stage === "ingest") {
         reingest(opts.run);
@@ -525,6 +533,7 @@ export function buildProgram(): Command {
         report(runDir, opts.dryRun === true ? "rendering the comment" : "publishing");
         await publish(runDir, opts.dryRun !== true, {
           ...(opts.videoUrl === undefined ? {} : { videoUrl: opts.videoUrl }),
+          ...(opts.commitComment === undefined ? {} : { commitComment: opts.commitComment }),
         });
         return;
       }

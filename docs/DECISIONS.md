@@ -2515,3 +2515,49 @@ is version-specific and should not be quoted as fact.
 **Method, for next time.** Judging a voice by reading phonemes is cheaper than listening, needs
 nobody's ears, and can be asserted in a test. It is the right tool for any future question about
 how the narration sounds.
+
+## ADR-056: One reusable workflow, and a commit comment that proves the write path (accepted, September 2026)
+
+**Context.** Milestone 4 step 4: the workflow a service repository adds. Bahman had said to carry
+on without him and interrupted the question, so its four decisions were taken on the plan's own
+recommendations, which this ADR records with their reasons.
+
+**Q1: a reusable workflow, plus a caller of ten lines.** `.github/workflows/video-review.yml` is
+`on: workflow_call`; a service repository copies a caller that names the runner and its
+permissions. A fix here then reaches every service without a pull request against each of them -
+the same argument that made the tool an image. Its inputs are `image`, `runs-on`, `llm-provider`,
+`kokoro-image`, `commit-comments`, `skip-label` and `timeout-minutes`, with one optional secret,
+`anthropic-api-key`, so the opt-in hosted model is possible and never required (ADR-015).
+
+**What the workflow does, in the order it matters.** Check out **the pull request's head**, not
+the merge commit `actions/checkout` gives by default, because the repository tools are offered
+only on a checkout at the reviewed head (ADR-051). Wait for the Kokoro service container. Skip a
+push whose branch already has an open pull request, since that pull request's own run covers it
+(ARCHITECTURE section 4). Run the image. Upload `final.mp4` as an artifact. Post the sticky
+comment with that artifact's URL - including for a clean review, which has no video and still has
+to say the findings are gone (ADR-052).
+
+**Drafts, labels and forks.** Drafts, the `skip-video-review` label and `[skip review]` in the
+title are refused in the job's `if`, so they cost nothing. A fork's pull request is different: the
+token is read-only under `pull_request`, so the review is made and uploaded but cannot be posted,
+and the job says so once in its summary rather than failing at the end.
+`pull_request_target` is not the answer, because it would run with a writable token against a
+fork's code.
+
+**Q4: the commit comment, built and off by default.** ADR-052 moved it here because it had no
+caller. The sticky logic is now written once over a small `CommentTarget` - list, create, update -
+with a pull request's conversation and a commit's comments as its two implementations, so a push
+gets the same find-or-update behaviour. It needs `contents: write`, so `spr stage publish` posts
+one only with `--commit-comment`, and a push run without that flag says what the flag is for.
+
+**Q3: the first real post rides on the commit comment.** Publish had never met the live API
+(ADR-052), and the obstacle was that only something with a token can open a pull request. A push
+does not need one: this repository's own caller turns `commit-comments` on, so a push to a branch
+with no pull request posts a commit comment through the real endpoint, with the token Actions
+provides - the same client, the same marker, the same find-or-update path as a pull request
+comment. Whether the pull request path posts identically is then one genuine pull request away,
+and nothing has to be arranged for it.
+
+**Q2: this repository proves the workflow with `llm-provider: fake`.** There is no self-hosted
+runner here, and the analyzers alone still produce findings, a video and a comment - which is all
+the workflow orchestrates. What the model finds is `spr eval`'s business, not this workflow's.

@@ -15,10 +15,12 @@ import { GitHubError, type IssueComment } from "../../src/lib/github.js";
 import { COMMENT_MARKER } from "../../src/publish/comment.js";
 import {
   isVideoUrl,
+  pullRequestTarget,
   runPublish,
   summarizePublish,
   upsertComment,
   type CommentClient,
+  type CommentTarget,
 } from "../../src/publish/publish.js";
 import { writeVerifiedReview } from "../../src/verify/verify.js";
 import { defaultConfig, loadGolden, PR_BASE_SHA, PR_HEAD_SHA, readGoldenDiff } from "../helpers.js";
@@ -83,7 +85,10 @@ function comment(id: number, body: string): IssueComment {
   };
 }
 
-/** A client that answers from a list of comments and records what was written. */
+/**
+ * A client that answers from a list of comments and records what was written. Commit comments
+ * share the list and the log, prefixed, so a test can see which endpoint was used.
+ */
 function fakeClient(
   existing: IssueComment[] = [],
   update: (id: number) => Promise<IssueComment> = (id) => Promise.resolve(comment(id, "")),
@@ -99,8 +104,22 @@ function fakeClient(
       writes.push(`update ${String(id)} ${String(body.length)}`);
       return update(id);
     },
+    listCommitComments: () => Promise.resolve(existing),
+    createCommitComment: (_repo, _sha, body) => {
+      writes.push(`commit create ${String(body.length)}`);
+      return Promise.resolve(comment(901, body));
+    },
+    updateCommitComment: (_repo, id, body) => {
+      writes.push(`commit update ${String(id)} ${String(body.length)}`);
+      return update(id);
+    },
   };
   return { client, writes };
+}
+
+/** The pull request target, for the sticky-comment tests. */
+function prTarget(client: CommentClient): CommentTarget {
+  return pullRequestTarget(client, "acme/shop-platform", 142);
 }
 
 describe("runPublish", () => {
@@ -155,15 +174,31 @@ describe("runPublish", () => {
     expect(readFileSync(outcome.file, "utf8")).toContain("No walkthrough video was made");
   });
 
-  it("refuses to post a run that did not review a pull request, keeping comment.md", async () => {
+  it("refuses to post a run with no GitHub repository behind it, keeping comment.md", async () => {
     const local: Source = { ...PR_SOURCE, type: "local_diff", repo: null, pr_number: null };
     const runDir = runFolder({ source: local });
     const { client } = fakeClient();
     await expect(runPublish({ runDir, post: true, github: client })).rejects.toThrow(
-      `This run reviewed a local diff, not a pull request, so there is nothing to post to. ` +
-        `The comment is in ${path.join(runDir, "comment.md")}.`,
+      `This run reviewed a local diff with no GitHub repository behind it, so there is nothing ` +
+        `to post to. The comment is in ${path.join(runDir, "comment.md")}.`,
     );
     expect(existsSync(path.join(runDir, "comment.md"))).toBe(true);
+  });
+
+  it("comments on the commit for a push, but only when asked", async () => {
+    const push: Source = { ...PR_SOURCE, type: "push", pr_number: null };
+    const runDir = runFolder({ source: push });
+    const { client, writes } = fakeClient();
+
+    await expect(runPublish({ runDir, post: true, github: client })).rejects.toThrow(
+      "Pass --commit-comment to comment on the commit itself, which needs contents: write.",
+    );
+    expect(writes).toEqual([]);
+
+    const outcome = await runPublish({ runDir, post: true, github: client, commitComment: true });
+    expect(outcome.posted?.action).toBe("created");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatch(/^commit create \d+$/);
   });
 
   it("refuses to post without a token, naming the permission", async () => {
@@ -203,14 +238,14 @@ describe("upsertComment", () => {
       comment(3, `${COMMENT_MARKER}\nnewer`),
       comment(4, "thanks"),
     ]);
-    const posted = await upsertComment(client, "acme/shop-platform", 142, "body");
+    const posted = await upsertComment(prTarget(client), "body");
     expect(posted.action).toBe("updated");
     expect(writes).toEqual(["update 3 4"]);
   });
 
   it("never mistakes a quoted marker for its own comment", async () => {
     const { client, writes } = fakeClient([comment(2, `> ${COMMENT_MARKER}`)]);
-    expect((await upsertComment(client, "acme/shop-platform", 142, "body")).action).toBe("created");
+    expect((await upsertComment(prTarget(client), "body")).action).toBe("created");
     expect(writes).toEqual(["create 4"]);
   });
 
@@ -218,9 +253,7 @@ describe("upsertComment", () => {
     const { client, writes } = fakeClient([comment(3, `${COMMENT_MARKER}\nx`)], () =>
       Promise.reject(new GitHubError("GitHub refused to write comment 3.", 403)),
     );
-    expect((await upsertComment(client, "acme/shop-platform", 142, "body")).action).toBe(
-      "replaced",
-    );
+    expect((await upsertComment(prTarget(client), "body")).action).toBe("replaced");
     expect(writes).toEqual(["update 3 4", "create 4"]);
   });
 
@@ -229,7 +262,7 @@ describe("upsertComment", () => {
     const { client, writes } = fakeClient([comment(3, `${COMMENT_MARKER}\nx`)], () =>
       Promise.reject(limited),
     );
-    await expect(upsertComment(client, "acme/shop-platform", 142, "body")).rejects.toBe(limited);
+    await expect(upsertComment(prTarget(client), "body")).rejects.toBe(limited);
     expect(writes).toEqual(["update 3 4"]);
   });
 });

@@ -1,0 +1,32 @@
+# This repository reviewing itself, which is how the reusable workflow is proven (ADR-056).
+#
+# It is also the shape a service repository copies, minus `llm-provider: fake`: there is no
+# self-hosted runner here, so the analyzers review alone and the video is spoken by Kokoro. The
+# model's own quality is measured by `spr eval`, not by this.
+name: self-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["docs/**", "**/*.md"]
+  push:
+    branches-ignore: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
+
+permissions:
+  contents: write # the commit comment on a push with no pull request
+  pull-requests: write
+
+concurrency:
+  group: self-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    uses: ./.github/workflows/video-review.yml
+    with:
+      llm-provider: fake
+      commit-comments: true
+    permissions:
+      contents: write
+      pull-requests: write

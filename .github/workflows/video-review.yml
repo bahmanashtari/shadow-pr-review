@@ -1,0 +1,181 @@
+# The reusable workflow a service repository calls to get a narrated video review (ADR-056).
+# It runs the published image (ADR-053) - no Node, pnpm, Playwright or apt in the caller.
+#
+# A caller needs ten lines; see docs/cheatsheets/github-integration.md.
+# Action versions checked September 2026; verify current majors before bumping.
+name: video-review
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: The tool's image, by tag or digest.
+        type: string
+        default: ghcr.io/bahmanashtari/shadow-pr-review:edge
+      runs-on:
+        description: >-
+          The runner. A local model needs a self-hosted one with Ollama (ADR-051); a hosted
+          runner can only review with llm-provider "fake" or a hosted API key.
+        type: string
+        default: ubuntu-latest
+      llm-provider:
+        description: >-
+          Empty for the configured local model, "fake" for the deterministic analyzers alone,
+          "anthropic" with a key for the hosted API (never the default, ADR-015).
+        type: string
+        default: ""
+      kokoro-image:
+        description: The TTS service container; pin it (docs/cheatsheets/kokoro-docker.md).
+        type: string
+        default: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0
+      commit-comments:
+        description: >-
+          For a push with no pull request, comment on the commit. Needs contents: write in the
+          caller, so it is off unless asked for.
+        type: boolean
+        default: false
+      skip-label:
+        description: A label on the pull request that skips the review.
+        type: string
+        default: skip-video-review
+      timeout-minutes:
+        type: number
+        default: 30
+    secrets:
+      anthropic-api-key:
+        description: Only for llm-provider "anthropic". The pipeline needs no key by default.
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # The trigger policy of ARCHITECTURE section 4: no drafts, no opted-out pull requests, and
+    # a push only when it is not on the default branch.
+    if: >-
+      (github.event_name != 'pull_request' || (
+        github.event.pull_request.draft == false
+        && !contains(github.event.pull_request.labels.*.name, inputs.skip-label)
+        && !contains(github.event.pull_request.title, '[skip review]')
+      ))
+      && (github.event_name != 'push' || github.ref_name != github.event.repository.default_branch)
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    services:
+      kokoro:
+        image: ${{ inputs.kokoro-image }}
+        ports:
+          - 8880:8880
+
+    steps:
+      # The pull request's head, not the merge commit actions/checkout gives by default:
+      # read_file and grep_repo are offered only on a checkout at the reviewed head (ADR-051).
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # A push to a branch that already has a pull request open is covered by that pull
+      # request's own run (ARCHITECTURE section 4), so it stops here rather than reviewing the
+      # same code twice and posting in two places.
+      - name: Skip a push whose branch has an open pull request
+        id: guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          open=$(curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/pulls?state=open&head=${{ github.repository_owner }}:${{ github.ref_name }}" \
+            | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+          if [ "$open" -gt 0 ]; then
+            echo "This branch has an open pull request; its run covers this push." >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for Kokoro
+        if: steps.guard.outputs.run == 'true'
+        run: timeout 300 bash -c 'until curl -sf http://localhost:8880/health; do sleep 3; done'
+
+      # A fork's pull request gets a read-only token under `pull_request`, so the review can be
+      # made but not posted. Said once, here, rather than as a failure at the end.
+      - name: Decide whether the comment can be posted
+        id: can-post
+        if: steps.guard.outputs.run == 'true'
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$HEAD_REPO" != "${{ github.repository }}" ]; then
+            echo "This pull request comes from a fork, so the token is read-only:" \
+                 "the review will be made and uploaded, but not posted." >> "$GITHUB_STEP_SUMMARY"
+            echo "post=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "post=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Review
+        if: steps.guard.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic-api-key }}
+          SPR_LLM_PROVIDER: ${{ inputs.llm-provider }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SOURCE=(run --pr "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}")
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              # A new branch: review what it adds to the default branch.
+              BEFORE="$(git merge-base "origin/${{ github.event.repository.default_branch }}" HEAD)"
+            fi
+            SOURCE=(run --git "$BEFORE..${{ github.sha }}")
+          fi
+          docker run --rm --network host \
+            --user "$(id -u):$(id -g)" --ipc=host --shm-size=1g -e HOME=/tmp \
+            -e GITHUB_TOKEN -e ANTHROPIC_API_KEY -e SPR_LLM_PROVIDER \
+            -v "$PWD:/repo" "$IMAGE" \
+            "${SOURCE[@]}" --out runs/current --force
+
+      - name: Upload the video
+        id: upload
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: review-${{ github.sha }}
+          path: |
+            runs/current/final.mp4
+            runs/current/subtitles.srt
+            runs/current/review.json
+            runs/current/comment.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # A clean review has no video and still posts, because a pull request whose findings were
+      # fixed must stop showing them (ADR-052). The URL is ignored when there is no video.
+      - name: Post the comment
+        if: steps.guard.outputs.run == 'true' && steps.can-post.outputs.post == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          ARGS=(stage publish --run runs/current)
+          if [ -n "${ARTIFACT_URL:-}" ]; then ARGS+=(--video-url "$ARTIFACT_URL"); fi
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ inputs.commit-comments }}" = "true" ]; then
+            ARGS+=(--commit-comment)
+          fi
+          docker run --rm --network host \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp -e GITHUB_TOKEN \
+            -v "$PWD:/repo" "$IMAGE" "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"

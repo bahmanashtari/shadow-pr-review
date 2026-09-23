@@ -1,8 +1,8 @@
 /**
  * The GitHub REST calls this tool makes, over Node's own `fetch` (ADR-051).
  *
- * Five calls - read a pull request and its diff (ADR-051), then list, create and update its
- * comments (ADR-052) - do not need Octokit. `fetch` is injected, so tests hand in canned
+ * Eight calls - read a pull request and its diff (ADR-051), list, create and update its comments
+ * (ADR-052), and the same three for a commit's comments (ADR-056) - do not need Octokit. `fetch` is injected, so tests hand in canned
  * responses and never touch the network (CLAUDE.md). Every failure becomes one
  * {@link GitHubError} whose message says what to do about it: set a token, grant a permission,
  * wait for the rate limit, or check out the pull request and use `--git`.
@@ -64,6 +64,12 @@ export interface GitHubClient {
   createIssueComment(repo: string, number: number, body: string): Promise<IssueComment>;
   /** @throws GitHubError */
   updateIssueComment(repo: string, commentId: number, body: string): Promise<IssueComment>;
+  /** Every comment on one commit, oldest first. @throws GitHubError */
+  listCommitComments(repo: string, sha: string): Promise<IssueComment[]>;
+  /** @throws GitHubError */
+  createCommitComment(repo: string, sha: string, body: string): Promise<IssueComment>;
+  /** Commit comments are updated through the repository's comment endpoint. @throws GitHubError */
+  updateCommitComment(repo: string, commentId: number, body: string): Promise<IssueComment>;
 }
 
 /** A GitHub request that failed, with a message meant to be printed as it is. */
@@ -341,44 +347,84 @@ export function createGitHubClient(options: GitHubClientOptions = {}): GitHubCli
       return response.text();
     },
 
-    async listIssueComments(repo, number) {
-      const what = `pull request ${repo}#${String(number)}`;
-      const comments: IssueComment[] = [];
-      let url: string | null = repoUrl(repo, `/issues/${String(number)}/comments?per_page=100`);
-      for (let page = 0; url !== null && page < MAX_COMMENT_PAGES; page += 1) {
-        const response = await send({ url, what, repo });
-        const json = jsonOf(await response.text(), what);
-        if (!Array.isArray(json)) {
-          throw new GitHubError(`GitHub's comment list for ${what} is not a list.`, null);
-        }
-        comments.push(...json.map(parseIssueComment));
-        url = nextPage(response.headers.get("link"));
-      }
-      return comments;
+    listIssueComments(repo, number) {
+      return listComments(
+        repo,
+        `/issues/${String(number)}/comments`,
+        `pull request ${repo}#${String(number)}`,
+      );
     },
 
-    async createIssueComment(repo, number, body) {
-      const what = `a comment on pull request ${repo}#${String(number)}`;
-      const response = await send({
-        method: "POST",
-        url: repoUrl(repo, `/issues/${String(number)}/comments`),
-        what,
+    createIssueComment(repo, number, body) {
+      return writeComment(
         repo,
-        body: { body },
-      });
-      return parseIssueComment(jsonOf(await response.text(), what));
+        `/issues/${String(number)}/comments`,
+        "POST",
+        body,
+        `a comment on pull request ${repo}#${String(number)}`,
+      );
     },
 
-    async updateIssueComment(repo, commentId, body) {
-      const what = `comment ${String(commentId)} on ${repo}`;
-      const response = await send({
-        method: "PATCH",
-        url: repoUrl(repo, `/issues/comments/${String(commentId)}`),
-        what,
+    updateIssueComment(repo, commentId, body) {
+      return writeComment(
         repo,
-        body: { body },
-      });
-      return parseIssueComment(jsonOf(await response.text(), what));
+        `/issues/comments/${String(commentId)}`,
+        "PATCH",
+        body,
+        `comment ${String(commentId)} on ${repo}`,
+      );
+    },
+
+    listCommitComments(repo, sha) {
+      return listComments(repo, `/commits/${sha}/comments`, `commit ${repo}@${sha.slice(0, 7)}`);
+    },
+
+    createCommitComment(repo, sha, body) {
+      return writeComment(
+        repo,
+        `/commits/${sha}/comments`,
+        "POST",
+        body,
+        `a comment on commit ${repo}@${sha.slice(0, 7)}`,
+      );
+    },
+
+    updateCommitComment(repo, commentId, body) {
+      return writeComment(
+        repo,
+        `/comments/${String(commentId)}`,
+        "PATCH",
+        body,
+        `comment ${String(commentId)} on ${repo}`,
+      );
     },
   };
+
+  /** Every page of one comment list, following the `Link` header. */
+  async function listComments(repo: string, path: string, what: string): Promise<IssueComment[]> {
+    const comments: IssueComment[] = [];
+    let url: string | null = repoUrl(repo, `${path}?per_page=100`);
+    for (let page = 0; url !== null && page < MAX_COMMENT_PAGES; page += 1) {
+      const response = await send({ url, what, repo });
+      const json = jsonOf(await response.text(), what);
+      if (!Array.isArray(json)) {
+        throw new GitHubError(`GitHub's comment list for ${what} is not a list.`, null);
+      }
+      comments.push(...json.map(parseIssueComment));
+      url = nextPage(response.headers.get("link"));
+    }
+    return comments;
+  }
+
+  /** One comment written, created or updated. */
+  async function writeComment(
+    repo: string,
+    path: string,
+    method: "POST" | "PATCH",
+    body: string,
+    what: string,
+  ): Promise<IssueComment> {
+    const response = await send({ method, url: repoUrl(repo, path), what, repo, body: { body } });
+    return parseIssueComment(jsonOf(await response.text(), what));
+  }
 }

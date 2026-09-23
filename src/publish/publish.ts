@@ -14,15 +14,33 @@ import { FINAL_FILE } from "../composer/compose.js";
 import { readTimeline, TIMELINE_FILE } from "../director/direct.js";
 import { readIngest } from "../ingest/ingest.js";
 import { StageError } from "../lib/errors.js";
-import { GitHubError, type GitHubClient } from "../lib/github.js";
+import { GitHubError, type GitHubClient, type IssueComment } from "../lib/github.js";
 import { readReview } from "../verify/verify.js";
+import type { ReviewResult } from "../contracts/generated/review.js";
 import { COMMENT_FILE, COMMENT_MARKER, renderComment, type CommentVideo } from "./comment.js";
 
 /** The part of the GitHub client Publish uses. */
 export type CommentClient = Pick<
   GitHubClient,
-  "listIssueComments" | "createIssueComment" | "updateIssueComment"
+  | "listIssueComments"
+  | "createIssueComment"
+  | "updateIssueComment"
+  | "listCommitComments"
+  | "createCommitComment"
+  | "updateCommitComment"
 >;
+
+/**
+ * Where a comment goes, as three calls. A pull request's conversation and a commit's comments
+ * are different endpoints with the same shape, so the sticky logic is written once (ADR-056).
+ */
+export interface CommentTarget {
+  /** For the CLI line: "pull request acme/shop#142" or "commit acme/shop@abc1234". */
+  readonly what: string;
+  list(): Promise<IssueComment[]>;
+  create(body: string): Promise<IssueComment>;
+  update(id: number, body: string): Promise<IssueComment>;
+}
 
 /** Options for {@link runPublish}. */
 export interface RunPublishOptions {
@@ -31,6 +49,12 @@ export interface RunPublishOptions {
   videoUrl?: string;
   /** Post to the pull request. False renders `comment.md` only, which is all `spr run` does. */
   post: boolean;
+  /**
+   * Post on the commit when the run reviewed a push rather than a pull request. Off by default:
+   * it needs `contents: write`, and a branch with an open pull request is covered by that
+   * (ARCHITECTURE section 4).
+   */
+  commitComment?: boolean;
   /** Needed only to post; undefined means there is no token. */
   github?: CommentClient;
 }
@@ -73,20 +97,15 @@ export function isVideoUrl(value: string): boolean {
  * the same limit.
  * @throws GitHubError
  */
-export async function upsertComment(
-  github: CommentClient,
-  repo: string,
-  pr: number,
-  body: string,
-): Promise<Posted> {
-  const comments = await github.listIssueComments(repo, pr);
+export async function upsertComment(target: CommentTarget, body: string): Promise<Posted> {
+  const comments = await target.list();
   const ours = comments.filter((c) => c.body.startsWith(COMMENT_MARKER)).at(-1);
   if (ours === undefined) {
-    const created = await github.createIssueComment(repo, pr, body);
+    const created = await target.create(body);
     return { action: "created", url: created.htmlUrl };
   }
   try {
-    const updated = await github.updateIssueComment(repo, ours.id, body);
+    const updated = await target.update(ours.id, body);
     return { action: "updated", url: updated.htmlUrl };
   } catch (error) {
     const refused =
@@ -94,9 +113,29 @@ export async function upsertComment(
       !error.rateLimited &&
       (error.status === 403 || error.status === 404);
     if (!refused) throw error;
-    const created = await github.createIssueComment(repo, pr, body);
+    const created = await target.create(body);
     return { action: "replaced", url: created.htmlUrl };
   }
+}
+
+/** The pull request's conversation. */
+export function pullRequestTarget(github: CommentClient, repo: string, pr: number): CommentTarget {
+  return {
+    what: `pull request ${repo}#${String(pr)}`,
+    list: () => github.listIssueComments(repo, pr),
+    create: (body) => github.createIssueComment(repo, pr, body),
+    update: (id, body) => github.updateIssueComment(repo, id, body),
+  };
+}
+
+/** The reviewed commit itself, for a push with no pull request behind it. */
+export function commitTarget(github: CommentClient, repo: string, sha: string): CommentTarget {
+  return {
+    what: `commit ${repo}@${sha.slice(0, 7)}`,
+    list: () => github.listCommitComments(repo, sha),
+    create: (body) => github.createCommitComment(repo, sha, body),
+    update: (id, body) => github.updateCommitComment(repo, id, body),
+  };
 }
 
 /** The video this review has, if it has one: findings to explain, and a composed file. */
@@ -140,20 +179,9 @@ export async function runPublish(options: RunPublishOptions): Promise<PublishOut
   };
   if (!post) return outcome;
 
-  const { type, repo, pr_number: pr } = review.source;
-  if (
-    type !== "pull_request" ||
-    repo === null ||
-    repo === undefined ||
-    pr === null ||
-    pr === undefined
-  ) {
-    throw new StageError(
-      "publish",
-      `This run reviewed a ${type.replace("_", " ")}, not a pull request, so there is nothing to ` +
-        `post to. The comment is in ${file}.`,
-    );
-  }
+  // Where it would go is decided first: a run with nowhere to post says so whether or not a
+  // token is set, because a token would not help it.
+  const target = targetFor(review.source, options.commitComment === true, file);
   if (github === undefined) {
     throw new StageError(
       "publish",
@@ -161,11 +189,41 @@ export async function runPublish(options: RunPublishOptions): Promise<PublishOut
     );
   }
   try {
-    return { ...outcome, posted: await upsertComment(github, repo, pr, body) };
+    return { ...outcome, posted: await upsertComment(target(github), body) };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     throw new StageError("publish", `${message} The comment is in ${file}.`, { cause });
   }
+}
+
+/**
+ * Where this run's comment belongs: the pull request it reviewed, or the commit a push
+ * reviewed when that was asked for. Returns a function of the client, so the destination can be
+ * settled before a token is demanded.
+ * @throws StageError naming `comment.md` when there is nowhere to post.
+ */
+function targetFor(
+  source: ReviewResult["source"],
+  commitComment: boolean,
+  file: string,
+): (github: CommentClient) => CommentTarget {
+  const { type, repo, pr_number: pr, head_sha: head } = source;
+  if (type === "pull_request" && repo != null && pr != null) {
+    return (github) => pullRequestTarget(github, repo, pr);
+  }
+  if (type === "push" && repo != null && head != null) {
+    if (commitComment) return (github) => commitTarget(github, repo, head);
+    throw new StageError(
+      "publish",
+      `This run reviewed a push, not a pull request. Pass --commit-comment to comment on the ` +
+        `commit itself, which needs contents: write. The comment is in ${file}.`,
+    );
+  }
+  throw new StageError(
+    "publish",
+    `This run reviewed a ${type.replace("_", " ")} with no GitHub repository behind it, so ` +
+      `there is nothing to post to. The comment is in ${file}.`,
+  );
 }
 
 /** One or two lines for the CLI. */

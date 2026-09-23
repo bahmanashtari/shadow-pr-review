@@ -5,123 +5,50 @@
 
 ## Workflow
 
+Built, not sketched: `.github/workflows/video-review.yml` is the reusable workflow, and
+`.github/workflows/self-review.yml` is this repository calling it on its own pull requests
+(ADR-056). A service repository needs only the caller:
+
 ```yaml
-# .github/workflows/shadow-pr-review.yml
-name: shadow-pr-review
+# .github/workflows/video-review.yml in the service repository
+name: video-review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches-ignore: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: spr-${{ github.event.pull_request.number || github.ref }}
+  group: video-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: >-
-      (github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        && !contains(github.event.pull_request.labels.*.name, 'skip-video-review'))
-      || github.event_name == 'push'
-    # The model needs a machine that can hold it: a self-hosted runner on a dedicated team
-    # machine running Ollama (ADR-051). A hosted runner for a private repository has 2 CPUs and
-    # 8 GB. Self-hosted runners are for private repositories only.
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    services:
-      kokoro:
-        image: ghcr.io/remsky/kokoro-fastapi-cpu:latest   # pin a tag
-        ports:
-          - 8880:8880
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          # On pull_request the default is the test merge commit. read_file and grep_repo are
-          # offered only on a checkout at the reviewed head (ADR-051), so ask for the head.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Skip push if the branch has an open PR
-        if: github.event_name == 'push'
-        id: prcheck
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          count=$(gh pr list --head "${GITHUB_REF_NAME}" --state open --json number --jq 'length')
-          echo "has_pr=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v4
-        if: steps.prcheck.outputs.has_pr != 'true'
-        with:
-          node-version: 22
-
-      - name: Set up tooling
-        if: steps.prcheck.outputs.has_pr != 'true'
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium
-
-      - name: Wait for Kokoro
-        if: steps.prcheck.outputs.has_pr != 'true'
-        run: timeout 240 bash -c 'until curl -sf http://localhost:8880/health; do sleep 3; done'
-
-      - name: Run review (PR)
-        if: github.event_name == 'pull_request'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          pnpm spr run --pr ${{ github.event.pull_request.number }} \
-            --repo ${{ github.repository }} --out runs/current
-
-      - name: Run review (push)
-        if: github.event_name == 'push' && steps.prcheck.outputs.has_pr != 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          BEFORE="${{ github.event.before }}"
-          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE="$(git merge-base origin/main HEAD)"   # new branch: diff against main
-          fi
-          pnpm spr run --git "$BEFORE..${{ github.sha }}" --out runs/current
-
-      - name: Upload video
-        if: steps.prcheck.outputs.has_pr != 'true'
-        id: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: review-video-${{ github.sha }}
-          path: |
-            runs/current/final.mp4
-            runs/current/subtitles.srt
-            runs/current/review.json
-          retention-days: 30
-
-      - name: Post sticky PR comment
-        if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
-        # The pull request comes from runs/current/review.json. Without a video (a clean review),
-        # the URL is ignored and the comment says there were no findings (ADR-052).
-        run: pnpm spr stage publish --run runs/current --video-url "$ARTIFACT_URL"
+    uses: bahmanashtari/shadow-pr-review/.github/workflows/video-review.yml@main
+    with:
+      # The model needs a machine that can hold it (ADR-051). Without one:
+      # llm-provider: fake, which reviews with the deterministic analyzers alone.
+      runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
 ```
 
-## Running it from your service repositories
+The reusable workflow's inputs: `image` (default `ghcr.io/bahmanashtari/shadow-pr-review:edge`),
+`runs-on`, `llm-provider`, `kokoro-image`, `commit-comments`, `skip-label` and `timeout-minutes`;
+its one optional secret is `anthropic-api-key`, for the opt-in hosted model. What it does, in
+order: check out **the pull request's head** (not the merge commit, ADR-051), wait for the Kokoro
+service container, skip a push whose branch already has an open pull request, run the image, upload
+`final.mp4` as an artifact, and post the sticky comment with that artifact's URL.
 
-The workflow above lives in the tool's own repo for development. For your service repos,
-publish the tool as a Docker image (Playwright Node base + ffmpeg + built `dist/`) and
-use it from a short workflow, so services need no Node setup for the tool:
+## Running the image directly
+
+The caller above is the normal route. This is what it does inside, and what to copy if a
+repository would rather run the image itself than call the reusable workflow:
 
 ```yaml
       - name: Video review
@@ -136,8 +63,9 @@ use it from a short workflow, so services need no Node setup for the tool:
 
 `--network host` lets the container reach the Kokoro service on `localhost:8880`. The image's
 working directory is already `/repo`; `--user` keeps the run folder owned by the runner, and
-Chromium needs `--ipc=host --shm-size=1g` (ADR-053).
-A composite or reusable workflow (`workflow_call`) can wrap all of this later.
+Chromium needs `--ipc=host --shm-size=1g` (ADR-053). Posting is a second `docker run`, after the
+artifact upload that gives the video its URL:
+`stage publish --run runs/current --video-url "$ARTIFACT_URL"` (ADR-052).
 
 ## Sticky comment
 

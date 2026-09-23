@@ -162,8 +162,8 @@ describe("spr CLI", () => {
     );
     expect(process.exitCode).toBe(1);
     expect(err).toEqual([
-      `spr: [publish] This run reviewed a local diff, not a pull request, so there is nothing ` +
-        `to post to. The comment is in ${path.join(runDir, "comment.md")}.`,
+      `spr: [publish] This run reviewed a local diff with no GitHub repository behind it, so ` +
+        `there is nothing to post to. The comment is in ${path.join(runDir, "comment.md")}.`,
     ]);
   });
 
@@ -216,7 +216,7 @@ describe("spr CLI", () => {
   it("stage refuses publish's options on other stages", async () => {
     await run("stage", "direct", "--run", tempDir(), "--dry-run");
     expect(process.exitCode).toBe(1);
-    expect(err.join("\n")).toContain("--video-url and --dry-run go with publish");
+    expect(err.join("\n")).toContain("--video-url, --dry-run and --commit-comment go with publish");
   });
 
   it("a clean run renders the no-findings comment and exits 0 without a video", async () => {
