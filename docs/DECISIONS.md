@@ -2582,3 +2582,25 @@ command locally.
 **Q2: this repository proves the workflow with `llm-provider: fake`.** There is no self-hosted
 runner here, and the analyzers alone still produce findings, a video and a comment - which is all
 the workflow orchestrates. What the model finds is `spr eval`'s business, not this workflow's.
+
+**Publish has now met the live API.** On the fourth attempt, a push to `spr-live-post-check` ran
+the workflow through to the end and `github-actions[bot]` posted
+[this commit comment](https://github.com/bahmanashtari/shadow-pr-review/commit/a1e3c9b31c8a49d508f1a30ea49f518b62dde811#commitcomment-201720912):
+the marker, two findings with permalinks at the reviewed commit, a link to the uploaded video
+(0:22), and each finding's reasoning and fix in a collapsed section - rendered by GitHub exactly
+as the unit tests said it would be. Ninety seconds of runner time, with `llm-provider: fake` and
+Kokoro as a service container. What is proven is the create path, end to end, with the token
+Actions provides; the update path is covered by tests and will be exercised by the first pull
+request, where every push updates the same comment. The branch is left in place because the
+comment hangs off its commit; `spr-publish-test`, which ADR-052 pushed and nothing ever used, is
+deleted.
+
+**Three runs were spent on defects, and a fourth on being unable to see them**, which is the part
+worth carrying forward. A failed job's log needs admin rights on the repository, job summaries are
+not served by any API, and a failed step's annotation says only "exit code 1" - so from outside,
+a failing workflow is mute. Both docker steps now pipe their output through
+`.github/report-tool-output.sh`, which writes the tail to the job summary and, on failure, emits
+an `::error::` annotation, which the checks API serves to anyone. The three defects it would have
+named at once: no git in the image, git refusing the mounted checkout's ownership, and - after a
+force-push - `github.event.before` naming a commit the clone does not have, which now falls back
+to what the branch adds to the default branch.
