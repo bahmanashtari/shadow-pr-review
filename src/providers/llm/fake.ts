@@ -21,6 +21,8 @@ export interface FakeProviderOptions {
   costPerCallUsd?: number | null;
   /** Keep answering with the last turn instead of running out. */
   repeatLastTurn?: boolean;
+  /** Behave like Ollama, whose schema constraint silences tools (ADR-060). Default false. */
+  schemaSilencesTools?: boolean;
 }
 
 /** Builds a plain text response, the common case in tests. */
@@ -50,6 +52,7 @@ export class FakeLlmProvider implements LlmProvider {
   readonly name = "fake" as const;
   readonly model: string;
   readonly contextTokens: number;
+  readonly schemaSilencesTools: boolean;
   /** Every request this provider received, in order. */
   readonly requests: LlmRequest[] = [];
 
@@ -64,6 +67,7 @@ export class FakeLlmProvider implements LlmProvider {
     this.contextTokens = options.contextTokens ?? 100_000;
     this.costPerCallUsd = options.costPerCallUsd === undefined ? 0 : options.costPerCallUsd;
     this.repeatLastTurn = options.repeatLastTurn ?? false;
+    this.schemaSilencesTools = options.schemaSilencesTools ?? false;
   }
 
   /** How many times the model was actually called (a cache hit never reaches here). */

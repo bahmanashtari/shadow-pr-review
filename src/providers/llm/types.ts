@@ -112,6 +112,12 @@ export interface LlmProvider {
   readonly model: string;
   /** Context limit of this model in tokens; budgets are checked against it (ADR-015). */
   readonly contextTokens: number;
+  /**
+   * True when constraining the answer to a schema makes a tool call impossible, as on Ollama:
+   * the grammar only admits the answer, so a model offered tools can never call one (ADR-060).
+   * The loop then offers tools unconstrained and asks for the answer in a call of its own.
+   */
+  readonly schemaSilencesTools: boolean;
   complete(request: LlmRequest, signal?: AbortSignal): Promise<LlmResponse>;
   /**
    * Cost of a call in USD, or null when this model's price is unknown.

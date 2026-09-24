@@ -82,7 +82,13 @@ crossing a gap in the diff would fail `HunkIndex.hasRange` and be dropped.
   listed as already reported in the `user` message beside the diff (ADR-049).
 - Tools (read-only): `list_changed_files` and `get_diff_hunk(file)` always;
   `read_file(path, start, end)` and `grep_repo(pattern)` only when the run has a checkout,
-  refusing paths that escape it.
+  refusing paths that escape it. **On Ollama a schema constraint makes a tool call impossible**
+  - `format` is a grammar over the whole reply - so until ADR-060 no Reviewer had ever called a
+  tool: zero calls in 270 traces. With a checkout the Reviewer now looks first: each turn offers
+  the tools unconstrained, and once it stops calling them the answer is asked for exactly as it
+  always was. Without a checkout the tools only repeat the prompt, so nothing changes and no call
+  is added. The prompt with a checkout also tells the Reviewer to read code before asserting
+  what it does (roadmap step 19). The default model does neither yet.
 - Output: `review.raw.json` (findings without `verification`), capped at
   `review.maxRawFindings`. A budget stop is not an error: the analyzer findings alone still
   make a valid review.

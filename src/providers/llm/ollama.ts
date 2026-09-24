@@ -123,6 +123,12 @@ export class OllamaProvider implements LlmProvider {
   readonly name = "ollama" as const;
   readonly model: string;
   readonly contextTokens: number;
+  /**
+   * `format` becomes a grammar the whole reply must match, and a tool call is not an answer, so
+   * with both set the model can only answer - measured: asked to read a file before answering, it
+   * invented the file's first line with `format` and called `read_file` without it (ADR-060).
+   */
+  readonly schemaSilencesTools = true;
 
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;

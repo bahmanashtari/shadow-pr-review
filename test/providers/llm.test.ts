@@ -73,6 +73,15 @@ describe("OllamaProvider", () => {
     expect(provider.buildBody(REQUEST).options).not.toHaveProperty("seed");
   });
 
+  it("declares that its schema constraint silences tools, and sends no format without one", () => {
+    // ADR-060: `format` is a grammar over the whole reply, so a tool call cannot be produced.
+    const provider = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });
+    expect(provider.schemaSilencesTools).toBe(true);
+    const unconstrained: LlmRequest = { ...REQUEST };
+    delete unconstrained.outputSchema;
+    expect(provider.buildBody(unconstrained)).not.toHaveProperty("format");
+  });
+
   it("thinks by default and can be told not to", () => {
     // ADR-021: thinking is equal on recall and better on grounding, at 15x the wall clock.
     const on = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });

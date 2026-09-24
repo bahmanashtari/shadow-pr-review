@@ -303,6 +303,11 @@ per seed as well, `runs/eval/<model>/seed-<n>/<sample>`.
   validation error, max 2 retries, then fail the stage with a clear message.
 - Tools are read-only: `get_diff_hunk`, `read_file` (head revision, size-capped),
   `grep_repo` (result-capped), `list_changed_files`. No shell, no writes, no network.
+- On Ollama the answer's schema is a grammar, and a model constrained by it can never call a
+  tool (ADR-060). A provider says so with `schemaSilencesTools`. An agent that asks for
+  `lookBeforeAnswering` - the Reviewer, when it has a checkout - is offered its tools
+  unconstrained first, and the answer is then asked for as it always was. It costs one call, so
+  nothing else asks.
 - Budgets per run (configurable): input tokens, output tokens, tool calls, agent steps,
   wall-clock. Hitting a budget stops the agent and keeps partial, valid results.
 - Cache LLM calls by sha256(provider, model, prompt, tools, params). Cache TTS by

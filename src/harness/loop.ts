@@ -43,6 +43,12 @@ export interface RunAgentOptions {
   temperature: number;
   /** Seeds the sampler; only `spr eval --seed` sets it (ADR-059). */
   seed?: number;
+  /**
+   * Make the tools reachable on a provider whose schema constraint would silence them, at the
+   * price of one more call per answer (ADR-060). Worth it only when the tools can show what the
+   * prompt does not - a checkout - so the Reviewer asks for it then and nothing else does.
+   */
+  lookBeforeAnswering?: boolean;
   /** Repair attempts after a failed validation. */
   maxRetries: number;
 }
@@ -89,16 +95,28 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     budget.addStep();
     steps += 1;
 
+    // Where a schema constraint would silence the tools (Ollama, ADR-060), a turn that offers them
+    // goes out unconstrained, so the model can look before it answers.
+    const looksFirst =
+      options.lookBeforeAnswering === true &&
+      (tools?.size ?? 0) > 0 &&
+      options.provider.schemaSilencesTools;
     const request: LlmRequest = {
       system: options.system,
       messages,
       tools: tools?.definitions() ?? [],
-      outputSchema,
+      ...(looksFirst ? {} : { outputSchema }),
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
       ...(options.seed === undefined ? {} : { seed: options.seed }),
     };
-    const response = await callModel(options, request, cache, steps);
+    let response = await callModel(options, request, cache, steps);
+    if (looksFirst && toolUsesOf(response.content).length === 0) {
+      // Done looking. The unconstrained reply is set aside and the answer asked for exactly as it
+      // always was - tools listed, schema enforced - so a model that read nothing is asked the
+      // question it was always asked, and one that read something has it in the conversation.
+      response = await callModel(options, { ...request, outputSchema }, cache, steps);
+    }
 
     // The model wants tools: run them all, answer in one user message, and continue.
     const toolUses = toolUsesOf(response.content);

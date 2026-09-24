@@ -2807,3 +2807,76 @@ proves by cache hits that nothing moved.
 gains `seed` and `temperature` on a run plus the `Spread`, `Range` and `UnstableLabel` definitions;
 the generated types are regenerated. CLAUDE.md and ARCHITECTURE section 3 describe `--seed`.
 Samples 07 and 09 are fixed, and `golden/README.md` says so. Step 19 can now be argued.
+
+## ADR-060: The Reviewer could not look, and now can - and still does not (accepted, September 2026)
+
+**Context.** Roadmap step 19, taken under Bahman's standing instruction to take a plan's
+recommendation and record it. The tool's one real-world false positive, nestjs/nest#17816 (ADR-051),
+claims how often a test's producer stub is called, reasoning from a method body the diff does not
+show. ADR-054 re-ran it from a checkout at the pull request's head, found zero tool calls, and
+concluded the Reviewer "never looked". The plan (`docs/plans/m3-step19-read-before-asserting.md`)
+recommended a prompt instruction to read before asserting, shown only when a checkout exists so
+the golden set's prompts would not move.
+
+**Two things the plan found before any code.** The only sentence against guessing about unseen
+code was in the *no-checkout* branch of the prompt, so a run that could read the repository was
+told less than one that could not. And ADR-054's remark that the Verifier "has the same tools"
+is wrong: `judgeFindings` offers the Verifier no tools at all.
+
+**How often the false positive happens.** This is step 16's instrument, used for the first time:
+the unchanged prompt run five times on the pull request from the checkout. The cached greedy
+answer that ADR-054 studied reports it. A cold greedy re-run and three seeds at 0.2 report
+nothing at all. **One run in five** - so the false positive that step 19 exists for is a tip, not
+the model's settled view. No single run can show it is gone.
+
+**The prompt change alone did nothing measurable.** It was run four times: greedy and three seeds.
+Seed 1 repeated the claim, and seed 3 made a new one of the same kind: "type mismatch: setting
+promise property to null", about `this.initialized`. That property is declared
+`Promise<void> | null` at line 62, which the diff does not show and one `read_file` would have.
+Tool calls: none, in any of the four.
+
+**Because no tool call had ever been possible.** With Ollama, `format` makes the answer's schema a
+grammar over the whole reply, and a tool call is not an answer. A direct probe settled it. Asked to
+read a file before answering, with `read_file` offered, the model invented the file's first line
+under `format`, and called `read_file` straight away without it - twice each. **Across all 270
+traces on disk there is not one tool call.** `get_diff_hunk`, `list_changed_files`, and on a
+checkout `read_file` and `grep_repo` have been unreachable on the default provider since the
+Reviewer was built. ADR-054's "the Reviewer never looked" should have read "could not look".
+
+**Decision: make the tools reachable, where reaching them can matter.**
+
+- A provider declares `schemaSilencesTools`: Ollama yes, Anthropic no, since its structured outputs
+  constrain only the final text. The fake is configurable.
+- `runAgent` takes `lookBeforeAnswering`. When that and the provider flag are both set, each turn
+  offers the tools **without** the schema. When the model stops calling them, its reply is set
+  aside and the answer is asked for **exactly as it always was** - tools listed, schema enforced -
+  with whatever it read in the conversation. A model that reads nothing is therefore asked the
+  identical question, and its answer can legitimately come from the cache.
+- Only the Reviewer asks for it, and only when it has a checkout. Without one, `get_diff_hunk` and
+  `list_changed_files` only repeat what the prompt already holds - the whole diff, and a truncated
+  file is gone from `ingest.json` too - so paying a call to reach them buys nothing. **The golden
+  set is therefore untouched by construction.** The warm greedy run and the three seeds, re-run
+  with both changes in place, were served 36 answers of 36 from the cache, with an identical score.
+- The prompt instruction is kept, as parity with the no-checkout branch, not credited with a gain.
+
+**Measured with both, on the pull request: still no tool call**, in four runs of four. The look
+turns themselves are the telling part. The greedy one concluded, unconstrained, that nothing was
+wrong, and asserted nothing about unseen code. Seed 1 wrote "it is called twice (once per
+`initializeClientAndConnections` invocation)" - a method whose body the diff cuts off after its
+first line - with `read_file` reachable and an instruction to read before asserting. The final
+answers equal the prompt-only runs', because the model read nothing and so was asked the same
+question.
+
+**So the mechanism was broken and is fixed, and the remaining cause is the model's habit.** The
+fix costs one Reviewer call on a run with a checkout - 77 seconds for the greedy look turn here, on
+top of a review of one to three minutes. It is kept despite no measured gain, for three reasons.
+A tool offered to the model that it cannot possibly call is a defect. Any model that does read can
+now. And the cost falls only on the runs where reading can find something. Turning it off is one
+line in `runReview`.
+
+**Consequences.** `LlmProvider` gains `schemaSilencesTools`, and `RunAgentOptions` gains
+`lookBeforeAnswering`. ARCHITECTURE and CLAUDE.md state the rule. The false-positive class is not
+closed, and the golden set cannot measure it, because no sample has a checkout. Roadmap step 21
+takes it up from the other side: with a checkout, *show* the Reviewer the changed files at the head
+revision instead of *offering* to. Both false positives here rested on code in the file the pull
+request itself changed.

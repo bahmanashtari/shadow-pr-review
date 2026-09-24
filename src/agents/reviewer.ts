@@ -144,6 +144,8 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
     budget,
     tracer,
     tools,
+    // Only a checkout's tools can show the Reviewer what its prompt does not (ADR-060).
+    lookBeforeAnswering: options.repoRoot !== undefined,
     ...(options.cache === undefined ? {} : { cache: options.cache }),
     maxOutputTokens: config.budgets.outputTokens,
     temperature: config.llm.temperature,

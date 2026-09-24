@@ -189,6 +189,21 @@ describe("buildReviewerPrompt", () => {
     expect(buildReviewerPrompt({ hasRepository: true })).not.toContain("You have the diff only");
   });
 
+  it("tells a run with a checkout to read code before asserting what it does (step 19)", () => {
+    const withCheckout = buildReviewerPrompt({ hasRepository: true });
+    expect(withCheckout).toContain("read that code with read_file, or find it\nwith grep_repo");
+    expect(withCheckout).toContain("A claim about code you have not read is a guess");
+    // The golden set is diff-only, so its prompt must not move: that is what lets the warm
+    // `spr eval` prove the change has no side effect there, every answer served from the cache.
+    expect(
+      buildReviewerPrompt({ hasRepository: false }).endsWith(
+        "# What you can see\n\nYou have the diff only. There is no checkout, so you cannot read " +
+          "whole files or search the repository. Review what the diff shows and do not guess " +
+          "about code you have not been given.",
+      ),
+    ).toBe(true);
+  });
+
   it("contains no diff content", () => {
     expect(buildReviewerPrompt()).not.toContain("this.broker.emit");
   });
@@ -382,6 +397,27 @@ describe("runReview", () => {
     expect(user).toContain("Application layer depends directly on the ORM");
     // The system prompt is built from repository files only (roadmap step 2).
     expect(request?.system).toBe(buildReviewerPrompt({ hasRepository: false }));
+  });
+
+  it("looks before answering only with a checkout, where the tools see past the diff", async () => {
+    // ADR-060: Ollama's schema constraint silences tools, and paying a call to reach them is
+    // worth it only for read_file and grep_repo - the other two repeat what the prompt holds.
+    const answer = fakeText(JSON.stringify({ summary: "s", findings: [] }));
+    const run = async (repoRoot?: string) => {
+      const turns = repoRoot === undefined ? [answer] : [fakeText("Nothing to read."), answer];
+      const provider = new FakeLlmProvider(turns, { schemaSilencesTools: true });
+      await runReview({
+        ingest: ingestOf("sample-01-order-outbox"),
+        provider,
+        config: defaultConfig(),
+        budget: new Budget(defaultConfig().budgets),
+        tracer: new Tracer(),
+        ...(repoRoot === undefined ? {} : { repoRoot }),
+      });
+      return provider.requests.map((r) => r.outputSchema !== undefined);
+    };
+    expect(await run(tempDir())).toEqual([false, true]);
+    expect(await run()).toEqual([true]);
   });
 
   it("keeps a hostile file path out of the system prompt (roadmap step 2)", async () => {

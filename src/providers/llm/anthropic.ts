@@ -121,6 +121,8 @@ function fromStopReason(reason: Anthropic.Message["stop_reason"]): StopReason {
 /** Calls the Anthropic Messages API. */
 export class AnthropicProvider implements LlmProvider {
   readonly name = "anthropic" as const;
+  /** Structured outputs constrain the final text only; tool calls pass through (ADR-060). */
+  readonly schemaSilencesTools = false;
   readonly model: string;
   readonly contextTokens: number;
 

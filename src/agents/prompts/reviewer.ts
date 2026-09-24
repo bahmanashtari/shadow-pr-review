@@ -38,17 +38,31 @@ export function buildReviewerPrompt(options: ReviewerPromptOptions = {}): string
     HOW_TO_RATE_SEVERITY,
   ];
 
-  if (!hasRepository) {
-    sections.push(
-      "# What you can see\n\n" +
-        "You have the diff only. There is no checkout, so you cannot read whole files or " +
-        "search the repository. Review what the diff shows and do not guess about code you " +
-        "have not been given.",
-    );
-  }
+  sections.push(hasRepository ? WITH_A_CHECKOUT : WITHOUT_A_CHECKOUT);
 
   return sections.join("\n\n");
 }
+
+/** Byte for byte what a diff-only run has always been told, so the golden set's prompts do not move. */
+const WITHOUT_A_CHECKOUT =
+  "# What you can see\n\n" +
+  "You have the diff only. There is no checkout, so you cannot read whole files or " +
+  "search the repository. Review what the diff shows and do not guess about code you " +
+  "have not been given.";
+
+/**
+ * Roadmap step 19. Until this existed, the one sentence against guessing about unseen code was in
+ * the no-checkout branch only, so a run that could read the repository was told less than one that
+ * could not - and the tool's real false positive (ADR-054) asserted what a method it never opened
+ * does, with `read_file` and `grep_repo` offered and neither called.
+ */
+const WITH_A_CHECKOUT = `# What you can see
+
+You have the diff and a checkout of the repository at the change's head revision. The diff shows
+only the lines that changed. Before a finding says what code outside the diff does - a method
+body, a caller, a constructor, a configuration value - read that code with read_file, or find it
+with grep_repo. A claim about code you have not read is a guess: read it first, or leave the
+finding out.`;
 
 /**
  * What the analyzers already reported, for the `user` message beside the diff.

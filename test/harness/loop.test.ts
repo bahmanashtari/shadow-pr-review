@@ -223,6 +223,80 @@ describe("runAgent", () => {
     expect(provider.requests[0]?.outputSchema).toBe(SCHEMA);
   });
 
+  describe("a provider whose schema constraint silences tools (Ollama, ADR-060)", () => {
+    const echo = () =>
+      new ToolRegistry([
+        {
+          definition: {
+            name: "echo",
+            description: "echo",
+            inputSchema: { type: "object", properties: { text: { type: "string" } } },
+          },
+          run: (input) => `echoed ${String(input.text)}`,
+        },
+      ]);
+
+    it("offers the tools unconstrained, then asks for the answer as it always was", async () => {
+      const provider = new FakeLlmProvider(
+        [
+          fakeToolUse("echo", { text: "a" }),
+          fakeText("I have read what I needed."),
+          fakeText('{"answer":"after looking"}'),
+        ],
+        { schemaSilencesTools: true },
+      );
+      const result = await runAgent(
+        options(provider, { tools: echo(), lookBeforeAnswering: true }),
+      );
+
+      expect(result.value).toEqual({ answer: "after looking" });
+      const [look, lookAgain, answer] = provider.requests;
+      // Looking: tools on offer and no schema, so a tool call is possible at all.
+      expect(look?.tools.map((t) => t.name)).toEqual(["echo"]);
+      expect(look?.outputSchema).toBeUndefined();
+      expect(lookAgain?.outputSchema).toBeUndefined();
+      // Answering: the request it was always sent, with what it read in the conversation.
+      expect(answer?.outputSchema).toBe(SCHEMA);
+      expect(answer?.tools.map((t) => t.name)).toEqual(["echo"]);
+      expect(answer?.messages).toEqual(lookAgain?.messages);
+      expect(JSON.stringify(answer?.messages)).toContain("echoed a");
+      // The prose reply that ended the looking is not part of the conversation.
+      expect(JSON.stringify(answer?.messages)).not.toContain("I have read what I needed");
+    });
+
+    it("asks a model that looks at nothing the question it was always asked", async () => {
+      const provider = new FakeLlmProvider(
+        [fakeText("Nothing to read."), fakeText('{"answer":"ok"}')],
+        { schemaSilencesTools: true },
+      );
+      const tools = echo();
+      await runAgent(options(provider, { tools, lookBeforeAnswering: true }));
+
+      const always = new FakeLlmProvider([fakeText('{"answer":"ok"}')]);
+      await runAgent(options(always, { tools }));
+      // Identical request, so an answer cached before the tools could be reached still applies.
+      expect(provider.requests[1]).toEqual(always.requests[0]);
+    });
+
+    it("changes nothing for an agent with no tools", async () => {
+      const provider = new FakeLlmProvider([fakeText('{"answer":"ok"}')], {
+        schemaSilencesTools: true,
+      });
+      await runAgent(options(provider, { lookBeforeAnswering: true }));
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]?.outputSchema).toBe(SCHEMA);
+    });
+
+    it("changes nothing unless the agent asks to look, since the call costs a whole answer", async () => {
+      const provider = new FakeLlmProvider([fakeText('{"answer":"ok"}')], {
+        schemaSilencesTools: true,
+      });
+      await runAgent(options(provider, { tools: echo() }));
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]?.outputSchema).toBe(SCHEMA);
+    });
+  });
+
   it("passes a seed through to every call, and none when there is none", async () => {
     const seeded = new FakeLlmProvider([fakeText("not json"), fakeText('{"answer":"ok"}')]);
     await runAgent(options(seeded, { temperature: 0.2, seed: 3 }));
