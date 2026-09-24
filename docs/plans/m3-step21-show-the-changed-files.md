@@ -1,6 +1,8 @@
 # Plan: Milestone 3, step 21 (show the changed files, instead of offering to)
 
-Status: **proposed**, written on 24 September 2026 at the end of step 19 (ADR-060). Read ADR-051,
+Status: **done** on 24 September 2026 (ADR-061). Written at the end of step 19 (ADR-060) and taken
+the same day under Bahman's standing instruction to take a plan's recommendation and record it:
+the whole changed file, as recommended, capped at 20 KB per file and 32 KB in total. Read ADR-051,
 ADR-054, ADR-059 and ADR-060 first.
 
 ## 1. What step 19 left

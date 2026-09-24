@@ -2880,3 +2880,57 @@ closed, and the golden set cannot measure it, because no sample has a checkout. 
 takes it up from the other side: with a checkout, *show* the Reviewer the changed files at the head
 revision instead of *offering* to. Both false positives here rested on code in the file the pull
 request itself changed.
+
+## ADR-061: Show the changed files instead of offering them (accepted, September 2026)
+
+**Context.** Roadmap step 21, planned at the end of step 19 and taken under Bahman's standing
+instruction to take a plan's recommendation and record it. ADR-060 left one thing standing: with
+`read_file` reachable and an instruction to read first, the default model still asserted what
+unread code does. Both of its false positives on nestjs/nest#17816 rested on code in
+`client-kafka.ts`, a file the pull request itself changed. One was a method body the hunk cuts
+off, the other a declaration above the first hunk.
+
+**Decision.** With a checkout, and only then, the Reviewer's `user` message carries each added,
+modified or renamed file at the head revision after the diff (`src/agents/head-files.ts`). Each
+file is numbered like the diff, under a heading that says it is for reading only and that findings
+cite the diff. Files are capped at 20 KB each and 32 KB together, which is about 9,000 tokens in a
+32,768-token context. The smallest files get their share first, so a large file is the one cut, at
+a line boundary and with a note. Files are read through the same `resolveInsideRepo` guard as
+`read_file`, and a file that cannot be read is named rather than failing the review. The content is
+untrusted, so it stays in the `user` message (ADR-049). The checkout prompt now says the files are
+there. A diff-only run is untouched, so the golden set's warm greedy run and three seeds were
+served every answer from the cache again, with identical scores.
+
+**Measured on the pull request with step 16's seeds**, against ADR-060's prompt-only runs at the
+same seeds and temperature:
+
+| | prompt only | files shown |
+|---|---|---|
+| claims about code the diff does not show | 2 of 4 (seeds 1 and 3) | 0 of 4 |
+| misreadings of code the diff does show | 0 | 1 of 4 (seed 2) |
+| tool calls | 0 | 0 |
+| input tokens per Reviewer call | about 4,900 | about 14,500 |
+| Reviewer seconds, per run | 86 to 154 | 123 to 352 |
+
+Seeds 1 and 3 made their claims with the prompt alone and made nothing with the files in view -
+the demonstrated cause, removed where it was demonstrated. Seed 2's new claim is that
+`discardPartialConnection` nulls the consumer and producer "before calling disconnect()". It is
+wrong: the method copies both into locals first and disconnects the locals. And it is about added
+lines the diff shows, so no amount of context would have prevented it. The Verifier agent kept it.
+
+**What this does and does not show.** The false-positive count - one in four against two in
+four - is inside the noise of four runs. The claim this ADR makes is narrower and better supported:
+the class of error the one real pull request exposed, asserting what unseen code in a changed
+file does, did not occur once the code was on screen. The model still misreads code it can see,
+which is a model limit rather than a context limit. One pull request is one data point, and step 4's
+real samples are what would turn it into a set.
+
+**The cost is paid on checkout runs only**: about three times the input tokens and roughly double
+the Reviewer's wall clock on this pull request, partly because the look-first turn of ADR-060 now
+carries the files too. That turn has made no tool call in eight runs out of eight. It stays for
+the reasons ADR-060 gave, but it is the first thing to remove if a checkout run's time becomes a
+problem: the files it would read are now in the prompt anyway, and nothing yet shows the model
+reaching for code in other files.
+
+**Consequences.** New module `src/agents/head-files.ts` with its tests. The Reviewer's checkout
+prompt mentions the files. ARCHITECTURE and CLAUDE.md describe it. No contract changed.

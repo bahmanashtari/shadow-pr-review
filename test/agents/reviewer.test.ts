@@ -191,8 +191,9 @@ describe("buildReviewerPrompt", () => {
 
   it("tells a run with a checkout to read code before asserting what it does (step 19)", () => {
     const withCheckout = buildReviewerPrompt({ hasRepository: true });
-    expect(withCheckout).toContain("read that code with read_file, or find it\nwith grep_repo");
-    expect(withCheckout).toContain("A claim about code you have not read is a guess");
+    expect(withCheckout).toContain("each changed file is shown whole");
+    expect(withCheckout).toContain("read it\nwith read_file");
+    expect(withCheckout).toContain("A claim about code you have not\nread is a guess");
     // The golden set is diff-only, so its prompt must not move: that is what lets the warm
     // `spr eval` prove the change has no side effect there, every answer served from the cache.
     expect(

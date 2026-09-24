@@ -59,10 +59,11 @@ const WITHOUT_A_CHECKOUT =
 const WITH_A_CHECKOUT = `# What you can see
 
 You have the diff and a checkout of the repository at the change's head revision. The diff shows
-only the lines that changed. Before a finding says what code outside the diff does - a method
-body, a caller, a constructor, a configuration value - read that code with read_file, or find it
-with grep_repo. A claim about code you have not read is a guess: read it first, or leave the
-finding out.`;
+only the lines that changed; after it, each changed file is shown whole as it is at the head
+revision, for reading only. Before a finding says what code outside the diff does - a method
+body, a caller, a constructor, a configuration value - find that code in those files, or read it
+with read_file, or find it with grep_repo when it lives elsewhere. A claim about code you have not
+read is a guess: read it first, or leave the finding out.`;
 
 /**
  * What the analyzers already reported, for the `user` message beside the diff.

@@ -88,7 +88,10 @@ crossing a gap in the diff would fail `HunkIndex.hasRange` and be dropped.
   the tools unconstrained, and once it stops calling them the answer is asked for exactly as it
   always was. Without a checkout the tools only repeat the prompt, so nothing changes and no call
   is added. The prompt with a checkout also tells the Reviewer to read code before asserting
-  what it does (roadmap step 19). The default model does neither yet.
+  what it does (roadmap step 19). The default model does neither yet. **So with a checkout the
+  changed files are shown, not only offered** (ADR-061): each changed file at the head revision
+  follows the diff in the `user` message, numbered, for reading only, capped at 20 KB per file and
+  32 KB in total, smallest files first.
 - Output: `review.raw.json` (findings without `verification`), capped at
   `review.maxRawFindings`. A budget stop is not an error: the analyzer findings alone still
   make a valid review.

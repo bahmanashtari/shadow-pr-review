@@ -22,6 +22,7 @@ import { ContractError } from "../lib/errors.js";
 import type { LlmProvider } from "../providers/llm/types.js";
 import { renderDiff } from "./diff-view.js";
 import { buildReviewerPrompt, describeAlreadyReported } from "./prompts/reviewer.js";
+import { renderHeadFiles } from "./head-files.js";
 import { buildReviewTools } from "./tools/review-tools.js";
 
 /** File this stage writes. */
@@ -122,6 +123,8 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
 
   const system = buildReviewerPrompt({ hasRepository: options.repoRoot !== undefined });
   const alreadyReported = describeAlreadyReported(describeForPrompt(analyzerFindings));
+  // With a checkout the changed files go in front of the model, not only behind a tool (ADR-061).
+  const headFiles = options.repoRoot === undefined ? "" : renderHeadFiles(ingest, options.repoRoot);
 
   const result = await runAgent({
     stage: "review",
@@ -133,7 +136,7 @@ export async function runReview(options: RunReviewOptions): Promise<ReviewOutcom
         content: [
           {
             type: "text",
-            text: [`Review this change.`, alreadyReported, renderDiff(ingest)]
+            text: [`Review this change.`, alreadyReported, renderDiff(ingest), headFiles]
               .filter((part) => part !== "")
               .join("\n\n"),
           },

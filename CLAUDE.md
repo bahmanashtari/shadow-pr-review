@@ -308,6 +308,10 @@ per seed as well, `runs/eval/<model>/seed-<n>/<sample>`.
   `lookBeforeAnswering` - the Reviewer, when it has a checkout - is offered its tools
   unconstrained first, and the answer is then asked for as it always was. It costs one call, so
   nothing else asks.
+- With a checkout the Reviewer is also shown each changed file at the head revision after the
+  diff, capped (`src/agents/head-files.ts`, ADR-061). It is context only - evidence still cites
+  the diff - and a diff-only run's prompt is byte-identical, which is why the golden set cannot
+  measure it and a real pull request has to.
 - Budgets per run (configurable): input tokens, output tokens, tool calls, agent steps,
   wall-clock. Hitting a budget stops the agent and keeps partial, valid results.
 - Cache LLM calls by sha256(provider, model, prompt, tools, params). Cache TTS by
