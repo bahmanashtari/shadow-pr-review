@@ -66,6 +66,13 @@ describe("OllamaProvider", () => {
     expect(body.tools).toBeUndefined();
   });
 
+  it("sends a seed only when the request has one (ADR-059)", () => {
+    const provider = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });
+    const seeded = provider.buildBody({ ...REQUEST, temperature: 0.2, seed: 7 });
+    expect(seeded.options).toEqual({ temperature: 0.2, num_ctx: 32_768, seed: 7 });
+    expect(provider.buildBody(REQUEST).options).not.toHaveProperty("seed");
+  });
+
   it("thinks by default and can be told not to", () => {
     // ADR-021: thinking is equal on recall and better on grounding, at 15x the wall clock.
     const on = new OllamaProvider({ model: "qwen3:30b", baseUrl: "http://x" });

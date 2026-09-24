@@ -34,7 +34,12 @@
           "description": "Let an Ollama model think before answering. Default true (ADR-021): equal recall, better grounding, about 15 times the wall clock. Set SPR_LLM_THINK=false when iterating on prompts."
         },
         "maxRetries": { "type": "integer", "minimum": 0, "maximum": 5 },
-        "temperature": { "type": "number", "minimum": 0, "maximum": 1 }
+        "temperature": { "type": "number", "minimum": 0, "maximum": 1 },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seeds the model's sampler, which matters only above temperature 0. Unset by default: the pipeline runs greedy at temperature 0. `spr eval --seed` sets it per run to measure the model's spread (ADR-059); it also joins the model cache key, so each seed is cached apart."
+        }
       }
     },
     "budgets": {

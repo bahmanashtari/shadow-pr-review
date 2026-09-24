@@ -1,7 +1,15 @@
 # Plan: Milestone 3, step 16 (one cold run cannot tell a change from a tip)
 
-Status: **proposed**, written at the end of the session that finished Milestone 4 and Milestone 3
-steps 17 and 20. It is the step marked next. Read CLAUDE.md, docs/ROADMAP.md, ADR-025 (what
+Status: **done** on 24 September 2026 (ADR-059). Approved by Bahman that day, taking both
+recommendations in section 5: a temperature above 0 for `spr eval --seed` only, with the
+pipeline's own default left at 0 (Q1); and three seeds as the measurement's size, with `--seed`
+repeatable for more (Q2). Section 2's recommendation - seeded sampling, with a temperature-0
+repeat as the sanity check - was taken as written. Two things came out that this plan did not
+expect, both in ADR-059. The first: neither a seed nor temperature 0 makes a cold re-run
+identical, so repeatability comes from the cache. The second: sample-07 and sample-09 were not the
+clean changes they claimed to be, and were fixed. Section 4's cost was low: a cold seeded pass
+takes about 20 minutes, not 14. Written at the end of the session
+that finished Milestone 4 and Milestone 3 steps 17 and 20. Read CLAUDE.md, docs/ROADMAP.md, ADR-025 (what
 `spr eval` scores), ADR-047 (the run that started this), ADR-054 and ADR-057 first.
 
 ## 1. The problem, in one measured example

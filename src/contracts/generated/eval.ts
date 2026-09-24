@@ -20,6 +20,10 @@ export interface EvalReport {
    * @minItems 1
    */
   models: ModelRun[];
+  /**
+   * One entry per model `spr eval --seed` scored: what each axis read across the seeds, as a median and a range. Absent from an ordinary run. A claim about a prompt or model change has to clear this range, not a single run's point (ADR-047, ADR-059).
+   */
+  spreads?: Spread[];
 }
 export interface ModelRun {
   provider: string;
@@ -36,6 +40,14 @@ export interface ModelRun {
    * Why this model could not be scored in full. Its totals then cover only the samples that ran, and are not comparable with a complete row. One model breaking must not discard the others' measurements.
    */
   failed?: string | null;
+  /**
+   * The sampler seed this run used, when `spr eval --seed` asked for one. Absent from an ordinary run, which is greedy at the configured temperature (ADR-059).
+   */
+  seed?: number;
+  /**
+   * The temperature a seeded run sampled at. Recorded beside the seed because the seed means nothing without it.
+   */
+  temperature?: number;
 }
 export interface SampleResult {
   sample: string;
@@ -223,4 +235,63 @@ export interface OriginTotals {
   false_positives?: number;
   calibrated?: number | null;
   miscalibrated?: number;
+}
+export interface Spread {
+  provider: string;
+  model: string;
+  temperature: number;
+  /**
+   * The seeds whose runs completed, in the order they ran. Every `values` array below is aligned with this one.
+   */
+  seeds: number[];
+  /**
+   * Seeds whose run failed partway. They are left out of every axis rather than averaged in, because an incomplete row's totals cover fewer samples and would read as a movement that is not there.
+   */
+  incomplete_seeds: number[];
+  axes: {
+    precision: Range;
+    recall: Range;
+    calibrated: Range;
+    kept: Range;
+    false_positives: Range;
+    redundant: Range;
+    not_narrated: Range1;
+  };
+  /**
+   * must_find labels some complete seeds found and others missed. The range says how far recall moves; this says which bugs move it, which is the part a prompt change is argued about.
+   */
+  unstable: UnstableLabel[];
+}
+export interface Range {
+  /**
+   * The middle value, or the mean of the two middle values for an even count. Null when every seed's value was undefined, as a rate over an empty set is.
+   */
+  median: number | null;
+  min: number | null;
+  max: number | null;
+  /**
+   * One value per complete seed, aligned with `seeds`, so the range can be checked and the runs told apart.
+   */
+  values: (number | null)[];
+}
+/**
+ * Samples that had findings to narrate and got no script, because the Narrator could not satisfy the narration checks within its repairs. Zero on every greedy run to date; the axis exists because sampling is where it first moved.
+ */
+export interface Range1 {
+  /**
+   * The middle value, or the mean of the two middle values for an even count. Null when every seed's value was undefined, as a rate over an empty set is.
+   */
+  median: number | null;
+  min: number | null;
+  max: number | null;
+  /**
+   * One value per complete seed, aligned with `seeds`, so the range can be checked and the runs told apart.
+   */
+  values: (number | null)[];
+}
+export interface UnstableLabel {
+  sample: string;
+  key: string;
+  found_by: number;
+  of: number;
 }

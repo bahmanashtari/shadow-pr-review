@@ -41,6 +41,8 @@ export interface RunAgentOptions {
   check?: (value: unknown) => string[];
   maxOutputTokens: number;
   temperature: number;
+  /** Seeds the sampler; only `spr eval --seed` sets it (ADR-059). */
+  seed?: number;
   /** Repair attempts after a failed validation. */
   maxRetries: number;
 }
@@ -94,6 +96,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       outputSchema,
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
+      ...(options.seed === undefined ? {} : { seed: options.seed }),
     };
     const response = await callModel(options, request, cache, steps);
 

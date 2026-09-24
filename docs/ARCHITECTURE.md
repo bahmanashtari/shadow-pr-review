@@ -278,6 +278,12 @@ out, so a prompt or model change can be argued about with numbers instead of rea
   of default model to.
 - `--no-cache` forces a cold measurement; otherwise the cache (ADR-017) makes a repeat free,
   and each row records whether it was served from cache.
+- `--seed` is repeatable too, and turns one point into a range (ADR-059): each model is scored
+  once per seed at a small temperature (0.2 unless `--temperature` says otherwise), and the
+  report ends with each axis as a median and its range, plus the `must_find` labels some seeds
+  found and others missed. The seed joins the cache key only when there is one, so a seeded
+  repeat is free and an unseeded one is served exactly what it was before. The pipeline's own
+  temperature stays at the configuration's 0; only the measurement samples.
 - Writes `eval.json` (`schemas/eval.schema.json`) next to one run folder per model per sample,
   so any number in the table can be traced back to the run that produced it.
 - Scoring lives in `src/eval/score.ts` and is pure: no I/O, no model, unit-tested on its own,
@@ -289,9 +295,10 @@ out, so a prompt or model change can be argued about with numbers instead of rea
   under the wrong category (a near miss, ADR-044). A stage past half a token budget is printed
   as a warning, and `cost.json` breaks each run down by stage (ADR-050).
 - **Read before believing a number.** At temperature 0 an unrelated prompt edit has moved recall
-  by 0.2 (ADR-047), and twice a label's alternative category let a finding about one bug count
-  as finding another (ADR-041, ADR-044). A result that matters is checked by reading the finding
-  it rests on.
+  by 0.2 (ADR-047) - which is why a change is argued against the `--seed` range rather than a
+  single run (ADR-059) - and twice a label's alternative category let a finding about one bug
+  count as finding another (ADR-041, ADR-044). A result that matters is checked by reading the
+  finding it rests on.
 
 ## 4. Trigger policy
 

@@ -27,7 +27,7 @@ import {
 import { runReview, summarizeReview, writeReview } from "./agents/reviewer.js";
 import { judgeFindings } from "./agents/verifier.js";
 import { readScript, runNarrate, summarizeNarrate, writeScript } from "./agents/narrator.js";
-import { runEval } from "./eval/run.js";
+import { MEASUREMENT_TEMPERATURE, runEval } from "./eval/run.js";
 import { formatReport } from "./eval/report.js";
 import {
   readRawReview,
@@ -86,6 +86,28 @@ function parsePrNumber(value: string): number {
     throw new InvalidArgumentError(`Expected a pull request number such as 142, got "${value}"`);
   }
   return Number(value);
+}
+
+/**
+ * `--seed 3`, repeatable: a whole number, each one once. A repeated seed would score the same
+ * run twice into the same folder and count it twice in the spread (ADR-059).
+ */
+function collectSeed(value: string, previous: number[]): number[] {
+  if (!/^\d{1,9}$/.test(value)) {
+    throw new InvalidArgumentError(`Expected a whole number for --seed, got "${value}"`);
+  }
+  const seed = Number(value);
+  if (previous.includes(seed)) throw new InvalidArgumentError(`Seed ${value} is given twice`);
+  return [...previous, seed];
+}
+
+/** `--temperature 0.2`: what the config schema allows, 0 to 1. */
+function parseTemperature(value: string): number {
+  const t = Number(value);
+  if (value.trim() === "" || !Number.isFinite(t) || t < 0 || t > 1) {
+    throw new InvalidArgumentError(`Expected a temperature from 0 to 1, got "${value}"`);
+  }
+  return t;
 }
 
 function parseStage(value: string): StageName {
@@ -156,6 +178,8 @@ interface StageOptions {
 /** Options of `spr eval`, as Commander hands them over (`--no-cache` arrives as `cache: false`). */
 interface EvalOptions {
   model: string[];
+  seed: number[];
+  temperature?: number;
   out?: string;
   cache?: boolean;
 }
@@ -558,9 +582,25 @@ export function buildProgram(): Command {
       (value: string, previous: string[]) => [...previous, value],
       [] as string[],
     )
+    .option(
+      "--seed <n>",
+      "sample at a small temperature with this seed; repeat for a median and range (ADR-059)",
+      collectSeed,
+      [] as number[],
+    )
+    .option(
+      "--temperature <t>",
+      `what --seed samples at (default: ${String(MEASUREMENT_TEMPERATURE)})`,
+      parseTemperature,
+    )
     .option("--out <dir>", "where the per-sample run folders go (default: runs/eval)")
     .option("--no-cache", "ignore the on-disk model cache, for a cold measurement")
     .action(async (dir: string, opts: EvalOptions) => {
+      // Without a seed the run is greedy at the configured temperature, which --temperature would
+      // quietly change into one unrepeatable sample: the pipeline's own setting is the config's.
+      if (opts.temperature !== undefined && opts.seed.length === 0) {
+        throw new InvalidArgumentError("--temperature goes with --seed");
+      }
       const config = loadConfig();
       const outDir = path.resolve(opts.out ?? path.join(config.runs.dir, "eval"));
       const report = await runEval({
@@ -569,6 +609,8 @@ export function buildProgram(): Command {
         config,
         secrets: readSecrets(),
         models: opts.model,
+        seeds: opts.seed,
+        ...(opts.temperature === undefined ? {} : { temperature: opts.temperature }),
         noCache: opts.cache === false,
         onProgress: (line) => {
           console.log(line);

@@ -4,7 +4,13 @@
  * The detail lines matter as much as the rates. "Recall 0.75" says something is wrong; the
  * missed key and the dropped reason say what to change.
  */
-import type { EvalReport, ModelRun, SampleResult } from "../contracts/generated/eval.js";
+import type {
+  EvalReport,
+  ModelRun,
+  Range,
+  SampleResult,
+  Spread,
+} from "../contracts/generated/eval.js";
 
 /** A rate as a fixed-width string, or `-` when it is undefined rather than zero. */
 function rate(value: number | null): string {
@@ -17,6 +23,11 @@ function pad(value: string, width: number): string {
 
 function padLeft(value: string, width: number): string {
   return value.length >= width ? value : " ".repeat(width - value.length) + value;
+}
+
+/** What to call one run: its model, and its seed when it has one (ADR-059). */
+function runLabel(run: ModelRun): string {
+  return run.seed === undefined ? run.model : `${run.model} seed ${String(run.seed)}`;
 }
 
 /** `1 sample` / `3 samples`, because a report is read by a person. */
@@ -80,10 +91,10 @@ function originLines(run: ModelRun): string[] {
 
 /** One model's block: a row per sample, a total row, then the detail worth acting on. */
 export function formatModel(run: ModelRun): string[] {
+  const sampled = run.seed === undefined ? "" : ` at temperature ${String(run.temperature ?? 0)}`;
+  const heading = `${run.provider} / ${runLabel(run)}${sampled}`;
   const lines: string[] = [
-    run.failed
-      ? `${run.provider} / ${run.model}  INCOMPLETE - ${run.failed}`
-      : `${run.provider} / ${run.model}`,
+    run.failed ? `${heading}  INCOMPLETE - ${run.failed}` : heading,
     [
       pad("sample", COLUMNS.sample),
       padLeft("kept", COLUMNS.kept),
@@ -173,7 +184,7 @@ export function formatModel(run: ModelRun): string[] {
 
 /** The side-by-side table, printed only when more than one model was scored. */
 export function formatComparison(models: readonly ModelRun[]): string[] {
-  const width = Math.max(...models.map((m) => m.model.length), 5) + 2;
+  const width = Math.max(...models.map((m) => runLabel(m).length), 5) + 2;
   const lines = [
     [
       pad("model", width),
@@ -191,7 +202,7 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
   for (const m of models) {
     lines.push(
       [
-        pad(m.failed ? `${m.model} *` : m.model, width),
+        pad(m.failed ? `${runLabel(m)} *` : runLabel(m), width),
         padLeft(rate(m.totals.precision), COLUMNS.rate),
         padLeft(rate(m.totals.recall), COLUMNS.rate),
         padLeft(rate(m.totals.calibrated ?? null), COLUMNS.rate),
@@ -210,6 +221,52 @@ export function formatComparison(models: readonly ModelRun[]): string[] {
   return lines;
 }
 
+/** `0.700 (0.600-0.800, n=3)`: the median, then the range it came from and how many runs. */
+function rangeCell(r: Range, format: (value: number | null) => string): string {
+  const n = r.values.filter((v) => v !== null).length;
+  if (n === 0) return "-";
+  return `${format(r.median)} (${format(r.min)}-${format(r.max)}, n=${String(n)})`;
+}
+
+/** A count's median can fall between two runs, so it keeps one decimal only when it needs it. */
+function count(value: number | null): string {
+  return value === null ? "-" : String(value);
+}
+
+/**
+ * One model's spread across its seeds (ADR-059). The median leads because a single run's point
+ * is what this replaces; the range beside it is what a change has to clear to count.
+ */
+export function formatSpread(spread: Spread): string[] {
+  const seeds = spread.seeds.map(String).join(", ");
+  const lines = [
+    `spread: ${spread.provider} / ${spread.model} at temperature ${String(spread.temperature)}, ` +
+      (spread.seeds.length === 0 ? "no complete seed" : `seeds ${seeds}`),
+  ];
+  const a = spread.axes;
+  const rows: [string, string][] = [
+    ["precision", rangeCell(a.precision, rate)],
+    ["recall", rangeCell(a.recall, rate)],
+    ["calibrated", rangeCell(a.calibrated, rate)],
+    ["kept", rangeCell(a.kept, count)],
+    ["fp", rangeCell(a.false_positives, count)],
+    ["redundant", rangeCell(a.redundant, count)],
+    ["not narrated", rangeCell(a.not_narrated, count)],
+  ];
+  for (const [name, cell] of rows) lines.push(`  ${pad(name, 14)}${cell}`);
+
+  for (const u of spread.unstable) {
+    lines.push(
+      `  unstable: ${u.sample} ${u.key} found by ${String(u.found_by)} of ${String(u.of)}`,
+    );
+  }
+  if (spread.incomplete_seeds.length > 0) {
+    // Named rather than dropped silently: a seed that failed is itself something the model did.
+    lines.push(`  incomplete, not counted: seed ${spread.incomplete_seeds.map(String).join(", ")}`);
+  }
+  return lines;
+}
+
 /** The whole report as printable lines. */
 export function formatReport(report: EvalReport): string[] {
   const lines: string[] = [];
@@ -217,5 +274,6 @@ export function formatReport(report: EvalReport): string[] {
     lines.push(...formatModel(run), "");
   }
   if (report.models.length > 1) lines.push("comparison", ...formatComparison(report.models), "");
+  for (const spread of report.spreads ?? []) lines.push(...formatSpread(spread), "");
   return lines;
 }

@@ -2688,3 +2688,122 @@ deeper version, a Verifier that reads what a finding rests on, is roadmap step 1
 ARCHITECTURE section 3's list of deterministic checks now names it. The adversarial samples earn
 their keep a second time: ADR-049 wrote them to test the Reviewer, and they have now caught a
 model choice (ADR-057) and a missing check (this one).
+
+## ADR-059: One run is a point, three seeds are a range (accepted, September 2026)
+
+**Context.** Roadmap step 16, approved by Bahman with both of its plan's recommendations: sampling
+above temperature 0 is acceptable for `spr eval --seed` only, with the pipeline's own temperature
+left at 0; and three seeds is the size of a measurement. ADR-047 had shown the problem: an
+unrelated one-sentence prompt edit moved recall from 0.600 to 0.800, and nothing in the harness
+could say whether a change was better or had merely landed well on nine samples. Step 19 is
+exactly such a change, and waited on this one.
+
+**Decision.** A seed travels from the configuration to the model, and `spr eval` turns several
+seeds into a range.
+
+- `llm.seed` (unset by default) becomes `seed` on the provider request and `options.seed` on
+  Ollama. The Anthropic Messages API has no such parameter, so there the seed only keeps cache
+  entries apart.
+- The seed joins the model cache key **only when there is one**. A seeded measurement therefore
+  never serves one seed's answers to another, and every answer cached before seeds existed still
+  hits. The warm greedy `spr eval` after the change ran entirely from the cache, in under a
+  second, with the same score as before.
+- `spr eval --seed <n>` is repeatable, like `--model`. `--temperature` sets what it samples at -
+  0.2 by default - and is refused without a seed, because on its own it would turn the greedy
+  run into one unrepeatable sample. Each model runs once per seed into
+  `runs/eval/<model>/seed-<n>/<sample>`. Every row in `eval.json` records its seed and temperature,
+  and a new `spreads` entry per model gives each axis as a median, a minimum, a maximum and the
+  per-seed values. The axes are precision, recall, calibration, kept, false positives, redundant
+  and `not_narrated`. It also lists the `must_find` labels some seeds found and others missed. The
+  report prints `recall 0.667 (0.583-0.667, n=3)` in place of a single number. A seed whose run
+  failed is named and left out, rather than averaged in over fewer samples.
+
+**What a seed promises is less than it sounds, and so is temperature 0.** Before building on it
+the seed was probed directly against Ollama. The same seeded request at 0.2 gave the same answer
+only when the server had just handled the same request. Straight after a different prompt it
+answered differently - and reproducibly so, given that same history. The likely mechanism is the
+server's prompt cache: a prompt evaluated from a different starting point takes a different
+batch path, the logits differ in their last bits, and a random draw near a boundary flips. At
+temperature 0 the same short probe showed no dependence, which fits: argmax survives tiny
+differences that a sampled draw does not.
+
+At scale, temperature 0 is not exact either. A cold greedy re-run of all nine samples, into an
+empty scratch cache so the real one was not overwritten, **reproduced every score exactly** -
+precision 1.000, recall 0.750, calibration 0.909, 11 kept, no false positives, 6/6 narrated. But
+**it reproduced the answers in only six samples of nine.** Sample-02's narration was reworded,
+sample-06's second finding was anchored on line 13 instead of 15, and sample-07's summary sentence
+changed. So "the model runs at temperature 0, so a repeat is identical" - the premise ADR-047
+reasoned from - holds through the cache and not otherwise. Over a long, thinking generation, a
+near-tie decided by numerical noise is enough.
+
+The consequence is the same for both. **The cache is what makes a run repeatable**: re-running
+the three-seed measurement from the cache gave 27 of 27 samples cached and identical scores. A
+seed labels a sample of the model's behaviour; it does not guarantee a cold re-run.
+A cold re-run of seed 1, again into an empty scratch cache, matched it: every score was
+reproduced, and so were the answers in seven samples of nine. The other two - samples 06 and 07 -
+kept the same findings in the same places, in different words. In practice, then, a seeded run is
+as repeatable as a greedy one: the score survives a cold re-run and the wording does not always.
+
+**The measurement.** qwen3:30b on the nine synthetic samples, after the fix to sample-07 and
+sample-09 described below:
+
+| | greedy (temperature 0) | three seeds at 0.2: median (range) |
+|---|---|---|
+| precision | 1.000 | 0.909 (0.900-1.000) |
+| recall | 0.750 | 0.667 (0.583-0.667) |
+| calibration | 0.909 | 0.889 (0.818-0.900) |
+| kept | 11 | 11 (10-11) |
+| false positives | 0 | 1 (0-1) |
+| not narrated | 0 | 1 (1-1) |
+
+Four readings follow.
+
+1. **Recall moves on exactly two labels, and they are the two ADR-047 and ADR-049 saw move.**
+   Seven `must_find` labels are found by every run and three are missed by every run: both
+   webhook signatures and the missing guard. The rest of the spread is sample-02's redelivery bug,
+   found by two seeds of three, and sample-05's dropped column, found by the greedy run and by no
+   seed at all. ADR-047's "a model close to its threshold on these bugs, tipped by any edit" was
+   right, and now it has names.
+2. **The greedy run sits above the whole sampled range on recall.** Sampling at 0.2 measures the
+   model's neighbourhood, not the greedy number, so its median is not an estimate of what the
+   pipeline scores. It is the right ground to compare two prompts on, and the wrong one to quote
+   as the pipeline's recall. The greedy row is still printed, because it is what a viewer gets; on
+   this set it is also one lucky draw.
+3. **Sampling exposes failures greedy decoding hides.** Every seed failed to narrate one sample:
+   an email address read aloud, a severity word the finding does not carry, and markdown
+   characters. Each was a different check, each check held, and each time the Narrator could not
+   repair its answer within two retries - so `script.rejected.json` did its job three times. The
+   Verifier agent also tried three times to downgrade a finding without naming a severity, and
+   the finding was kept. There were two false positives: a wrong claim about the email regex,
+   which sample-03's `must_not_flag` list already anticipated, and a speculative
+   denial-of-service claim. None of this appears in a greedy run, and all of it is the model's.
+4. **It costs about an hour, not 45 minutes.** A cold seeded pass over nine samples took 19 to 24
+   minutes on this machine, and a cold greedy pass 18, against the plan's estimate of 14. The
+   plan's arithmetic was low, not the approach wrong: the price is paid only when a change is
+   argued for.
+
+**The golden set was wrong, and a sampled run found it.** Seed 2 reported on sample-07 that the
+ceiling test expects `nextRetry(10).delayMs` to be 30000, while any attempt at or past the budget
+of 5 returns 0 - so the test fails. That is correct. Sample-07 was written as the clean change
+that tests restraint: its labels say the tests "cover all three behaviours", and one of the three
+was broken. The ceiling could never be reached either, because the largest delay the budget
+allowed was 3200 ms. Sample-09 is built from sample-07 and carried the same test. No greedy run
+on disk ever reported it, so no earlier score was affected. The fix keeps every line in place:
+the budget is now 10 attempts, the ceiling test asks attempt 9 for 30000, and the budget test asks
+attempt 10 to stop. All six assertions were executed against the fixed code and pass, and the
+ceiling is first reached at attempt 8. Nothing moved a line, so every label still points where it
+did. Re-measured, samples 07 and 09 keep nothing, greedy and under every seed, and the greedy
+totals are unchanged. Before the fix the seeded precision read 0.909 (0.818-1.000) with
+false positives 1 (0-2). The table above is the corrected set.
+
+**How a change is argued from now on.** Both sides are measured with three seeds at the same
+temperature, and the claim has to clear the range: a movement inside both ranges is not evidence.
+With n=3 this can see a large effect and not a small one, which is an honest limit rather than a
+flaw - `--seed` is repeatable for whoever needs more. A prompt edit that cannot change the prompts
+the golden set sees - as step 19's is designed not to - is argued differently: the warm `spr eval`
+proves by cache hits that nothing moved.
+
+**Consequences.** `config/config.schema.json` gains `llm.seed`, and `schemas/eval.schema.json`
+gains `seed` and `temperature` on a run plus the `Spread`, `Range` and `UnstableLabel` definitions;
+the generated types are regenerated. CLAUDE.md and ARCHITECTURE section 3 describe `--seed`.
+Samples 07 and 09 are fixed, and `golden/README.md` says so. Step 19 can now be argued.

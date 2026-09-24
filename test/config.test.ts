@@ -86,6 +86,17 @@ describe("loadConfig", () => {
     expect(config.ingest.ignoreGlobs).toEqual(["**/*.gen.ts"]);
   });
 
+  it("leaves the seed unset by default and accepts a whole one (ADR-059)", () => {
+    expect(loadConfig({ env: {} }).llm.seed).toBeUndefined();
+    const dir = mkdtempSync(path.join(tmpdir(), "spr-config-"));
+    const good = path.join(dir, "seeded.json");
+    writeFileSync(good, JSON.stringify({ llm: { seed: 3, temperature: 0.2 } }));
+    expect(loadConfig({ env: {}, configFile: good }).llm.seed).toBe(3);
+    const bad = path.join(dir, "half.json");
+    writeFileSync(bad, JSON.stringify({ llm: { seed: 1.5 } }));
+    expect(() => loadConfig({ env: {}, configFile: bad })).toThrow(/seed/);
+  });
+
   it("reports unknown keys in a config file", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "spr-config-"));
     const file = path.join(dir, "bad.json");

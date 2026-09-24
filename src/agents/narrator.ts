@@ -214,6 +214,7 @@ export async function runNarrate(options: RunNarrateOptions): Promise<NarrateOut
       ...(options.cache === undefined ? {} : { cache: options.cache }),
       maxOutputTokens: config.budgets.outputTokens,
       temperature: config.llm.temperature,
+      ...(config.llm.seed === undefined ? {} : { seed: config.llm.seed }),
       maxRetries: config.llm.maxRetries,
     });
   } catch (error) {

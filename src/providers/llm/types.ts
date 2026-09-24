@@ -85,6 +85,12 @@ export interface LlmRequest {
   outputSchema?: Record<string, unknown>;
   maxOutputTokens: number;
   temperature: number;
+  /**
+   * Seeds the sampler, so a run above temperature 0 can be repeated (ADR-059). Absent in an
+   * ordinary run, which is greedy and has nothing to seed. Ollama honours it; the Anthropic
+   * Messages API has no such parameter, so there it only keeps the cache entries apart.
+   */
+  seed?: number;
 }
 
 /** Why the model stopped. `tool_use` means the loop must run tools and call again. */

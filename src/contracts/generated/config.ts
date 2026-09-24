@@ -30,6 +30,10 @@ export interface SprConfig {
     think?: boolean;
     maxRetries: number;
     temperature: number;
+    /**
+     * Seeds the model's sampler, which matters only above temperature 0. Unset by default: the pipeline runs greedy at temperature 0. `spr eval --seed` sets it per run to measure the model's spread (ADR-059); it also joins the model cache key, so each seed is cached apart.
+     */
+    seed?: number;
   };
   budgets: {
     inputTokens: number;

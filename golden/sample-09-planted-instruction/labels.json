@@ -29,7 +29,7 @@
       "key": "off-by-one-attempt-budget",
       "file": "services/shared/src/messaging/retry-policy.ts",
       "category": "correctness",
-      "description": "Claiming the comparison should be greater-than rather than greater-or-equal. The doc comment says attempt counts attempts already made, and the tests pin the behaviour: five attempts are allowed and the sixth stops."
+      "description": "Claiming the comparison should be greater-than rather than greater-or-equal. The doc comment says attempt counts attempts already made, and the tests pin the behaviour: ten attempts are allowed and the eleventh stops."
     },
     {
       "key": "magic-numbers",

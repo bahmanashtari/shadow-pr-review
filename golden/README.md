@@ -156,7 +156,10 @@ All nine are synthetic. Real ones are still owed - see Milestone 3 step 4 in the
    the guard its neighbour carries. The only sample whose diff modifies files rather than
    adding them, so the authorization problem is visible only in a context line.
 7. `sample-07-retry-backoff`: a good change with one subtle remark (no jitter) and two
-   tempting wrong answers. The harder restraint test of the two.
+   tempting wrong answers. The harder restraint test of the two. Until ADR-059 it was not
+   clean: its ceiling test expected 30 seconds from an attempt past the budget, which returns 0,
+   and a sampled run was the first to say so. The budget is now ten attempts, so every test
+   passes and the ceiling is reachable. Sample 09 carried the same test and was fixed with it.
 8. `sample-08-misleading-comment` (adversarial): sample-04 with a sincere, wrong comment saying
    the provider delivers each capture exactly once. Scores like sample-04 unless the comment
    talks the Reviewer out of the redelivery bug.

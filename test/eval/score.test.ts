@@ -6,12 +6,15 @@ import {
   found,
   locates,
   measureScript,
+  range,
   scoreReview,
+  spreads,
   total,
   totalsByOrigin,
+  unstableLabels,
 } from "../../src/eval/score.js";
 import { readLabels } from "../../src/eval/run.js";
-import type { SampleResult } from "../../src/contracts/generated/eval.js";
+import type { ModelRun, SampleResult } from "../../src/contracts/generated/eval.js";
 import type { GoldenLabels, RequiredLabel } from "../../src/contracts/generated/labels.js";
 import type { Finding, ReviewResult } from "../../src/contracts/generated/review.js";
 import { validateContract } from "../../src/contracts/validate.js";
@@ -794,4 +797,141 @@ describe("golden set", () => {
       expect(score.within_budget).toBe(true);
     },
   );
+});
+
+describe("the spread across seeds (step 16, ADR-059)", () => {
+  /** One sample that found some keys and missed others, with a given number kept. */
+  function sampled(name: string, foundKeys: string[], missed: string[], kept = 2): SampleResult {
+    return {
+      sample: name,
+      origin: "synthetic",
+      run_dir: `/tmp/${name}`,
+      cached: false,
+      seconds: 1,
+      review: {
+        kept,
+        max_findings: null,
+        within_budget: true,
+        precision: 1,
+        recall: rounded(foundKeys.length / (foundKeys.length + missed.length)),
+        found: foundKeys.map((key, i) => ({ key, finding_id: `F0${String(i + 1)}` })),
+        missed,
+        acceptable_found: [],
+        false_positives: [],
+        dropped: [],
+      },
+      script: { narrated: true },
+    };
+  }
+
+  function seeded(seed: number, samples: SampleResult[], over: Partial<ModelRun> = {}): ModelRun {
+    return {
+      provider: "ollama",
+      model: "qwen3:30b",
+      samples,
+      totals: total(samples),
+      seed,
+      temperature: 0.2,
+      ...over,
+    };
+  }
+
+  it("takes the middle value, and the mean of the middle two for an even count", () => {
+    expect(range([0.8, 0.6, 0.7])).toEqual({
+      median: 0.7,
+      min: 0.6,
+      max: 0.8,
+      values: [0.8, 0.6, 0.7],
+    });
+    expect(range([0.6, 0.8]).median).toBe(0.7);
+    expect(range([9, 8, 10, 9]).median).toBe(9);
+  });
+
+  it("keeps an undefined value in place and out of the summary", () => {
+    // A rate over an empty set is not zero, so it must not drag the median down.
+    expect(range([null, 1, 0.5])).toEqual({
+      median: 0.75,
+      min: 0.5,
+      max: 1,
+      values: [null, 1, 0.5],
+    });
+    expect(range([null, null])).toEqual({
+      median: null,
+      min: null,
+      max: null,
+      values: [null, null],
+    });
+  });
+
+  it("names the labels that some seeds found and others missed", () => {
+    const runs = [
+      seeded(1, [sampled("s-01", ["a", "b"], []), sampled("s-02", [], ["c"])]),
+      seeded(2, [sampled("s-01", ["a"], ["b"]), sampled("s-02", [], ["c"])]),
+      seeded(3, [sampled("s-01", ["a"], ["b"]), sampled("s-02", ["c"], [])]),
+    ];
+    // "a" every time is stable; "b" once and "c" once are what moved recall.
+    expect(unstableLabels(runs)).toEqual([
+      { sample: "s-01", key: "b", found_by: 1, of: 3 },
+      { sample: "s-02", key: "c", found_by: 1, of: 3 },
+    ]);
+  });
+
+  it("summarises each model's seeds, and leaves unseeded runs out", () => {
+    const runs = [
+      seeded(1, [sampled("s-01", ["a", "b"], [], 2)]),
+      seeded(2, [sampled("s-01", ["a"], ["b"], 1)]),
+      seeded(3, [sampled("s-01", ["a", "b"], [], 3)]),
+      {
+        provider: "ollama",
+        model: "greedy",
+        samples: [sampled("s-01", ["a"], ["b"])],
+        totals: total([sampled("s-01", ["a"], ["b"])]),
+      },
+    ];
+    const [only, ...rest] = spreads(runs);
+    expect(rest).toEqual([]);
+    expect(only?.seeds).toEqual([1, 2, 3]);
+    expect(only?.temperature).toBe(0.2);
+    expect(only?.axes.recall).toEqual({ median: 1, min: 0.5, max: 1, values: [1, 0.5, 1] });
+    expect(only?.axes.kept).toEqual({ median: 2, min: 1, max: 3, values: [2, 1, 3] });
+    expect(only?.unstable).toEqual([{ sample: "s-01", key: "b", found_by: 2, of: 3 }]);
+  });
+
+  it("counts the samples a seed had something to narrate and could not", () => {
+    // The axis sampling moved first: every greedy run narrated everything it kept.
+    const failed = { ...sampled("s-02", ["b"], []), script: { narrated: false, failure: "x" } };
+    const [only] = spreads([
+      seeded(1, [sampled("s-01", ["a"], []), failed]),
+      seeded(2, [sampled("s-01", ["a"], []), sampled("s-02", ["b"], [])]),
+    ]);
+    expect(only?.axes.not_narrated).toEqual({ median: 0.5, min: 0, max: 1, values: [1, 0] });
+  });
+
+  it("names a seed whose run failed, and does not count it", () => {
+    const runs = [
+      seeded(1, [sampled("s-01", ["a"], []), sampled("s-02", ["b"], [])]),
+      seeded(2, [sampled("s-01", [], ["a"])], { failed: "s-02: model went away" }),
+    ];
+    const [only] = spreads(runs);
+    expect(only?.seeds).toEqual([1]);
+    expect(only?.incomplete_seeds).toEqual([2]);
+    expect(only?.axes.recall.values).toEqual([1]);
+    // One complete seed cannot disagree with itself.
+    expect(only?.unstable).toEqual([]);
+  });
+
+  it("puts the spread in the report only when seeds were used, in a shape the contract accepts", () => {
+    const greedy = buildReport("golden", [
+      { provider: "ollama", model: "m", samples: [], totals: total([]) },
+    ]);
+    expect(greedy).not.toHaveProperty("spreads");
+
+    const measured = buildReport("golden", [
+      seeded(1, [sampled("s-01", ["a"], [])]),
+      seeded(2, [sampled("s-01", [], ["a"])]),
+    ]);
+    expect(measured.spreads).toHaveLength(1);
+    const result = validateContract("eval", measured);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+  });
 });

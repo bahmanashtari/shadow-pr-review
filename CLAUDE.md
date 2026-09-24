@@ -120,7 +120,16 @@ pnpm tsx scripts/end-to-end.ts sample-03-email-value-object   # just one of them
 pnpm spr eval                                      # score the golden set with the configured model
 pnpm spr eval --model qwen3:30b --model qwen3:4b   # one comparison table; repeat --model per candidate
 pnpm spr eval --no-cache --out runs/eval           # a cold measurement, for an ADR
+pnpm spr eval --seed 1 --seed 2 --seed 3           # the model's spread: median and range per axis
 ```
+
+**A prompt or model change is argued with `--seed`, not with one run** (ADR-059). The pipeline
+is greedy at temperature 0, so a repeat is identical - which hides how close the model sits to
+its thresholds: an unrelated one-sentence edit once moved recall by 0.2 (ADR-047). `--seed`
+samples each run at 0.2 (`--temperature` to change it) and prints every axis as a median and a
+range, plus the labels some seeds found and others missed. Three seeds is the default size of a
+measurement, about three times a cold run. The pipeline's own temperature is untouched: only
+`spr eval --seed` samples.
 
 Review, verify and narrate need a local model: `ollama serve` with the model from
 `config/default.json` pulled. `SPR_LLM_PROVIDER=fake` runs the pipeline with no model at all:
@@ -235,7 +244,8 @@ subtitles.srt, final.mp4, comment.md, trace.jsonl, cost.json`.
 Compose also leaves its ffmpeg scratch in `audio/`: `full.wav` (the clips and gaps joined),
 `gap.wav` and `list.txt`.
 A failed Narrate stage also leaves `script.rejected.json` (ADR-024). `spr eval` writes
-`eval.json` plus one run folder per model per sample under `runs/eval/`.
+`eval.json` plus one run folder per model per sample under `runs/eval/` - and with `--seed`, one
+per seed as well, `runs/eval/<model>/seed-<n>/<sample>`.
 
 ## Coding conventions
 

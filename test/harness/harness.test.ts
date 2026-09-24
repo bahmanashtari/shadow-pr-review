@@ -20,6 +20,7 @@ import {
   type LlmResponse,
   type LlmUsage,
 } from "../../src/providers/llm/types.js";
+import { sha256 } from "../../src/lib/hash.js";
 import { defaultConfig } from "../helpers.js";
 
 const temps: string[] = [];
@@ -122,6 +123,31 @@ describe("llmCacheKey", () => {
   it("changes when the model changes", () => {
     const other = new FakeLlmProvider([], { model: "other-model" });
     expect(llmCacheKey(other, REQUEST)).not.toBe(llmCacheKey(provider, REQUEST));
+  });
+
+  it("keeps every seed of a measurement apart (ADR-059)", () => {
+    const one = llmCacheKey(provider, { ...REQUEST, temperature: 0.2, seed: 1 });
+    const two = llmCacheKey(provider, { ...REQUEST, temperature: 0.2, seed: 2 });
+    expect(one).not.toBe(two);
+    expect(one).not.toBe(llmCacheKey(provider, { ...REQUEST, temperature: 0.2 }));
+  });
+
+  it("hashes a request with no seed exactly as it did before seeds existed", () => {
+    // Otherwise every answer already cached would miss, and a warm `spr eval` would cost a
+    // cold one. This is the key's old formula, written out.
+    const before = sha256(
+      JSON.stringify([
+        provider.name,
+        provider.model,
+        REQUEST.system,
+        REQUEST.messages,
+        REQUEST.tools,
+        REQUEST.outputSchema ?? null,
+        REQUEST.temperature,
+        REQUEST.maxOutputTokens,
+      ]),
+    );
+    expect(llmCacheKey(provider, REQUEST)).toBe(before);
   });
 });
 

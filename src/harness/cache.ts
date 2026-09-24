@@ -19,6 +19,10 @@ export interface LlmCache {
 /**
  * Hashes everything that could change the answer. Field order is fixed here rather than
  * taken from the object, so an unrelated key reordering cannot invalidate the cache.
+ *
+ * The seed is appended only when there is one (ADR-059): without it every seed of a measurement
+ * would be served the first seed's answers, and with it unconditionally every answer cached
+ * before seeds existed would miss.
  */
 export function llmCacheKey(provider: LlmProvider, request: LlmRequest): string {
   return sha256(
@@ -31,6 +35,7 @@ export function llmCacheKey(provider: LlmProvider, request: LlmRequest): string 
       request.outputSchema ?? null,
       request.temperature,
       request.maxOutputTokens,
+      ...(request.seed === undefined ? [] : [request.seed]),
     ]),
   );
 }

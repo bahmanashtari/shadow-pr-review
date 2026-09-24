@@ -156,7 +156,11 @@ export class OllamaProvider implements LlmProvider {
       // at 15x the wall clock. Affordable because TTS and rendering dominate a run.
       think: this.thinks,
       messages: toOllamaMessages(request.system, request.messages),
-      options: { temperature: request.temperature, num_ctx: this.numCtx },
+      options: {
+        temperature: request.temperature,
+        num_ctx: this.numCtx,
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
+      },
     };
     if (request.tools.length > 0) body.tools = toOllamaTools(request.tools);
     // Constrained decoding: the schema is enforced by the provider, not by retries.

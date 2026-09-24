@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatComparison, formatModel, formatReport } from "../../src/eval/report.js";
+import {
+  formatComparison,
+  formatModel,
+  formatReport,
+  formatSpread,
+} from "../../src/eval/report.js";
 import type { ModelRun, SampleResult } from "../../src/contracts/generated/eval.js";
 import { buildReport, total, totalsByOrigin } from "../../src/eval/score.js";
 import { modelLabel } from "../../src/eval/run.js";
@@ -277,6 +282,65 @@ describe("formatReport", () => {
 
     const two = formatReport(buildReport("golden", [run(), run({ model: "qwen3:4b" })]));
     expect(two.join("\n")).toContain("comparison");
+  });
+});
+
+describe("seeds and their spread (step 16, ADR-059)", () => {
+  /** A seeded run whose one sample found the label or missed it. */
+  function seeded(seed: number, foundIt: boolean, over: Partial<ModelRun> = {}): ModelRun {
+    const s = sample({
+      review: {
+        ...sample().review,
+        kept: foundIt ? 3 : 2,
+        recall: foundIt ? 1 : 0,
+        found: foundIt ? sample().review.found : [],
+        missed: foundIt ? [] : ["publish-before-commit"],
+      },
+    });
+    return run({ samples: [s], seed, temperature: 0.2, ...over });
+  }
+
+  it("says which seed and temperature each block measured", () => {
+    expect(formatModel(seeded(2, true))[0]).toBe("ollama / qwen3:30b seed 2 at temperature 0.2");
+    expect(formatModel(run())[0]).toBe("ollama / qwen3:30b");
+  });
+
+  it("labels the comparison rows by seed, so three rows of one model can be told apart", () => {
+    const table = formatComparison([seeded(1, true), seeded(2, false)]).join("\n");
+    expect(table).toContain("qwen3:30b seed 1");
+    expect(table).toContain("qwen3:30b seed 2");
+  });
+
+  it("prints each axis as a median with its range, and names what moved", () => {
+    const report = buildReport("golden", [seeded(1, true), seeded(2, false), seeded(3, true)]);
+    const [spread] = report.spreads ?? [];
+    if (spread === undefined) throw new Error("expected a spread");
+    const lines = formatSpread(spread);
+    expect(lines[0]).toBe("spread: ollama / qwen3:30b at temperature 0.2, seeds 1, 2, 3");
+    expect(lines).toContain("  recall        1.000 (0.000-1.000, n=3)");
+    expect(lines).toContain("  kept          3 (2-3, n=3)");
+    expect(lines).toContain(
+      "  unstable: sample-01-order-outbox publish-before-commit found by 2 of 3",
+    );
+  });
+
+  it("says a failed seed was left out rather than dropping it silently", () => {
+    const broken = seeded(3, false, { failed: "sample-02: Ollama went away" });
+    const [spread] =
+      buildReport("golden", [seeded(1, true), seeded(2, true), broken]).spreads ?? [];
+    if (spread === undefined) throw new Error("expected a spread");
+    const text = formatSpread(spread).join("\n");
+    expect(text).toContain("seeds 1, 2");
+    expect(text).toContain("n=2");
+    expect(text).toContain("incomplete, not counted: seed 3");
+  });
+
+  it("ends the report with the spread, and prints none for an ordinary run", () => {
+    const text = formatReport(buildReport("golden", [seeded(1, true), seeded(2, false)])).join(
+      "\n",
+    );
+    expect(text).toMatch(/comparison[\s\S]*spread: ollama/);
+    expect(formatReport(buildReport("golden", [run()])).join("\n")).not.toContain("spread");
   });
 });
 

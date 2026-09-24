@@ -12,12 +12,16 @@ import type {
   FalsePositive,
   Match,
   Miscalibration,
+  ModelRun,
   OriginTotals,
+  Range,
   Redundancy,
   ReviewScore,
   ScriptResult,
   SampleResult,
+  Spread,
   Totals,
+  UnstableLabel,
 } from "../contracts/generated/eval.js";
 import type {
   AcceptableLabel,
@@ -391,16 +395,102 @@ export function budgetWarnings(
   return warnings;
 }
 
+/** The middle of sorted values, or the mean of the two middle ones; null when there are none. */
+function median(sorted: readonly number[]): number | null {
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? null;
+  return Math.round((((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2) * 1000) / 1000;
+}
+
+/**
+ * The median and the extremes of one axis across seeds. An undefined value - a rate over an empty
+ * set - is kept in `values`, so they stay aligned with the seeds, and left out of the summary.
+ */
+export function range(values: readonly (number | null)[]): Range {
+  const known = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
+  return {
+    median: median(known),
+    min: known[0] ?? null,
+    max: known[known.length - 1] ?? null,
+    values: [...values],
+  };
+}
+
+/**
+ * must_find labels some seeds found and others missed, in sample order. A label every seed found,
+ * or every seed missed, is not here: it does not move, whatever else does.
+ */
+export function unstableLabels(runs: readonly ModelRun[]): UnstableLabel[] {
+  const foundBy = new Map<string, { sample: string; key: string; count: number }>();
+  for (const run of runs) {
+    for (const s of run.samples) {
+      for (const key of [...s.review.found.map((m) => m.key), ...s.review.missed]) {
+        const id = `${s.sample}\u0000${key}`;
+        const entry = foundBy.get(id) ?? { sample: s.sample, key, count: 0 };
+        if (s.review.found.some((m) => m.key === key)) entry.count += 1;
+        foundBy.set(id, entry);
+      }
+    }
+  }
+  return [...foundBy.values()]
+    .filter((e) => e.count > 0 && e.count < runs.length)
+    .map((e) => ({ sample: e.sample, key: e.key, found_by: e.count, of: runs.length }));
+}
+
+/**
+ * What each model read across its seeds (ADR-059). Runs without a seed are not part of any
+ * spread, and a seed whose run failed partway is named and left out, because its totals cover
+ * fewer samples and would read as a movement that is not there.
+ */
+export function spreads(runs: readonly ModelRun[]): Spread[] {
+  const byModel = new Map<string, ModelRun[]>();
+  for (const run of runs) {
+    if (run.seed === undefined) continue;
+    const id = `${run.provider}\u0000${run.model}`;
+    byModel.set(id, [...(byModel.get(id) ?? []), run]);
+  }
+
+  return [...byModel.values()].flatMap((group) => {
+    const [first] = group;
+    if (first === undefined) return [];
+    const complete = group.filter((r) => !r.failed);
+    const axis = (pick: (t: Totals) => number | null | undefined): Range =>
+      range(complete.map((r) => pick(r.totals) ?? null));
+    return [
+      {
+        provider: first.provider,
+        model: first.model,
+        temperature: first.temperature ?? 0,
+        seeds: complete.map((r) => r.seed ?? 0),
+        incomplete_seeds: group.filter((r) => r.failed).map((r) => r.seed ?? 0),
+        axes: {
+          precision: axis((t) => t.precision),
+          recall: axis((t) => t.recall),
+          calibrated: axis((t) => t.calibrated),
+          kept: axis((t) => t.kept),
+          false_positives: axis((t) => t.false_positives),
+          redundant: axis((t) => t.redundant ?? 0),
+          not_narrated: axis((t) => (t.narratable ?? 0) - (t.narrated ?? 0)),
+        },
+        unstable: complete.length < 2 ? [] : unstableLabels(complete),
+      },
+    ];
+  });
+}
+
 /** Builds the report written to `eval.json`. */
 export function buildReport(
   goldenDir: string,
   models: EvalReport["models"],
   now: Date = new Date(),
 ): EvalReport {
+  const measured = spreads(models);
   return {
     schema_version: "1.0",
     generated_at: now.toISOString(),
     golden_dir: goldenDir,
     models,
+    ...(measured.length === 0 ? {} : { spreads: measured }),
   };
 }

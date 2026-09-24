@@ -638,6 +638,51 @@ describe("spr CLI", () => {
     expect(report.models.map((m) => m.model)).toEqual(["alpha", "beta"]);
   });
 
+  it("eval runs each seed into its own folder and reports the spread (ADR-059)", async () => {
+    const outDir = tempDir();
+    await withFakeProvider(() => run("eval", "--out", outDir, "--seed", "1", "--seed", "2"));
+
+    expect(process.exitCode).toBeUndefined();
+    const report: unknown = JSON.parse(readFileSync(path.join(outDir, "eval.json"), "utf8"));
+    const result = validateContract("eval", report);
+    expect(result.ok ? [] : result.errors).toEqual([]);
+
+    const { models, spreads } = report as {
+      models: { model: string; seed?: number; temperature?: number; samples: unknown[] }[];
+      spreads?: { seeds: number[]; temperature: number }[];
+    };
+    expect(models.map((m) => [m.seed, m.temperature])).toEqual([
+      [1, 0.2],
+      [2, 0.2],
+    ]);
+    expect(spreads?.map((s) => [s.seeds, s.temperature])).toEqual([[[1, 2], 0.2]]);
+    const folder = models[0]?.model.replace(/[^\w.-]/g, "_") ?? "";
+    expect(existsSync(path.join(outDir, folder, "seed-2", "sample-01-order-outbox"))).toBe(true);
+
+    const text = out.join("\n");
+    expect(text).toContain("seed 2 at temperature 0.2");
+    expect(text).toMatch(/spread: fake \/ .* at temperature 0\.2, seeds 1, 2/);
+    expect(text).toMatch(/recall\s+\d\.\d{3} \(\d\.\d{3}-\d\.\d{3}, n=2\)/);
+  });
+
+  it("eval refuses a temperature without a seed, and a seed given twice", async () => {
+    await run("eval", "--out", tempDir(), "--temperature", "0.5");
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toContain("--temperature goes with --seed");
+
+    // A bad option value is rejected by Commander itself, which exits, so ask it to throw.
+    const program = buildProgram();
+    for (const command of [program, ...program.commands]) {
+      command.exitOverride().configureOutput({ writeErr: () => undefined });
+    }
+    const evalWith = (...args: string[]) => program.parseAsync(["node", "spr", "eval", ...args]);
+    await expect(evalWith("--seed", "4", "--seed", "4")).rejects.toThrow("Seed 4 is given twice");
+    await expect(evalWith("--seed", "-1")).rejects.toThrow("Expected a whole number for --seed");
+    await expect(evalWith("--seed", "1", "--temperature", "1.5")).rejects.toThrow(
+      "Expected a temperature from 0 to 1",
+    );
+  });
+
   it("stage rejects an unknown name", async () => {
     await run("stage", "nonsense", "--run", tempDir());
     expect(process.exitCode).toBe(1);

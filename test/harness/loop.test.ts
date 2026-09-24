@@ -223,6 +223,16 @@ describe("runAgent", () => {
     expect(provider.requests[0]?.outputSchema).toBe(SCHEMA);
   });
 
+  it("passes a seed through to every call, and none when there is none", async () => {
+    const seeded = new FakeLlmProvider([fakeText("not json"), fakeText('{"answer":"ok"}')]);
+    await runAgent(options(seeded, { temperature: 0.2, seed: 3 }));
+    expect(seeded.requests.map((r) => r.seed)).toEqual([3, 3]);
+
+    const greedy = new FakeLlmProvider([fakeText('{"answer":"ok"}')]);
+    await runAgent(options(greedy));
+    expect(greedy.requests[0]).not.toHaveProperty("seed");
+  });
+
   it("keeps diff content out of the system prompt", async () => {
     const provider = new FakeLlmProvider([fakeText('{"answer":"ok"}')]);
     await runAgent(

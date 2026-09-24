@@ -44,9 +44,23 @@ export interface RunEvalOptions {
   models?: readonly string[];
   /** Ignore the on-disk cache, for a measurement that goes into an ADR (ADR-017). */
   noCache?: boolean;
+  /**
+   * Sampler seeds. Each model is scored once per seed at {@link temperature}, and the report
+   * gains the median and range of every axis (ADR-059). Empty or absent: one greedy run, as ever.
+   */
+  seeds?: readonly number[];
+  /** What a seeded run samples at. Defaults to {@link MEASUREMENT_TEMPERATURE}. */
+  temperature?: number;
   /** Called after each sample. A full comparison takes tens of minutes and is silent without it. */
   onProgress?: (line: string) => void;
 }
+
+/**
+ * The temperature `spr eval --seed` samples at unless told otherwise (ADR-059). Low enough that
+ * the model still answers like itself, high enough that a seed changes something: the same
+ * question at 0.2 gave three different answers for three seeds and the same answer twice for one.
+ */
+export const MEASUREMENT_TEMPERATURE = 0.2;
 
 /** Sample folder names, in order. A folder without labels is not a sample. */
 export function goldenSamples(goldenDir: string): string[] {
@@ -88,6 +102,14 @@ function withModel(config: SprConfig, model: string): SprConfig {
   const llm = { ...config.llm, model };
   delete llm.models;
   return { ...config, llm };
+}
+
+/**
+ * The same configuration sampled with a seed. Only the measurement does this: the pipeline's own
+ * temperature stays where the configuration puts it, 0 by default (ADR-059).
+ */
+function withSeed(config: SprConfig, seed: number, temperature: number): SprConfig {
+  return { ...config, llm: { ...config.llm, seed, temperature } };
 }
 
 /**
@@ -226,26 +248,40 @@ export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
   // With no --model the configuration runs as it stands, per-stage overrides included; each
   // --model names one model for the whole pipeline, so the rows can be compared (ADR-057).
   const named = options.models ?? [];
-  const runsToDo: { model: string; config: SprConfig }[] = named.length
+  const models: { model: string; config: SprConfig }[] = named.length
     ? named.map((model) => ({ model, config: withModel(config, model) }))
     : [{ model: modelLabel(config), config }];
+  // Each model once per seed, seeds innermost, so one model's spread is measured back to back.
+  const seeds = options.seeds ?? [];
+  const temperature = options.temperature ?? MEASUREMENT_TEMPERATURE;
+  const runsToDo: { model: string; config: SprConfig; seed?: number }[] = seeds.length
+    ? models.flatMap(({ model, config: modelConfig }) =>
+        seeds.map((seed) => ({ model, seed, config: withSeed(modelConfig, seed, temperature) })),
+      )
+    : models;
 
   const samples = goldenSamples(goldenDir);
   if (samples.length === 0) throw new StageError("eval", `No samples found in ${goldenDir}`);
 
   const runs: ModelRun[] = [];
-  for (const { model, config: modelConfig } of runsToDo) {
+  for (const { model, config: modelConfig, seed } of runsToDo) {
     const cache = cacheFor(modelConfig, noCache);
     const results: SampleResult[] = [];
     let failed: string | undefined;
+    const label = seed === undefined ? model : `${model} seed ${String(seed)}`;
+    const modelDir = path.join(
+      outDir,
+      model.replace(/[^\w.-]/g, "_"),
+      ...(seed === undefined ? [] : [`seed-${String(seed)}`]),
+    );
 
     for (const sample of samples) {
-      const runDir = path.join(outDir, model.replace(/[^\w.-]/g, "_"), sample);
+      const runDir = path.join(modelDir, sample);
       try {
         const result = await evaluateSample(goldenDir, sample, runDir, modelConfig, secrets, cache);
         results.push(result);
         options.onProgress?.(
-          `${model} ${sample}: ${result.review.kept} kept, ` +
+          `${label} ${sample}: ${result.review.kept} kept, ` +
             `${result.review.found.length}/${result.review.found.length + result.review.missed.length} must_find, ` +
             `${result.review.false_positives.length} fp, ` +
             `${narration(result)}, ${result.seconds ?? 0}s`,
@@ -253,7 +289,7 @@ export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
       } catch (error) {
         // One model that cannot run must not discard what the others measured.
         failed = `${sample}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`;
-        options.onProgress?.(`${model} ${sample}: FAILED - ${failed}`);
+        options.onProgress?.(`${label} ${sample}: FAILED - ${failed}`);
         break;
       }
     }
@@ -265,6 +301,7 @@ export async function runEval(options: RunEvalOptions): Promise<EvalReport> {
       totals: total(results),
       by_origin: totalsByOrigin(results),
       ...(failed === undefined ? {} : { failed }),
+      ...(seed === undefined ? {} : { seed, temperature: modelConfig.llm.temperature }),
     });
   }
 

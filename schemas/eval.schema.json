@@ -17,6 +17,11 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/ModelRun" }
+    },
+    "spreads": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Spread" },
+      "description": "One entry per model `spr eval --seed` scored: what each axis read across the seeds, as a median and a range. Absent from an ordinary run. A claim about a prompt or model change has to clear this range, not a single run's point (ADR-047, ADR-059)."
     }
   },
   "$defs": {
@@ -38,6 +43,17 @@
         "failed": {
           "type": ["string", "null"],
           "description": "Why this model could not be scored in full. Its totals then cover only the samples that ran, and are not comparable with a complete row. One model breaking must not discard the others' measurements."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The sampler seed this run used, when `spr eval --seed` asked for one. Absent from an ordinary run, which is greedy at the configured temperature (ADR-059)."
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "The temperature a seeded run sampled at. Recorded beside the seed because the seed means nothing without it."
         }
       }
     },
@@ -323,6 +339,85 @@
         "false_positives": { "type": "integer", "minimum": 0 },
         "calibrated": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "miscalibrated": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Spread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "temperature", "seeds", "incomplete_seeds", "axes", "unstable"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 1 },
+        "seeds": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "The seeds whose runs completed, in the order they ran. Every `values` array below is aligned with this one."
+        },
+        "incomplete_seeds": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Seeds whose run failed partway. They are left out of every axis rather than averaged in, because an incomplete row's totals cover fewer samples and would read as a movement that is not there."
+        },
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "precision",
+            "recall",
+            "calibrated",
+            "kept",
+            "false_positives",
+            "redundant",
+            "not_narrated"
+          ],
+          "properties": {
+            "precision": { "$ref": "#/$defs/Range" },
+            "recall": { "$ref": "#/$defs/Range" },
+            "calibrated": { "$ref": "#/$defs/Range" },
+            "kept": { "$ref": "#/$defs/Range" },
+            "false_positives": { "$ref": "#/$defs/Range" },
+            "redundant": { "$ref": "#/$defs/Range" },
+            "not_narrated": {
+              "$ref": "#/$defs/Range",
+              "description": "Samples that had findings to narrate and got no script, because the Narrator could not satisfy the narration checks within its repairs. Zero on every greedy run to date; the axis exists because sampling is where it first moved."
+            }
+          }
+        },
+        "unstable": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UnstableLabel" },
+          "description": "must_find labels some complete seeds found and others missed. The range says how far recall moves; this says which bugs move it, which is the part a prompt change is argued about."
+        }
+      }
+    },
+    "Range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["median", "min", "max", "values"],
+      "properties": {
+        "median": {
+          "type": ["number", "null"],
+          "description": "The middle value, or the mean of the two middle values for an even count. Null when every seed's value was undefined, as a rate over an empty set is."
+        },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "values": {
+          "type": "array",
+          "items": { "type": ["number", "null"] },
+          "description": "One value per complete seed, aligned with `seeds`, so the range can be checked and the runs told apart."
+        }
+      }
+    },
+    "UnstableLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample", "key", "found_by", "of"],
+      "properties": {
+        "sample": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 },
+        "found_by": { "type": "integer", "minimum": 1 },
+        "of": { "type": "integer", "minimum": 2 }
       }
     },
     "Severity": { "enum": ["critical", "high", "medium", "low"] }
