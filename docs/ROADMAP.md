@@ -138,8 +138,9 @@ can change a workflow runs code on the machine. Step 4 needs the machine to exis
 
 ## Milestone 5: documentation and a release
 
-**Scoped by Bahman in October 2026 as documentation and a tagged release, not features**
-(ADR-062). The milestone's old sketch listed four things. The reusable workflow landed in
+**Complete.** Scoped by Bahman in October 2026 as documentation and a tagged release, not
+features (ADR-062), and finished the same day: the docs a service team needs, a measured
+end-to-end run, and `v0.1.0` (ADR-063). The milestone's old sketch listed four things. The reusable workflow landed in
 Milestone 4 step 4 (ADR-056). Subtitle styling and voice or theme options were offered and not
 chosen: they are available if anyone ever wants them, and nothing waits on them.
 
@@ -147,7 +148,7 @@ chosen: they are available if anyone ever wants them, and nothing waits on them.
 |---|---|---|
 | 1 | `README.md` rewritten for someone meeting the project, and `docs/SERVICE_TEAM_GUIDE.md` for a team adding the review to their repository: the caller workflow pinned to a tag, the three runner options with their trade-offs, what the comment looks like, the four ways to skip a change, what it costs, and that the code is read and never executed. The README now leads with what the tool is measured on and what it is not proven on | done |
 | 2 | A final end-to-end run of all nine golden samples through the real pipeline, with the table recorded, so the release ships a measured pipeline rather than a believed one. Nine of nine finished: six videos, three correct no-video runs, 4:48 of wall clock, every video reporting narration complete with 11 to 79 ms of frame quantization (ADR-063) | done |
-| 3 | `v0.1.0`: the tag the image workflow turns into `:v0.1.0`, `:v0.1` and `:latest`, and the pinning guidance that goes with it. Not `1.0.0`, because the tool is finished and measured but not proven on real code (ADR-063) | next |
+| 3 | `v0.1.0`: the tag the image workflow turns into `:v0.1.0`, `:v0.1` and `:latest`, and the pinning guidance that goes with it. Not `1.0.0`, because the tool is finished and measured but not proven on real code (ADR-063) | done |
 
 Intro and outro cards used to be listed here, and are **withdrawn, not deferred**: Bahman decided
 a video is findings only, and considered and rejected the reason the outro card existed - that
