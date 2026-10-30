@@ -12,6 +12,7 @@ reviewed and commented on a real pull request through the GitHub API. Its scores
 hand-labelled samples that were written for it to find: precision 1.000, recall 0.750 on the
 default model, with no false positives on that set. The one real pull request it has reviewed
 produced two false positives and found nothing, which is the honest headline (ADR-060, ADR-061).
+Released as `v0.1.0`; the image is `ghcr.io/bahmanashtari/shadow-pr-review:v0.1.0`.
 `docs/ROADMAP.md` has what was built, `docs/DECISIONS.md` why, `CLAUDE.md` the working guide.
 
 ## What a reviewer sees

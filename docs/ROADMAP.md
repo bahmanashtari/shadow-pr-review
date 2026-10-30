@@ -3,6 +3,14 @@
 The single place that says what is done and what comes next. Update the status column
 in the same commit that finishes a step. Detailed plans for a step live in `docs/plans/`.
 
+**The project is complete and released as `v0.1.0`** (29 October 2026, ADR-063). Every milestone
+is done, with three steps withdrawn or closed by decision rather than left open (ADR-062): the
+tool never executes a reviewed repository's code, the video stays an Actions artifact, and the
+golden set stays nine synthetic samples. **No step is marked next, and that is the finished
+state, not an omission.** What a 0.2 would be: real pull requests, and the samples step 4 was
+closed without. A session picking this up should read ADR-062 and ADR-063 before proposing
+anything the roadmap shows as withdrawn.
+
 Status values: done, in progress, next, planned, withdrawn. **Withdrawn means decided against,
 not postponed**: the row says who decided and which ADR records it, and a later session should
 read that before proposing it again.
