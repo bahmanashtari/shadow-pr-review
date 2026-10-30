@@ -2980,3 +2980,48 @@ The step can be reopened the day there is material; nothing else was waiting on 
 
 **Consequences.** Milestones 3 and 4 are complete, with two steps withdrawn and one closed.
 Milestone 5 becomes documentation and a tagged release rather than features (ADR-063).
+
+## ADR-063: v0.1.0, and the run it ships on (accepted, October 2026)
+
+**Context.** Milestone 5, scoped by Bahman as documentation and a tagged release (ADR-062). A
+service repository is told to pin the workflow and the image to a version
+(`docs/SERVICE_TEAM_GUIDE.md`), which only works if there is one.
+
+**The release runs on a measured pipeline, not a believed one.** All nine golden samples went
+through the real pipeline - local model, Kokoro container, Chromium, ffmpeg - with
+`scripts/end-to-end.ts`, on the code being tagged:
+
+| sample | final | drift | kept | steps | words | wall |
+|---|---|---|---|---|---|---|
+| 01 order-outbox | 0:42 | -79 ms | 2 | 2 | 97 | 0:47 |
+| 02 inventory-consumer | 0:57 | -61 ms | 3 | 3 | 145 | 1:02 |
+| 03 email-value-object | none | | 0 | | | 0:01 |
+| 04 payment-webhook | 0:28 | -22 ms | 1 | 1 | 58 | 0:49 |
+| 05 summary-projection | 0:41 | -24 ms | 2 | 2 | 93 | 0:45 |
+| 06 customer-search | 0:33 | -11 ms | 2 | 2 | 73 | 0:47 |
+| 07 retry-backoff | none | | 0 | | | 0:01 |
+| 08 misleading-comment | 0:19 | -18 ms | 1 | 1 | 41 | 0:35 |
+| 09 planted-instruction | none | | 0 | | | 0:01 |
+
+Nine of nine finished: six videos and three correct no-video runs (ADR-042), 4:48 of wall clock
+on a warm cache, nothing dropped. Every video reports **narration complete** - the checked claim
+(ADR-035) - and the picture's shortfall is 11 to 79 ms, frame quantization at 25 fps and nothing
+more. The two adversarial samples, 07 and 09, correctly keep nothing. 985 unit tests pass, and
+both CI workflows are green on the tagged commit.
+
+**Decision: `v0.1.0`, not `1.0.0`.** The pipeline is complete and measured, and the honest limit
+is in ADR-062: nine synthetic samples, and a real pull request on which it found nothing and
+produced two false positives. A 1.0 would claim the tool is proven on real code, which the
+project's own evidence does not support. 0.1.0 says: finished, working, and not yet proven.
+
+**What the tag publishes.** `.github/workflows/image.yml` turns a `v*` tag into
+`ghcr.io/bahmanashtari/shadow-pr-review:v0.1.0`, `:v0.1` and `:latest`, after the same smoke test
+every image passes - the whole pipeline inside the container with both fakes (ADR-053). The
+reusable workflow becomes available as
+`bahmanashtari/shadow-pr-review/.github/workflows/video-review.yml@v0.1.0`, which is what the
+service-team guide tells a repository to pin, so a change on `main` cannot change anybody's
+reviews without them.
+
+**What a 0.2 would be**, if the project is picked up again: the real samples ADR-062 closed step 4
+without, and whatever reviewing real pull requests teaches. The roadmap's remaining open items
+are those, and nothing in the pipeline itself.
