@@ -5,6 +5,9 @@
 
 ## Workflow
 
+**A service team wants `docs/SERVICE_TEAM_GUIDE.md`, not this file**: this one is the snapshot of
+how GitHub's own pieces fit together, kept for whoever maintains the workflow.
+
 Built, not sketched: `.github/workflows/video-review.yml` is the reusable workflow, and
 `.github/workflows/self-review.yml` is this repository calling it on its own pull requests
 (ADR-056). A service repository needs only the caller:

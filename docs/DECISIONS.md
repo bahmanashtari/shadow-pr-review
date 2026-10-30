@@ -2934,3 +2934,49 @@ reaching for code in other files.
 
 **Consequences.** New module `src/agents/head-files.ts` with its tests. The Reviewer's checkout
 prompt mentions the files. ARCHITECTURE and CLAUDE.md describe it. No contract changed.
+
+## ADR-062: Three things this project will not do (accepted, October 2026)
+
+**Context.** Bahman returned after a month away, asked where the project stood and how to finish
+it, and settled the three items that had been waiting on him. All three are decisions to stop,
+which is why they are recorded together: each closes a step that would otherwise sit open and
+invite a future session to re-propose it.
+
+**1. The tool never executes code from the repository it reviews.** Milestone 3 step 5 would have
+run the reviewed repository's own `tsc`, `eslint` and `dependency-cruiser` to feed
+`src/analyzers/` with findings no model produces - floating promises, unsafe casts, layer
+violations across files. Its plan was written and deliberately not built, because it turns on a
+security question that is his: an eslint configuration loads arbitrary plugin code, and a
+`tsconfig` can extend one. He was offered a sandboxed version - inside the image, networking off,
+a hard timeout, no install step - and a narrower one, `tsc` alone. He took neither. **The step is
+withdrawn, not deferred**, and the principle is now CLAUDE.md's sixth: this tool reads a
+repository and never runs it. A future session that finds ADR-022's note about repo-aware
+analysis should read this instead of reviving it.
+
+What the project gives up is real: the misses the golden set records - an unauthenticated money
+endpoint, a guard missing in unchanged context - are not the kind static analysis finds, but
+floating promises and cross-layer imports are, and those now stay the reviewer's job. What it
+keeps is a trust boundary with no holes in it: diff text is untrusted input to a prompt
+(ADR-049), the repository is read through one guard (`resolveInsideRepo`), and nothing from a
+pull request is ever executed.
+
+**2. The video stays a GitHub Actions artifact.** ADR-008 planned object storage as option 2,
+"once playback in the browser matters", and ADR-056 shipped option 1: the workflow uploads
+`final.mp4` and the sticky comment links it. What a reviewer gets from that link is a signed-in
+zip download rather than a video that plays. Offered an uploader built now against the S3 API
+with credentials supplied later, Bahman chose to skip it: a bucket, an account and a monthly bill
+for a convenience. **Milestone 4 step 5 is withdrawn.** ADR-008's option 2 remains the design if
+anyone ever wants it, and `--video-url` already takes any https URL, so the day a bucket exists
+the work is an uploader and a workflow step, not a change to Publish.
+
+**3. The golden set is nine synthetic samples, and says so.** Milestone 3 step 4 has been "in
+progress" since September waiting for anonymized diffs from the team's services, which only
+Bahman has. He closed it: the set stays as it is. Every number this project reports therefore
+measures the tool against bugs written for it to find, which is a weaker claim than catching one
+that shipped, and `spr eval` already prints that caveat under every total (ADR-043). The one
+real pull request the tool has reviewed produced two false positives and no finding
+(ADR-051, ADR-060, ADR-061), which is the honest headline: **the tool is measured, not proven.**
+The step can be reopened the day there is material; nothing else was waiting on it.
+
+**Consequences.** Milestones 3 and 4 are complete, with two steps withdrawn and one closed.
+Milestone 5 becomes documentation and a tagged release rather than features (ADR-063).

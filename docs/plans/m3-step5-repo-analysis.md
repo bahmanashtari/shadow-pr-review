@@ -1,6 +1,11 @@
 # Plan: Milestone 3, step 5 (repo-aware static analysis)
 
-Status: **proposed, and deliberately not built.** Written under Bahman's instruction of 21 September
+Status: **withdrawn** on 29 October 2026 (ADR-062). Bahman answered section 3's question: the tool
+never executes code from the repository it reviews, sandboxed or not, and `tsc` alone was declined
+too. CLAUDE.md's sixth principle now says so. This plan stays as the record of what was given up
+and of the trust boundary that was chosen instead; do not revive it without him.
+
+Originally: **proposed, and deliberately not built.** Written under Bahman's instruction of 21 September
 2026 to continue with whatever else could be done, but this step turns on a security decision that
 is his: whether the tool may ever execute code from the repository it reviews, and under what trust
 boundary. Nothing below should be built until he has answered section 3.

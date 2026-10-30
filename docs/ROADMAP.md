@@ -3,7 +3,9 @@
 The single place that says what is done and what comes next. Update the status column
 in the same commit that finishes a step. Detailed plans for a step live in `docs/plans/`.
 
-Status values: done, in progress, next, planned.
+Status values: done, in progress, next, planned, withdrawn. **Withdrawn means decided against,
+not postponed**: the row says who decided and which ADR records it, and a later session should
+read that before proposing it again.
 
 ## Milestone 1: local diff to review.json and script.json
 
@@ -77,24 +79,25 @@ it belongs to. With the rubric defining the categories it reads 1.000 / 0.500, c
 0.875, no false positives (ADR-044). **The real samples are still owed**, and only Bahman has the
 material, so a session should not resume step 4 without it. Steps 13 and 14 have since
 landed and recall reads 0.600 (ADR-046). Step 15 followed (ADR-047), then 7 (ADR-048), 2 (ADR-049) and
-3 (ADR-050). **Two Milestone 3 steps wait on Bahman**: 4 for the real samples, and 5, whose plan
-asks whether the tool may ever execute the reviewed repository's code. Steps 17 and 20 landed on
+3 (ADR-050). **Both of the steps that waited on Bahman are settled** (ADR-062): step 4 is closed with the
+golden set synthetic and the caveat printed under every total, and step 5 is withdrawn - the tool
+reads a repository and never runs it, which is now CLAUDE.md's sixth principle. Steps 17 and 20 landed on
 23 September: a model per stage, and the drop rule the adversarial sample earned (ADR-057,
 ADR-058). Steps 16, 19 and 21 landed on 24 September. `spr eval --seed` measures a range instead of a point
 (ADR-059). The Reviewer's tools had never been reachable on Ollama, and now are - but the model
 still does not use them (ADR-060) - so with a checkout the changed files are shown instead of
-offered (ADR-061). **Every Milestone 3 step left is Bahman's**: 4 needs his real samples, and 5
-needs his decision on executing a reviewed repository's code. Milestone 4's step 5 needs his
-storage account. Milestone 4 is complete apart from step 5's
-object storage.
+offered (ADR-061). **Milestone 3 is closed** (ADR-062): step 4 keeps the golden set synthetic, with the caveat
+printed under every total, and step 5 is withdrawn - the tool reads a repository and never runs
+it, now CLAUDE.md's sixth principle. Milestone 4 is complete, its object storage withdrawn with
+the same decision.
 
 | Step | Scope | Status |
 |---|---|---|
 | 1 | Verifier agent (keep / downgrade / drop), preceded by the calibration axis that made it judgeable. Calibration went 0.833 to 1.000: six findings judged, five kept, one downgraded with the rubric quoted back (ADR-036, ADR-037). The "small model" and the cost flag ARCHITECTURE specified were dropped and deferred, on ADR-026's measurement. Plan: `docs/plans/m3-step1-verifier-agent.md` | done |
 | 2 | **Hostile and misleading text in a diff.** Two adversarial samples: a sincere comment claiming a redelivery bug cannot happen (08), and a comment telling AI reviewers to report a critical bug that does not exist (09). The default model resisted both before any hardening. The real find was a hole: analyzer findings sat in the Reviewer's *system* prompt naming their file, and a quoted git path can hold a newline, so a diff could write its own lines there - demonstrated, then closed by moving the list to the user message. The Reviewer gained the untrusted-input section the Verifier had (ADR-049). Taken under Bahman's instruction to continue. Plan: `docs/plans/m3-step2-hostile-diffs.md` | done |
 | 3 | **Budgets, cache and the cost report.** Nothing needed tuning on the evidence there is: budgets are per agent and the heaviest used 30% of its output tokens, and the cache is 25 MB. `cost.json` now says where each run's tokens and seconds went, by stage, and `spr eval` warns when any stage passes half a budget - silent today, and the first signal when real, larger changes arrive (ADR-050). Tuning waits for those. Taken under Bahman's instruction to continue. Plan: `docs/plans/m3-step3-budgets-and-cost.md` | done |
-| 4 | Expand the golden set with real (anonymized) changes from the team's services. **Blocker for any further model comparison**: three of four local models tied at 1.000 precision and recall on the original three samples (ADR-026). Done so far: the expected reviews rewritten to ADR-041's format; a required `origin` on every sample (ADR-043); six synthetic samples, 04 to 09, two of them adversarial (ADR-044, ADR-049); a category guide in the rubric; and the model comparison it unblocked (ADR-045). Nine samples read precision 1.000, recall 0.750, calibration 0.909 on the default model. The misses every model shares: an unauthenticated money endpoint (04, 08) and a guard missing only in unchanged context (06). **Still owed: the real samples**, which wait on Bahman; `golden/README.md` says how to contribute one. Plan: `docs/plans/m3-step4-golden-set.md` | in progress |
-| 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): `tsc` for floating promises and unsafe casts, `eslint` with the reviewed repository's own config, `dependency-cruiser` for the cross-file layer graph. Needs a checkout with dependencies installed, so it is skipped when a run has none, and it means executing the reviewed repository's toolchain - decide the sandboxing story first Plan written and deliberately not built: it turns on whether the tool may ever execute code from the repository it reviews, which is Bahman's decision. Plan: `docs/plans/m3-step5-repo-analysis.md` | planned |
+| 4 | Expand the golden set with real (anonymized) changes from the team's services. The synthetic half is done: nine samples, every one marked `synthetic` (ADR-043), two of them adversarial (ADR-044, ADR-049), and the model comparison they unblocked (ADR-045). Nine samples read precision 1.000, recall 0.750, calibration 0.909 on the default model, with the misses recorded. **Closed without the real samples** (ADR-062): only Bahman has the material, every number therefore measures the tool against bugs written for it to find, and `spr eval` prints that caveat under every total. Reopen the day there is material. Plan: `docs/plans/m3-step4-golden-set.md` | done |
+| 5 | Repo-aware static analysis feeding `src/analyzers/` (ADR-022): the reviewed repository's own `tsc`, `eslint` and `dependency-cruiser`. **Withdrawn, not deferred** (ADR-062): it means executing code from the repository under review, and Bahman declined both the sandboxed version and the `tsc`-only one. CLAUDE.md's sixth principle now says the tool reads a repository and never runs it. The plan stays as the record of what was given up. Plan: `docs/plans/m3-step5-repo-analysis.md` | withdrawn |
 | 6 | Narration length: a per-step target band instead of only a cap, and the whole-video line in `docs/NARRATION_STYLE.md` restated as the format's structural range. The cause was one sentence in `HOW_TO_ANSWER` - "Those are hard limits, not targets." - and removing it moved finding steps from a mean of 33.7 words to 42.7 against the fixtures' 44.6, with precision, recall and calibration unmoved (ADR-028, ADR-034, ADR-039). The 40-word floor is prompt guidance and deliberately not a check, because two hand-written fixtures sit below it. Plan: `docs/plans/m3-step9-narration-severity-and-length.md` | done |
 | 7 | Score redundancy in `spr eval`: two kept findings that locate the same label are redundant, reported per sample and as a surplus count beside precision, never inside it - the shape ADR-025 gave restraint and ADR-036 gave calibration. Re-scoring all 99 reviews on disk finds exactly one case: the duplicate pair ADR-029 heard, in a run written hours before its fix (ADR-048). Taken under Bahman's instruction to continue while the real samples are outstanding. Plan: `docs/plans/m3-step7-redundancy.md` | done |
 | 8 | **The Composer's sync check was vacuous, and a short recording went unnoticed.** `assertInSync` compares the final file's two streams, which `-shortest` has already forced into agreement, so it can only ever measure frame granularity - it passed a `final.mp4` whose narration was cut off 429 ms early at "8 ms apart". Compare the final audio against `timeline.total_duration_ms` instead, and check `record.json`'s `recorded_duration_ms` against the webm's real duration, which was 678 ms shorter on the run that failed. Done: three checks, each against a reference the encode cannot move, and the run that failed now fails (ADR-035). Plan: `docs/plans/m3-step8-sync-check.md` | done |
@@ -114,8 +117,8 @@ object storage.
 
 ## Milestone 4: GitHub integration
 
-**Milestone 4 is built apart from step 5's object storage**, which needs an account and
-credentials. A pull request in a service repository now gets a reviewed, narrated video and a
+**Milestone 4 is complete**, with step 5's object storage withdrawn (ADR-062): the video ships
+as an Actions artifact, which the comment links. A pull request in a service repository now gets a reviewed, narrated video and a
 sticky comment from a workflow of ten lines, and the tool has posted on GitHub for real (ADR-056).
 
 **Where the model runs in CI is decided: a self-hosted runner on a dedicated team machine, running
@@ -131,12 +134,20 @@ can change a workflow runs code on the machine. Step 4 needs the machine to exis
 | 2 | `spr stage publish`: the sticky PR comment. Renders `comment.md` - every finding's reasoning and fix as text, permalinks at the head, model text made inert - and `spr run` stops there; posting is its own command, which updates the comment an earlier run posted. A forced run clears its own earlier outputs, so no stale video is ever linked. Commit comments for pushes moved to step 4 (ADR-052). The first post against the real API moves to step 4 too, where Actions provides the token: `spr-publish-test` is pushed as its fixture. Plan: `docs/plans/m4-step2-publish.md` | done |
 | 3 | Tool Docker image published to GHCR: `node:22-bookworm-slim` plus ffmpeg and the headless shell, 1.67 GB, built and smoke-tested by `.github/workflows/image.yml` before it publishes. Containerizing found a real defect: the picture's length depended on the installed ffmpeg's handling of `-shortest`, and the Composer now states it with `-t` (ADR-053). Plan: `docs/plans/m4-step3-docker-image.md` | done |
 | 4 | Workflow for service repos: `video-review.yml` is reusable (`workflow_call`), `self-review.yml` is this repository calling it. Checks out the pull request's head, waits for Kokoro, skips drafts, opted-out pull requests and pushes a pull request already covers, uploads the video and posts the sticky comment with its artifact URL; a fork says once that its token cannot post. **Publish has met the live API**: a push posted a commit comment as `github-actions[bot]`, with working permalinks and the video link (ADR-056). Four runs to get there, three of them on defects the image and the workflow only show in CI. Plan: `docs/plans/m4-step4-workflow.md` | done |
-| 5 | Video hosting. **The artifact half is built and live** (ADR-056): the workflow uploads `final.mp4` and the comment links it. What that link gives a reviewer is a signed-in zip download, not a video that plays - which is ADR-008's own reason for option 2, S3-compatible storage with a presigned URL. That needs an account, a bucket and credentials, so it waits on Bahman; nothing else in the milestone does | planned |
+| 5 | Video hosting. **The artifact half is built and live** (ADR-056): the workflow uploads `final.mp4` and the comment links it, which a reviewer gets as a signed-in zip download. Object storage, ADR-008's option 2, is **withdrawn** (ADR-062): a bucket, an account and a bill for a convenience. `--video-url` takes any https URL, so the day a bucket exists the work is an uploader and a workflow step, not a change to Publish | withdrawn |
 
-## Milestone 5: polish
+## Milestone 5: documentation and a release
 
-Subtitles styling, voice and theme options, docs for service teams,
-composite or reusable workflow.
+**Scoped by Bahman in October 2026 as documentation and a tagged release, not features**
+(ADR-062). The milestone's old sketch listed four things. The reusable workflow landed in
+Milestone 4 step 4 (ADR-056). Subtitle styling and voice or theme options were offered and not
+chosen: they are available if anyone ever wants them, and nothing waits on them.
+
+| Step | Scope | Status |
+|---|---|---|
+| 1 | `README.md` rewritten for someone meeting the project, and `docs/SERVICE_TEAM_GUIDE.md` for a team adding the review to their repository: the caller workflow pinned to a tag, the three runner options with their trade-offs, what the comment looks like, the four ways to skip a change, what it costs, and that the code is read and never executed. The README now leads with what the tool is measured on and what it is not proven on | done |
+| 2 | A final end-to-end run of all nine golden samples through the real pipeline, with the table recorded, so the release ships a measured pipeline rather than a believed one | next |
+| 3 | `v0.1.0`: the tag the image workflow turns into `:v0.1.0`, `:v0.1` and `:latest`, and the pinning guidance that goes with it | planned |
 
 Intro and outro cards used to be listed here, and are **withdrawn, not deferred**: Bahman decided
 a video is findings only, and considered and rejected the reason the outro card existed - that

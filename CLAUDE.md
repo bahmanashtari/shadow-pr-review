@@ -36,6 +36,10 @@ system prompt is built from that file. Narration rules are in `docs/NARRATION_ST
 4. Every stage runs on its own from files on disk, and is idempotent.
 5. Grounded output only: every finding points at real lines in the diff, with verbatim
    evidence. Unverifiable findings are dropped, never narrated.
+6. **The tool reads a repository and never runs it.** No build, no test suite, no `tsc`, no
+   `eslint`, no install step - nothing from a reviewed repository is ever executed, however
+   sandboxed (Bahman, ADR-062). Diff text is untrusted input to a prompt (ADR-049) and files
+   are read through one guard; repo-aware static analysis is withdrawn, not deferred.
 
 ## Repository layout (planned)
 
